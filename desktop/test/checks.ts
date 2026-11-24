@@ -100,7 +100,7 @@ export async function openPlaytest(app: ElectronApplication, page: Page, project
     location.href = 'https://example.com/from-the-game';
   });
   await until(
-    async () => (await opened(app)).includes('https://example.com/from-the-game'),
+    async () => (await opened(app)).some((url) => url === 'https://example.com/from-the-game'),
     "the game window's link in the browser",
   );
   assert.equal(new URL(child.url()).origin, player.origin, 'the game window stayed on the player');
