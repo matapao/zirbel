@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Zirbel · Game workspace</title>
+  <link rel="icon" href="favicon.svg">
+  <link rel="stylesheet" href="workspace.css">
+  <script type="module" src="workspace.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./"><img src="favicon.svg" width="31" height="31" alt=""><span>zirbel</span></a>
+    <div class="path">
+      <label class="sr-only" for="project">Current project</label><select id="project"><option value="" selected disabled>Projects…</option></select>
+      <label class="sr-only" for="branch">Branch</label><select id="branch" hidden></select>
+    </div>
+    <div class="mode" id="workspace-modes" hidden role="group" aria-label="Workspace mode">
+      <button type="button" data-mode="edit" aria-pressed="true">Edit</button>
+      <button type="button" data-mode="context" aria-pressed="false">Context</button>
+      <button type="button" data-mode="review" aria-pressed="false">Review</button>
+      <button type="button" data-mode="play" aria-pressed="false">Play</button>
+    </div>
+    <div class="top-actions">
+      <button type="button" data-dialog="library">Library</button>
+      <button type="button" data-dialog="history" hidden>History</button>
+      <button class="share" type="button" data-dialog="sharing" hidden>Share <span aria-hidden="true">↗</span></button>
+    </div>
+  </header>
+  <main id="desk" aria-label="Game editor" data-empty></main>
+  <footer class="statusbar">
+    <span><i></i><span id="host-status">Starting local workspace</span></span>
+    <span id="revision"></span>
+    <span id="details"></span>
+  </footer>
+  <div id="status" class="toast" role="status" hidden></div>
+
+  <template id="objects-pane">
+    <section class="objects-pane">
+      <p class="empty-pane">Open a project to inspect its objects and assets.</p>
+      <div class="tabs"><button type="button" data-panel="objects" aria-pressed="true">Objects</button><button type="button" data-panel="assets" aria-pressed="false">Assets</button></div>
+      <div class="padded" id="object-tools">
+        <input type="search" id="search" placeholder="Find an object…" aria-label="Find an object">
+        <label class="row small" for="add-object">Add object <select id="add-object"><option value="">Choose…</option></select></label>
+      </div>
+      <div id="objects" class="objects-list"></div>
+      <div id="assets" class="padded" hidden></div>
+      <section id="inspector" class="inspector" aria-label="Object inspector"></section>
+    </section>
+  </template>
+
+  <template id="scene-pane">
+    <section class="scene-pane">
+      <div class="viewer-toolbar">
+        <div class="row" id="view-tools"><button type="button" id="select-tool" class="icon" aria-label="Select tool" title="Select" aria-pressed="true">↖</button><button type="button" id="pan-tool" class="icon" aria-label="Pan tool" title="Pan" aria-pressed="false">✥</button><button type="button" id="grid-tool" class="icon" aria-label="Show grid" title="Grid" aria-pressed="false">▦</button><button type="button" id="fit" class="icon" aria-label="Reset camera" title="Fit">⛶</button></div>
+        <div class="row viewport-actions"><span id="zoom">100%</span><button id="toggle-source" type="button" aria-pressed="false" aria-controls="source-pane" hidden>Source</button><a id="open-player" href="#" target="_blank" rel="noopener" hidden>Open game ↗</a></div>
+      </div>
+      <div id="viewport">
+        <p class="empty-pane">Describe a game in Activity to get started.</p>
+        <p id="preview-message" class="preview-message" role="status" hidden></p>
+        <div class="viewport-meta"><span>MAIN SCENE</span><span id="preview-tag">Saved revision</span></div>
+        <section id="source-pane" hidden>
+          <label for="game-source">Game source</label>
+          <textarea id="game-source" aria-label="Game source" spellcheck="false" maxlength="400000" placeholder="Describe your game in chat to write its first revision."></textarea>
+          <button type="button" id="save-source" hidden>Save source</button>
+        </section>
+        <div id="scene-wrap" class="scene-wrap">
+          <canvas id="scene" width="960" height="600" tabindex="0" aria-label="Main playable scene"></canvas>
+          <div id="hits" class="hits" hidden></div>
+        </div>
+        <iframe id="playframe" title="Local game preview" allow="fullscreen" allowfullscreen hidden></iframe>
+      </div>
+      <div id="review" class="review" hidden></div>
+      <div class="scene-bottom"><span id="hint">Select an object to inspect it.</span><span>960 × 600</span></div>
+    </section>
+  </template>
+
+  <template id="activity-pane">
+    <section class="activity-pane">
+      <div id="activity-feed" class="messages">
+        <div id="messages" class="message-list" role="log" aria-label="Conversation"></div>
+        <details id="chat-log" class="chat-log" hidden><summary id="chat-log-title">Harness activity</summary><div id="chat-events"></div></details>
+        <div id="chat-actions"></div>
+        <div id="chat-run" class="chat-run" role="status"></div>
+      </div>
+      <div id="chat-suggestions" class="chat-suggestions" aria-label="Suggested messages"></div>
+      <form id="prompt-form" class="composer">
+        <div id="marked" class="chips" aria-label="Marked references"></div>
+        <label class="generation-option"><input id="register-objects" type="checkbox" checked> Register editable objects</label>
+        <label class="sr-only" for="prompt">Describe a change</label>
+        <textarea id="prompt" maxlength="3000" placeholder="Describe a game, ask a question, or say ‘play it’…" required></textarea>
+        <div class="row">
+          <select id="provider" aria-label="Chat harness" disabled><option value="">Checking harnesses…</option></select>
+          <details id="model-picker" class="model-picker" hidden>
+            <summary id="model-picker-label" aria-label="Model settings">Model</summary>
+            <div class="model-picker-panel">
+              <div id="model-picker-fields" class="model-picker-fields"></div>
+              <button type="button" id="close-model-picker" aria-label="Close model settings">Close</button>
+            </div>
+          </details>
+          <button type="button" id="harness-accounts">Harnesses</button>
+          <button type="button" id="chat-settings" aria-label="Chat settings">Settings</button>
+          <button type="button" class="primary" id="stop-run" aria-label="Stop turn" hidden>Stop</button>
+          <button type="submit" class="primary" id="send" aria-label="Send message" disabled>↑</button>
+        </div>
+        <div class="chat-details">
+          <span id="chat-context"></span>
+          <span id="chat-usage"></span>
+        </div>
+      </form>
+    </section>
+  </template>
+
+  <dialog id="dialog">
+    <div class="dialog-head"><h2 id="dialog-title"></h2><form method="dialog"><button type="submit" aria-label="Close dialog">×</button></form></div>
+    <div id="dialog-body"></div>
+  </dialog>
+</body>
+</html>

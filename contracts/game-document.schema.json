@@ -1,0 +1,26 @@
+{
+  "$id": "https://zirbel.app/contracts/game-document.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "html": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400000,
+      "x-zirbel-prepare": "trim"
+    },
+    "maxPlayers": {
+      "default": 1,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4
+    },
+    "registerObjects": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "html"
+  ],
+  "additionalProperties": false
+}

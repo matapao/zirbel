@@ -1,0 +1,532 @@
+{
+  "resource": {
+    "uri": "ui://zirbel/scene",
+    "name": "Scene",
+    "mimeType": "text/html;profile=mcp-app"
+  },
+  "tools": [
+    {
+      "access": "read",
+      "descriptor": {
+        "name": "read_project",
+        "description": "Read this project and its branch heads.",
+        "annotations": {
+          "readOnlyHint": true
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "_meta": {
+          "ui": {
+            "visibility": [
+              "model"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "access": "read",
+      "descriptor": {
+        "name": "read_scene",
+        "description": "Read the game source, assets and exact revision.",
+        "annotations": {
+          "readOnlyHint": true
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "branch": {
+              "default": "main",
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "_meta": {
+          "ui": {
+            "resourceUri": "ui://zirbel/scene",
+            "visibility": [
+              "model",
+              "app"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "access": "read",
+      "descriptor": {
+        "name": "list_revisions",
+        "description": "List revision metadata.",
+        "annotations": {
+          "readOnlyHint": true
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "_meta": {
+          "ui": {
+            "visibility": [
+              "model"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "access": "propose",
+      "descriptor": {
+        "name": "propose",
+        "description": "Stage a revision. Use writeGame with a complete HTML document to implement any game or edit.",
+        "annotations": {
+          "readOnlyHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "proposal": {
+              "type": "object",
+              "properties": {
+                "baseRevision": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                },
+                "branch": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 160,
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "const": "writeGame"
+                          },
+                          "game": {
+                            "type": "object",
+                            "properties": {
+                              "html": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400000
+                              },
+                              "maxPlayers": {
+                                "default": 1,
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 4
+                              },
+                              "registerObjects": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "html"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "game"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "const": "add"
+                          },
+                          "object": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "tree",
+                                  "rock",
+                                  "crystal",
+                                  "campfire",
+                                  "cabin",
+                                  "water",
+                                  "bridge",
+                                  "spawn",
+                                  "placeholder",
+                                  "npc",
+                                  "enemy"
+                                ]
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80
+                              },
+                              "x": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 960
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 600
+                              },
+                              "size": {
+                                "type": "number",
+                                "minimum": 8,
+                                "maximum": 340
+                              },
+                              "color": {
+                                "type": "string",
+                                "pattern": "^#[a-fA-F0-9]{6}$"
+                              },
+                              "description": {
+                                "type": "string",
+                                "maxLength": 2000
+                              },
+                              "health": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 100
+                              },
+                              "power": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 20
+                              },
+                              "requires": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "kind",
+                              "name",
+                              "x",
+                              "y",
+                              "size",
+                              "color"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "object"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "const": "update"
+                          },
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                          },
+                          "changes": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80
+                              },
+                              "x": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 960
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 600
+                              },
+                              "size": {
+                                "type": "number",
+                                "minimum": 8,
+                                "maximum": 340
+                              },
+                              "color": {
+                                "type": "string",
+                                "pattern": "^#[a-fA-F0-9]{6}$"
+                              },
+                              "description": {
+                                "type": "string",
+                                "maxLength": 2000
+                              },
+                              "health": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 100
+                              },
+                              "power": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 20
+                              },
+                              "requires": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "id",
+                          "changes"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "const": "remove"
+                          },
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "const": "background"
+                          },
+                          "color": {
+                            "type": "string",
+                            "pattern": "^#[a-fA-F0-9]{6}$"
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "color"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "const": "addAsset"
+                          },
+                          "asset": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 140
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 140
+                              },
+                              "source": {
+                                "type": "string",
+                                "pattern": "^https?:\\/\\/"
+                              },
+                              "license": {
+                                "type": "string",
+                                "enum": [
+                                  "CC0-1.0",
+                                  "CC-BY-4.0",
+                                  "MIT",
+                                  "local-only",
+                                  "unknown"
+                                ]
+                              },
+                              "credit": {
+                                "type": "string",
+                                "maxLength": 600
+                              },
+                              "hash": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "media": {
+                                "type": "string",
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/webp"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "author",
+                              "source",
+                              "license",
+                              "credit",
+                              "hash",
+                              "media"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "asset"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "const": "removeAsset"
+                          },
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                          }
+                        },
+                        "required": [
+                          "op",
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "baseRevision",
+                "branch",
+                "label",
+                "operations"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "proposal"
+          ],
+          "additionalProperties": false
+        },
+        "_meta": {
+          "ui": {
+            "visibility": [
+              "model"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "access": "read",
+      "descriptor": {
+        "name": "preview_proposal",
+        "description": "Read the candidate scene for a staged proposal.",
+        "annotations": {
+          "readOnlyHint": true
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "proposalId": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+            }
+          },
+          "required": [
+            "proposalId"
+          ],
+          "additionalProperties": false
+        },
+        "_meta": {
+          "ui": {
+            "visibility": [
+              "model"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "access": "write",
+      "descriptor": {
+        "name": "apply_proposal",
+        "description": "Apply a staged proposal as one revision.",
+        "annotations": {
+          "readOnlyHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "proposalId": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+            }
+          },
+          "required": [
+            "proposalId"
+          ],
+          "additionalProperties": false
+        },
+        "_meta": {
+          "ui": {
+            "visibility": [
+              "model"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,685 @@
+{
+  "$id": "https://zirbel.app/contracts/project.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "x-zirbel-prepare": "trim"
+    },
+    "template": {
+      "type": "string",
+      "enum": [
+        "blank",
+        "mosslight",
+        "tessellate",
+        "orbit-garden",
+        "lantern-quest"
+      ]
+    },
+    "branches": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+      }
+    },
+    "revisions": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "restoredFrom": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "scene": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+              },
+              "background": {
+                "type": "string",
+                "pattern": "^#[a-fA-F0-9]{6}$"
+              },
+              "objects": {
+                "maxItems": 160,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "tree",
+                        "rock",
+                        "crystal",
+                        "campfire",
+                        "cabin",
+                        "water",
+                        "bridge",
+                        "spawn",
+                        "placeholder",
+                        "npc",
+                        "enemy"
+                      ]
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "x-zirbel-prepare": "trim"
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 960
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 600
+                    },
+                    "size": {
+                      "type": "number",
+                      "minimum": 8,
+                      "maximum": 340
+                    },
+                    "color": {
+                      "type": "string",
+                      "pattern": "^#[a-fA-F0-9]{6}$"
+                    },
+                    "description": {
+                      "type": "string",
+                      "maxLength": 2000
+                    },
+                    "health": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "power": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 20
+                    },
+                    "requires": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "name",
+                    "x",
+                    "y",
+                    "size",
+                    "color"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "background",
+              "objects"
+            ],
+            "additionalProperties": false
+          },
+          "game": {
+            "type": "object",
+            "properties": {
+              "html": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400000,
+                "x-zirbel-prepare": "trim"
+              },
+              "maxPlayers": {
+                "default": 1,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4
+              },
+              "registerObjects": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "html"
+            ],
+            "additionalProperties": false
+          },
+          "assets": {
+            "maxItems": 80,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 140
+                },
+                "author": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 140
+                },
+                "source": {
+                  "type": "string",
+                  "pattern": "^https?:\\/\\/",
+                  "x-zirbel-prepare": "url"
+                },
+                "license": {
+                  "type": "string",
+                  "enum": [
+                    "CC0-1.0",
+                    "CC-BY-4.0",
+                    "MIT",
+                    "local-only",
+                    "unknown"
+                  ]
+                },
+                "credit": {
+                  "type": "string",
+                  "maxLength": 600
+                },
+                "hash": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "media": {
+                  "type": "string",
+                  "enum": [
+                    "image/png",
+                    "image/jpeg",
+                    "image/webp"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "author",
+                "source",
+                "license",
+                "credit",
+                "hash",
+                "media"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "parent",
+          "label",
+          "date",
+          "assets"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "x-zirbel-prepare": "trim"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "branch": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+          },
+          "references": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "instance"
+                    },
+                    "sceneId": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                    },
+                    "revision": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                    },
+                    "object": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "tree",
+                            "rock",
+                            "crystal",
+                            "campfire",
+                            "cabin",
+                            "water",
+                            "bridge",
+                            "spawn",
+                            "placeholder",
+                            "npc",
+                            "enemy"
+                          ]
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80,
+                          "x-zirbel-prepare": "trim"
+                        },
+                        "x": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 960
+                        },
+                        "y": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 600
+                        },
+                        "size": {
+                          "type": "number",
+                          "minimum": 8,
+                          "maximum": 340
+                        },
+                        "color": {
+                          "type": "string",
+                          "pattern": "^#[a-fA-F0-9]{6}$"
+                        },
+                        "description": {
+                          "type": "string",
+                          "maxLength": 2000
+                        },
+                        "health": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        },
+                        "power": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 20
+                        },
+                        "requires": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "name",
+                        "x",
+                        "y",
+                        "size",
+                        "color"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "sceneId",
+                    "revision",
+                    "object"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "region"
+                    },
+                    "sceneId": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                    },
+                    "revision": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                    },
+                    "bounds": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 960
+                        },
+                        "y": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 600
+                        },
+                        "width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 960
+                        },
+                        "height": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 600
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y",
+                        "width",
+                        "height"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "objects": {
+                      "maxItems": 160,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "tree",
+                              "rock",
+                              "crystal",
+                              "campfire",
+                              "cabin",
+                              "water",
+                              "bridge",
+                              "spawn",
+                              "placeholder",
+                              "npc",
+                              "enemy"
+                            ]
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80,
+                            "x-zirbel-prepare": "trim"
+                          },
+                          "x": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 960
+                          },
+                          "y": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 600
+                          },
+                          "size": {
+                            "type": "number",
+                            "minimum": 8,
+                            "maximum": 340
+                          },
+                          "color": {
+                            "type": "string",
+                            "pattern": "^#[a-fA-F0-9]{6}$"
+                          },
+                          "description": {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          "health": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100
+                          },
+                          "power": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 20
+                          },
+                          "requires": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "name",
+                          "x",
+                          "y",
+                          "size",
+                          "color"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "sceneId",
+                    "revision",
+                    "bounds",
+                    "objects"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "attachments": {
+            "maxItems": 12,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+            }
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "creator",
+              "assistant"
+            ]
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "input": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "output": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "source"
+            ],
+            "additionalProperties": false
+          },
+          "designPrompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 3000,
+            "x-zirbel-prepare": "trim"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "date",
+          "branch",
+          "references",
+          "attachments"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "intent": {
+            "type": "string",
+            "enum": [
+              "Inspiration",
+              "Material to copy",
+              "Text to transcribe",
+              "Motion to study",
+              "Asset to place"
+            ]
+          },
+          "media": {
+            "type": "string",
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/webp",
+              "video/mp4",
+              "video/webm",
+              "text/plain"
+            ]
+          },
+          "transcript": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "original": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "intent",
+          "media",
+          "transcript"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "upstream": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "imported": {
+      "type": "boolean",
+      "const": true
+    }
+  },
+  "required": [
+    "version",
+    "id",
+    "title",
+    "branches",
+    "revisions",
+    "notes",
+    "attachments"
+  ],
+  "additionalProperties": false
+}

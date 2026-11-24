@@ -1,0 +1,260 @@
+// The editor API on both hosts: `node dist/server.mjs` and the Go host
+// (host/bin/zirbel-host). One scripted session runs against each, and their
+// normalized responses must match. Releases published by one host must import
+// into the other, which proves their content hashes agree.
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { test, type TestContext } from 'node:test';
+import { hostsUnderTest, launch, rights, statusForHost, stopHost, tempDir } from './helpers.ts';
+
+const editors = hostsUnderTest();
+const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+async function startEditor(t: TestContext, command: string[], data: string) {
+  const { child, ready } = launch(t, command, ['--data', data, '--port', '0', '--enable-mcp'],
+    (line) => typeof line.editor === 'string' ? line.editor : undefined);
+  return { editor: await ready, stop: () => stopHost(child) };
+}
+
+type Step = { status: number; body: unknown };
+
+function client(editor: string) {
+  // raw sends JSON text that JSON.stringify cannot produce, such as duplicate keys or 2.0.
+  const call = async (method: string, path: string, payload?: unknown, headers: Record<string, string> = {}, raw?: string): Promise<Step> => {
+    const sent = raw ?? (payload === undefined ? undefined : JSON.stringify(payload));
+    // An empty origin means "send none" (MCP clients are not browsers).
+    const merged: Record<string, string> = { origin: editor, ...(sent === undefined ? {} : { 'content-type': 'application/json' }), ...headers };
+    if (merged.origin === '') delete merged.origin;
+    const response = await fetch(editor + path, { method, headers: merged, body: sent });
+    const text = await response.text();
+    let body: unknown = text;
+    try { body = JSON.parse(text); } catch { /* not JSON */ }
+    return { status: response.status, body };
+  };
+  return { get: (path: string) => call('GET', path), post: (path: string, payload: unknown = {}) => call('POST', path, payload),
+    raw: (path: string, text: string) => call('POST', path, undefined, {}, text), call };
+}
+
+// Generated IDs, dates, secrets and ports differ per run; replace them by
+// first appearance, walking object keys in sorted order.
+function normalizer() {
+  const ids = new Map<string, string>();
+  const name = (value: string, kind: string) => {
+    if (!ids.has(value)) ids.set(value, '<' + kind + ids.size + '>');
+    return ids.get(value)!;
+  };
+  const text = (value: string) => value
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, (id) => name(id, 'id'))
+    .replace(/\b\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\b/g, '<date>')
+    .replace(/127\.0\.0\.1:\d+/g, '127.0.0.1:<port>')
+    .replace(/\/join\/[a-f0-9]{12}#[\w-]{32}/g, '/join/<room>#<invite>')
+    .replace(/\.[\w-]{32}$/, '.<token>');
+  const walk = (value: unknown, key = ''): unknown => {
+    // The Scene app page embeds Function.toString() of its script, which each
+    // TypeScript stripper formats differently; compare its markup only.
+    if (typeof value === 'string' && value.startsWith('<!doctype html>') && value.includes('id="scene"'))
+      return value.slice(0, value.indexOf('<script>'));
+    if (typeof value === 'string') return /^[a-f0-9]{12}$/.test(value) && key === 'id' ? '<room>' : text(value);
+    if (typeof value === 'number' && key === 'expires') return '<expires>';
+    if (Array.isArray(value)) return value.map((item) => walk(item));
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.keys(value).sort().map((field) => [field, walk((value as Record<string, unknown>)[field], field)]));
+    }
+    return value;
+  };
+  return (step: Step) => step.status >= 300 ? { status: step.status } : { status: step.status, body: walk(step.body) };
+}
+
+async function session(editor: string) {
+  const { get, post, raw, call } = client(editor);
+  const steps: Step[] = [];
+  const record = async (step: Promise<Step>) => { const result = await step; steps.push(result); return result; };
+  const body = <T>(step: Step) => step.body as T;
+
+  await record(get('/api/projects'));
+  const created = body<{ id: string; branches: { main: string } }>(await record(post('/api/projects', { title: 'Parity' })));
+  const id = created.id;
+  const proposed = body<{ proposal: { id: string } }>(await record(post('/api/projects/' + id + '/proposals', {
+    baseRevision: created.branches.main, branch: 'main', label: '  Write the game  ',
+    operations: [{ op: 'writeGame', game: { html: '\ufeff  <!doctype html><canvas></canvas>  ', maxPlayers: 2 } }],
+  })));
+  await record(get('/api/projects/' + id + '/proposals?branch=main'));
+  await record(get('/api/projects/' + id + '/proposals/' + proposed.proposal.id));
+  const applied = body<{ revision: { id: string } }>(await record(post('/api/projects/' + id + '/apply/' + proposed.proposal.id)));
+  const second = body<{ proposal: { id: string } }>(await record(post('/api/projects/' + id + '/proposals', {
+    baseRevision: applied.revision.id, branch: 'main', label: 'Discard me',
+    operations: [{ op: 'writeGame', game: { html: '<p>no</p>' } }],
+  })));
+  await record(post('/api/projects/' + id + '/discard/' + second.proposal.id));
+  await record(post('/api/projects/' + id + '/title', { title: '  Renamed  ' }));
+  await record(post('/api/projects/' + id + '/notes', { text: '  hello  ', branch: 'main', references: [], attachments: [] }));
+  const restored = body<{ branches: { main: string } }>(await record(post('/api/projects/' + id + '/restore',
+    { branch: 'main', baseRevision: applied.revision.id, target: created.branches.main })));
+  const current = body<{ branches: { main: string } }>(await record(post('/api/projects/' + id + '/restore',
+    { branch: 'main', baseRevision: restored.branches.main, target: applied.revision.id }))).branches.main;
+  await record(get('/api/projects/' + id));
+
+  // Bodies are read as Zod reads them: a missing key takes its default; null, "" or a wrong type is refused.
+  for (const title of [null, '', '\ufeff', 5]) await record(post('/api/projects', { title }));
+  await record(post('/api/projects', {}));
+  // Zod counts code points: 41 emoji are 82 UTF-16 units but fit 80.
+  const emoji = body<{ id: string }>(await record(post('/api/projects', { title: '😀'.repeat(41) })));
+  const list = await get('/api/projects');
+  steps.push({ status: list.status, body: (list.body as unknown[]).length });
+  await record(get('/api/projects/' + emoji.id));
+  // Last duplicate key wins, 2.0 is an integer, and the label is trimmed before its 120-character limit.
+  const duplicate = body<{ proposal: { id: string } }>(await record(raw('/api/projects/' + id + '/proposals',
+    '{"baseRevision":"' + current + '","branch":"main","label":"' + 'L'.repeat(118) + '      ","operations":[{"op":"writeGame",' +
+    '"game":{"html":"<p>a</p>","maxPlayers":99},"game":{"html":"<p>b</p>","maxPlayers":2.0}}]}')));
+  for (const fork of ['', null, 'Bad']) await record(post('/api/projects/' + id + '/apply/' + duplicate.proposal.id, { fork }));
+  await record(post('/api/projects/' + id + '/discard/' + duplicate.proposal.id));
+  for (const input of [{ permissions: {} }, { permissions: { ...rights, play: 'yes' } }, { branch: '', permissions: rights },
+    { baseRevision: null, permissions: rights }, { branch: 'main' }]) await record(post('/api/projects/' + id + '/release', input));
+  for (const input of [{ proposalId: '' }, { branch: null }, null]) await record(post('/api/projects/' + id + '/playtest', input));
+  await record(post('/api/projects/' + id + '/restore', { branch: null, baseRevision: current, target: current }));
+  // Asset sources follow Zod's url check: trimmed, and parsed like new URL().
+  const upload = (source: string) => post('/api/projects/' + id + '/asset', { branch: 'main', baseRevision: current, name: 'Dot',
+    author: 'Me', source, license: 'CC0-1.0', credit: '', media: 'image/png', data: png });
+  await record(upload('https://'));
+  const asset = body<{ proposal: { id: string } }>(await record(upload(' https://example.com/50%off.png ')));
+  await record(post('/api/projects/' + id + '/apply/' + asset.proposal.id));
+
+  // A built-in scene project: every scene operation.
+  const bundle = JSON.parse(readFileSync('examples/firefly-fen.zirbel-project.json', 'utf8')) as unknown;
+  const legacy = body<{ id: string; branches: { main: string }; revisions: { scene?: { id: string } }[] }>(
+    await record(post('/api/projects/import', bundle)));
+  const sceneOps = body<{ proposal: { id: string } }>(await record(post('/api/projects/' + legacy.id + '/proposals', {
+    baseRevision: legacy.branches.main, branch: 'main', label: 'Rearrange',
+    operations: [
+      { op: 'background', color: '#112233' },
+      { op: 'add', object: { id: 'stone', kind: 'rock', name: '  Stone ', x: 10, y: 20, size: 30, color: '#808080' } },
+      { op: 'update', id: 'campfire', changes: { x: 450.5, name: ' Fire ' } },
+      { op: 'remove', id: 'footbridge' },
+    ],
+  })));
+  await record(post('/api/projects/' + legacy.id + '/apply/' + sceneOps.proposal.id, { fork: 'variant' }));
+  await record(get('/api/projects/' + legacy.id));
+  await record(post('/api/projects/' + legacy.id + '/proposals', { baseRevision: legacy.branches.main, branch: 'main', label: 'Clash',
+    operations: [{ op: 'remove', id: 'no-such-object' }] }));
+  // An update needs a change; numbers read as JavaScript reads them (5.0 is an integer, -0 is 0).
+  await record(post('/api/projects/' + legacy.id + '/proposals', { baseRevision: legacy.branches.main, branch: 'main', label: 'Nothing',
+    operations: [{ op: 'update', id: 'campfire', changes: {} }] }));
+  await record(get('/api/projects/' + legacy.id + '/proposals?branch=main'));
+  await record(raw('/api/projects/' + legacy.id + '/proposals', '{"baseRevision":"' + legacy.branches.main + '","branch":"main",' +
+    '"label":"Numbers","operations":[{"op":"update","id":"campfire","changes":{"health":5.0,"x":-0}}]}'));
+  // Region references must stay inside the 960 by 600 world.
+  const region = (bounds: object) => post('/api/projects/' + legacy.id + '/notes', { text: 'Here', branch: 'main', attachments: [],
+    references: [{ type: 'region', sceneId: legacy.revisions[0]!.scene!.id, revision: legacy.branches.main, bounds, objects: [] }] });
+  await record(region({ x: 900, y: 500, width: 900, height: 500 }));
+  await record(region({ x: 0, y: 0, width: 960, height: 600 }));
+
+  const exported = await record(get('/api/projects/' + id + '/export'));
+  await record(post('/api/projects/import', exported.body));
+  const manifest = body<{ releaseId: string }>(await record(post('/api/projects/' + id + '/release',
+    { branch: 'main', permissions: { play: true, download: true, remix: true } })));
+  await record(get('/api/releases'));
+  const release = await record(get('/api/releases/' + manifest.releaseId + '/download'));
+  await record(post('/api/releases/' + manifest.releaseId + '/remix'));
+  const room = body<{ id: string }>(await record(post('/api/rooms', { releaseId: manifest.releaseId, lan: false })));
+  await record(get('/api/rooms'));
+  await record(get('/api/rooms/' + room.id + '/link'));
+  await record(post('/api/rooms/' + room.id + '/close'));
+  await record(post('/api/projects/' + id + '/playtest', { branch: 'main' }));
+  await record(post('/api/releases/' + manifest.releaseId + '/play'));
+  // After the release list, whose order each host takes from its directory listing.
+  const template = body<{ releaseId: string }>(await record(post('/api/projects/' + legacy.id + '/release', { branch: 'main', permissions: rights })));
+  const templateRelease = await record(get('/api/releases/' + template.releaseId + '/download'));
+
+  // MCP with a proposal-only grant, then a revoked one.
+  const grant = body<{ id: string; token: string }>(await record(post('/api/projects/' + id + '/grants', { write: false, hours: 1 })));
+  await record(get('/api/projects/' + id + '/grants'));
+  const mcp = (message: object, token = grant.token) => call('POST', '/mcp', message, { authorization: 'Bearer ' + token, origin: '' });
+  await record(mcp({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }));
+  await record(mcp({ jsonrpc: '2.0', id: 2, method: 'tools/list' }));
+  await record(mcp({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'read_scene', arguments: {} } }));
+  await record(mcp({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'list_revisions', arguments: {} } }));
+  const head = body<{ branches: { main: string } }>(await get('/api/projects/' + id)).branches.main;
+  const staged = await record(mcp({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'propose',
+    arguments: { proposal: { baseRevision: head, branch: 'main', label: 'From MCP', operations: [{ op: 'writeGame', game: { html: '<p>mcp</p>' } }] } } } }));
+  const stagedText = (staged.body as { result: { content: { text: string }[] } }).result.content[0]!.text;
+  const stagedId = (JSON.parse(stagedText) as { proposal: { id: string } }).proposal.id;
+  await record(mcp({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'apply_proposal', arguments: { proposalId: stagedId } } }));
+  await record(mcp({ jsonrpc: '2.0', id: 7, method: 'resources/read', params: { uri: 'ui://zirbel/scene' } }));
+  await record(mcp({ jsonrpc: '2.0', method: 'notifications/initialized' }));
+  await record(mcp({ jsonrpc: '2.0', id: 8, method: 'nope' }));
+  await record(post('/api/projects/' + id + '/grants/' + grant.id));
+  await record(mcp({ jsonrpc: '2.0', id: 9, method: 'ping' }));
+
+  // Refusals.
+  await record(call('POST', '/api/projects', {}, { origin: 'http://evil.example' }));
+  await record(call('POST', '/api/projects', undefined, { 'content-type': 'text/plain' }));
+  await record(get('/api/nothing-here'));
+  await record(get('/api/projects/no-such-project'));
+  await record(post('/api/projects/' + id + '/remove'));
+  await record(get('/api/projects/' + id));
+  return { steps, release: release.body, templateRelease: templateRelease.body };
+}
+
+const results = new Map<string, Awaited<ReturnType<typeof session>>>();
+
+for (const host of editors) {
+  test(host.name + ' editor runs the scripted session', async (t) => {
+    const { editor } = await startEditor(t, host.command, join(tempDir(t, 'zirbel-editor-'), 'data'));
+    assert.equal(await statusForHost(editor + '/api/health', 'evil.example'), 403);
+    const result = await session(editor);
+    for (const [index, step] of result.steps.entries()) {
+      assert.ok(step.status < 500, 'step ' + index + ' failed with ' + step.status + ': ' + JSON.stringify(step.body));
+    }
+    results.set(host.name, result);
+  });
+}
+
+if (editors.length > 1) {
+  test('both editors answer the session identically', () => {
+    const node = results.get('node')!.steps.map(normalizer());
+    const go = results.get('go')!.steps.map(normalizer());
+    assert.equal(go.length, node.length);
+    for (const [index, step] of node.entries()) assert.deepEqual(go[index], step, 'step ' + index);
+  });
+
+  test('a release published by either editor imports into the other', async (t) => {
+    const start = async (name: string) => startEditor(t, editors.find((item) => item.name === name)!.command, join(tempDir(t, 'zirbel-cross-'), 'data'));
+    for (const [from, to] of [['node', 'go'], ['go', 'node']] as const) {
+      const { release, templateRelease } = results.get(from)!;
+      const target = await start(to);
+      const api = client(target.editor);
+      for (const item of [release, templateRelease]) {
+        const imported = await api.post('/api/releases/import', item);
+        assert.equal(imported.status, 201, from + ' -> ' + to + ': ' + JSON.stringify(imported.body));
+      }
+      // The other host may write the release's keys in another order; it is still the same package.
+      const { releaseId } = (templateRelease as { manifest: { releaseId: string } }).manifest;
+      const copy = (await api.get('/api/releases/' + releaseId + '/download')).body;
+      await target.stop();
+      const origin = await start(from);
+      for (const item of [templateRelease, copy]) {
+        const imported = await client(origin.editor).post('/api/releases/import', item);
+        assert.equal(imported.status, 201, to + ' copy -> ' + from + ': ' + JSON.stringify(imported.body));
+      }
+      await origin.stop();
+    }
+  });
+
+  test('both editors share one data directory', async (t) => {
+    const data = join(tempDir(t, 'zirbel-shared-'), 'data');
+    let previous: string | undefined;
+    for (const host of [...editors, ...editors]) {
+      const { editor, stop } = await startEditor(t, host.command, data);
+      const api = client(editor);
+      const list = (await api.get('/api/projects')).body as { id: string }[];
+      if (previous) {
+        const project = await api.get('/api/projects/' + previous);
+        assert.equal(project.status, 200, host.name + ' could not read the other editor\'s project');
+        assert.ok(list.some((item) => item.id === previous));
+      }
+      previous = ((await api.post('/api/projects', { title: 'From ' + host.name })).body as { id: string }).id;
+      await stop();
+    }
+  });
+}

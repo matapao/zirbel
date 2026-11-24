@@ -1,0 +1,11 @@
+# Generated, vendored or data files.
+dist/
+node_modules/
+host/webfiles/web/
+host/bin/
+contracts/*.schema.json
+contracts/mcp-tools.json
+contracts/mcp-scene.html
+examples/
+pnpm-lock.yaml
+*.go

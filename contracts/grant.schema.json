@@ -1,0 +1,41 @@
+{
+  "$id": "https://zirbel.app/contracts/grant.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "projectId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "write": {
+      "type": "boolean"
+    },
+    "hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 168
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "expires": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "tokenHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "required": [
+    "projectId",
+    "write",
+    "hours",
+    "id",
+    "expires",
+    "tokenHash"
+  ],
+  "additionalProperties": false
+}

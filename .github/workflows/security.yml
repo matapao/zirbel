@@ -1,0 +1,92 @@
+name: Security
+# Every push and pull request: the checks that give the same answer for the same code. Daily, and before a release
+# (a release workflow calls it with live: true), also the advisory databases, the registry and the actions as they are
+# now, and govulncheck through `pnpm check:go --live`.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      live:
+        description: Also the checks that read advisory databases and the registry now
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      live:
+        type: boolean
+        default: false
+  schedule:
+    - cron: '17 5 * * *' # daily: new advisories arrive without a push
+permissions:
+  contents: read
+# By event too, so a push never cancels the daily run.
+concurrency:
+  group: security-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    name: Security checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MODE: ${{ (github.event_name == 'schedule' || inputs.live) && '--live' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # every commit, for the secrets scan
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable pnpm
+      # pnpm audit signatures and the licence check read the installed packages. The two link: dependencies point
+      # at sibling checkouts, which this job doesn't need: neither is a registry package.
+      - run: pnpm install --frozen-lockfile
+
+      - name: Tools, each checked against its release's checksum
+        run: |
+          set -euo pipefail
+          tools="$RUNNER_TEMP/tools"
+          mkdir -p "$tools/unpacked"
+          cd "$tools"
+          get() { curl -fsSL --retry 3 -o "$2" "$1"; echo "$3  $2" | sha256sum -c -; }
+          get https://github.com/google/osv-scanner/releases/download/v2.7.1/osv-scanner_linux_amd64 osv-scanner \
+            fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8
+          get https://github.com/betterleaks/betterleaks/releases/download/v1.10.1/betterleaks_1.10.1_linux_x64.tar.gz betterleaks.tar.gz \
+            c174b42d7aa60caf58c0c3e555c0e4bed01fe6b0d99a412bce777b5af4ce913e
+          get https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz actionlint.tar.gz \
+            8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          get https://github.com/zizmorcore/zizmor/releases/download/v1.33.1/zizmor-x86_64-unknown-linux-gnu.tar.gz zizmor.tar.gz \
+            3e6a301c7a820a2501915f5a9de8c0486da82bdec7965f068477538a98743d43
+          # hadolint at this version, whatever the runner's image has.
+          get https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64 hadolint \
+            c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
+          for t in betterleaks actionlint zizmor; do
+            tar -xzf "$t.tar.gz" -C unpacked
+            install "$(find unpacked -type f -name "$t" | head -n 1)" "$t"
+          done
+          chmod +x osv-scanner hadolint
+          echo "$tools" >> "$GITHUB_PATH"
+
+      - name: The security checks
+        env:
+          # Semgrep 1.183.0, at its image's digest.
+          SEMGREP_IMAGE: semgrep/semgrep@sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0
+          # For zizmor's online audits, which read the actions' own repositories (--live only).
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm check:security --strict ${MODE:+"$MODE"}
+      # Zirbel's stricter reading of its workflows, on top of the shared script's: zizmor's auditor persona, offline.
+      - name: zizmor, auditor persona
+        run: zizmor --offline --persona=auditor .
+
+      # govulncheck reads the standard library of the Go it runs on, go.mod's, as the Check workflow builds with.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: env.MODE == '--live'
+        with:
+          go-version-file: go.mod
+          cache: false # the module is stdlib-only; tools are pinned in scripts/
+      - name: Go, with govulncheck (live only)
+        if: env.MODE == '--live'
+        run: pnpm check:go --live

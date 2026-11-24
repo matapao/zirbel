@@ -1,0 +1,30 @@
+# Go checks: golangci-lint v2 (bundles staticcheck, gosec, errcheck and more).
+# Run with `pnpm check:go`, which also runs deadcode, nilaway and (with --live) govulncheck.
+version: "2"
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - contextcheck
+    - copyloopvar
+    - errorlint
+    - forcetypeassert
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - nilnil
+    - noctx
+    - unconvert
+    - unparam
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # memory layout, not correctness
+        - shadow # `err :=` shadowing is idiomatic Go
+    gocritic:
+      enabled-tags: [diagnostic] # performance hints are micro-optimizations
+formatters:
+  enable:
+    - gofmt

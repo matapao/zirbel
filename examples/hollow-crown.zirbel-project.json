@@ -1,0 +1,528 @@
+{
+  "project": {
+    "version": 1,
+    "id": "2f681338-38ca-4100-a305-b4cedd8d28cd",
+    "title": "The Hollow Crown",
+    "template": "lantern-quest",
+    "branches": {
+      "main": "ecd1f8fa-91a2-461f-b5d5-23e9085e3db9"
+    },
+    "revisions": [
+      {
+        "id": "ecd1f8fa-91a2-461f-b5d5-23e9085e3db9",
+        "parent": null,
+        "label": "Initial scene",
+        "date": "2026-11-21T22:29:32.246Z",
+        "scene": {
+          "id": "main",
+          "background": "#494d50",
+          "objects": [
+            {
+              "id": "arrive",
+              "kind": "spawn",
+              "name": "Village Gate",
+              "x": 195,
+              "y": 390,
+              "size": 26,
+              "color": "#e1f59d"
+            },
+            {
+              "id": "keeper",
+              "kind": "npc",
+              "name": "Keeper Iona",
+              "x": 226,
+              "y": 393,
+              "size": 35,
+              "color": "#e6bb86",
+              "description": "Bring me the Seed from Windfall Meadow, the Ember from Basalt Ridge, and the Crown from the citadel. The village depends on it."
+            },
+            {
+              "id": "meadow-guard",
+              "kind": "enemy",
+              "name": "Briar Sprite",
+              "x": 346,
+              "y": 390,
+              "size": 39,
+              "color": "#c77e8c",
+              "health": 14,
+              "power": 3
+            },
+            {
+              "id": "seed",
+              "kind": "crystal",
+              "name": "Windfall Seed",
+              "x": 421,
+              "y": 390,
+              "size": 17,
+              "color": "#a3e19c",
+              "requires": "meadow-guard"
+            },
+            {
+              "id": "ridge-guard",
+              "kind": "enemy",
+              "name": "Basalt Sentinel",
+              "x": 529,
+              "y": 314,
+              "size": 39,
+              "color": "#c58754",
+              "health": 21,
+              "power": 4,
+              "requires": "seed"
+            },
+            {
+              "id": "ember",
+              "kind": "crystal",
+              "name": "Basalt Ember",
+              "x": 595,
+              "y": 314,
+              "size": 17,
+              "color": "#ff925c",
+              "requires": "ridge-guard"
+            },
+            {
+              "id": "crown-guard",
+              "kind": "enemy",
+              "name": "Crown Warden",
+              "x": 652,
+              "y": 179,
+              "size": 56,
+              "color": "#b68adb",
+              "health": 28,
+              "power": 6,
+              "requires": "ember"
+            },
+            {
+              "id": "crown",
+              "kind": "crystal",
+              "name": "Hollow Crown",
+              "x": 728,
+              "y": 179,
+              "size": 17,
+              "color": "#eac2fd",
+              "requires": "crown-guard"
+            },
+            {
+              "id": "healer",
+              "kind": "npc",
+              "name": "Ridge Medic",
+              "x": 489,
+              "y": 443,
+              "size": 35,
+              "color": "#a4e4e8",
+              "description": "Rest here a moment. Your health is restored."
+            },
+            {
+              "id": "village-hall",
+              "kind": "cabin",
+              "name": "Windfall Hall",
+              "x": 229,
+              "y": 298,
+              "size": 88,
+              "color": "#a97758"
+            },
+            {
+              "id": "citadel",
+              "kind": "cabin",
+              "name": "Violet Citadel",
+              "x": 682,
+              "y": 111,
+              "size": 110,
+              "color": "#8274a1"
+            },
+            {
+              "id": "ridge-crossing",
+              "kind": "bridge",
+              "name": "Ridge Crossing",
+              "x": 511,
+              "y": 362,
+              "size": 78,
+              "color": "#a39789"
+            },
+            {
+              "id": "pine-1",
+              "kind": "tree",
+              "name": "Pine 1",
+              "x": 179,
+              "y": 120,
+              "size": 61,
+              "color": "#457756"
+            },
+            {
+              "id": "pine-2",
+              "kind": "tree",
+              "name": "Pine 2",
+              "x": 234,
+              "y": 116,
+              "size": 53,
+              "color": "#528560"
+            },
+            {
+              "id": "pine-3",
+              "kind": "tree",
+              "name": "Pine 3",
+              "x": 348,
+              "y": 112,
+              "size": 61,
+              "color": "#38644d"
+            },
+            {
+              "id": "pine-4",
+              "kind": "tree",
+              "name": "Pine 4",
+              "x": 401,
+              "y": 146,
+              "size": 51,
+              "color": "#62865a"
+            },
+            {
+              "id": "pine-5",
+              "kind": "tree",
+              "name": "Pine 5",
+              "x": 452,
+              "y": 124,
+              "size": 60,
+              "color": "#81847e"
+            },
+            {
+              "id": "pine-6",
+              "kind": "tree",
+              "name": "Pine 6",
+              "x": 507,
+              "y": 105,
+              "size": 65,
+              "color": "#81847e"
+            },
+            {
+              "id": "pine-7",
+              "kind": "tree",
+              "name": "Pine 7",
+              "x": 561,
+              "y": 127,
+              "size": 48,
+              "color": "#81847e"
+            },
+            {
+              "id": "pine-8",
+              "kind": "tree",
+              "name": "Pine 8",
+              "x": 643,
+              "y": 105,
+              "size": 55,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "pine-9",
+              "kind": "tree",
+              "name": "Pine 9",
+              "x": 696,
+              "y": 142,
+              "size": 64,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "pine-10",
+              "kind": "tree",
+              "name": "Pine 10",
+              "x": 737,
+              "y": 181,
+              "size": 49,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "pine-11",
+              "kind": "tree",
+              "name": "Pine 11",
+              "x": 768,
+              "y": 237,
+              "size": 57,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "pine-14",
+              "kind": "tree",
+              "name": "Pine 14",
+              "x": 732,
+              "y": 428,
+              "size": 53,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "pine-15",
+              "kind": "tree",
+              "name": "Pine 15",
+              "x": 697,
+              "y": 469,
+              "size": 47,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "pine-16",
+              "kind": "tree",
+              "name": "Pine 16",
+              "x": 628,
+              "y": 493,
+              "size": 55,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "pine-17",
+              "kind": "tree",
+              "name": "Pine 17",
+              "x": 538,
+              "y": 496,
+              "size": 51,
+              "color": "#81847e"
+            },
+            {
+              "id": "pine-18",
+              "kind": "tree",
+              "name": "Pine 18",
+              "x": 474,
+              "y": 528,
+              "size": 51,
+              "color": "#81847e"
+            },
+            {
+              "id": "pine-19",
+              "kind": "tree",
+              "name": "Pine 19",
+              "x": 415,
+              "y": 513,
+              "size": 64,
+              "color": "#38644d"
+            },
+            {
+              "id": "pine-20",
+              "kind": "tree",
+              "name": "Pine 20",
+              "x": 329,
+              "y": 517,
+              "size": 55,
+              "color": "#62865a"
+            },
+            {
+              "id": "pine-21",
+              "kind": "tree",
+              "name": "Pine 21",
+              "x": 248,
+              "y": 491,
+              "size": 62,
+              "color": "#457756"
+            },
+            {
+              "id": "pine-22",
+              "kind": "tree",
+              "name": "Pine 22",
+              "x": 195,
+              "y": 464,
+              "size": 66,
+              "color": "#528560"
+            },
+            {
+              "id": "pine-23",
+              "kind": "tree",
+              "name": "Pine 23",
+              "x": 154,
+              "y": 416,
+              "size": 54,
+              "color": "#38644d"
+            },
+            {
+              "id": "pine-24",
+              "kind": "tree",
+              "name": "Pine 24",
+              "x": 121,
+              "y": 361,
+              "size": 56,
+              "color": "#62865a"
+            },
+            {
+              "id": "pine-25",
+              "kind": "tree",
+              "name": "Pine 25",
+              "x": 142,
+              "y": 299,
+              "size": 55,
+              "color": "#457756"
+            },
+            {
+              "id": "pine-26",
+              "kind": "tree",
+              "name": "Pine 26",
+              "x": 151,
+              "y": 225,
+              "size": 63,
+              "color": "#528560"
+            },
+            {
+              "id": "pine-27",
+              "kind": "tree",
+              "name": "Pine 27",
+              "x": 201,
+              "y": 195,
+              "size": 44,
+              "color": "#38644d"
+            },
+            {
+              "id": "pine-28",
+              "kind": "tree",
+              "name": "Pine 28",
+              "x": 748,
+              "y": 350,
+              "size": 47,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "pine-29",
+              "kind": "tree",
+              "name": "Pine 29",
+              "x": 450,
+              "y": 221,
+              "size": 55,
+              "color": "#81847e"
+            },
+            {
+              "id": "pine-30",
+              "kind": "tree",
+              "name": "Pine 30",
+              "x": 419,
+              "y": 199,
+              "size": 42,
+              "color": "#528560"
+            },
+            {
+              "id": "pine-31",
+              "kind": "tree",
+              "name": "Pine 31",
+              "x": 658,
+              "y": 181,
+              "size": 41,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "pine-32",
+              "kind": "tree",
+              "name": "Pine 32",
+              "x": 162,
+              "y": 484,
+              "size": 48,
+              "color": "#62865a"
+            },
+            {
+              "id": "pine-33",
+              "kind": "tree",
+              "name": "Pine 33",
+              "x": 293,
+              "y": 471,
+              "size": 52,
+              "color": "#457756"
+            },
+            {
+              "id": "pine-34",
+              "kind": "tree",
+              "name": "Pine 34",
+              "x": 209,
+              "y": 260,
+              "size": 51,
+              "color": "#528560"
+            },
+            {
+              "id": "pine-35",
+              "kind": "tree",
+              "name": "Pine 35",
+              "x": 690,
+              "y": 252,
+              "size": 46,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "pine-36",
+              "kind": "tree",
+              "name": "Pine 36",
+              "x": 685,
+              "y": 487,
+              "size": 43,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "pine-37",
+              "kind": "tree",
+              "name": "Pine 37",
+              "x": 434,
+              "y": 462,
+              "size": 40,
+              "color": "#457756"
+            },
+            {
+              "id": "stone-1",
+              "kind": "rock",
+              "name": "Stone 1",
+              "x": 285,
+              "y": 387,
+              "size": 23,
+              "color": "#849486"
+            },
+            {
+              "id": "stone-2",
+              "kind": "rock",
+              "name": "Stone 2",
+              "x": 464,
+              "y": 275,
+              "size": 23,
+              "color": "#81847e"
+            },
+            {
+              "id": "stone-3",
+              "kind": "rock",
+              "name": "Stone 3",
+              "x": 658,
+              "y": 451,
+              "size": 23,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "stone-4",
+              "kind": "rock",
+              "name": "Stone 4",
+              "x": 722,
+              "y": 322,
+              "size": 23,
+              "color": "#6e5e86"
+            },
+            {
+              "id": "stone-5",
+              "kind": "rock",
+              "name": "Stone 5",
+              "x": 525,
+              "y": 221,
+              "size": 23,
+              "color": "#81847e"
+            },
+            {
+              "id": "stone-6",
+              "kind": "rock",
+              "name": "Stone 6",
+              "x": 349,
+              "y": 411,
+              "size": 23,
+              "color": "#849486"
+            },
+            {
+              "id": "stone-7",
+              "kind": "rock",
+              "name": "Stone 7",
+              "x": 187,
+              "y": 381,
+              "size": 23,
+              "color": "#849486"
+            }
+          ]
+        },
+        "assets": []
+      }
+    ],
+    "notes": [],
+    "attachments": []
+  },
+  "assets": {}
+}

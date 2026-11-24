@@ -1,0 +1,380 @@
+{
+  "$id": "https://zirbel.app/contracts/saved-proposal.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "baseRevision": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "branch": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "x-zirbel-prepare": "trim"
+    },
+    "operations": {
+      "minItems": 1,
+      "maxItems": 160,
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "writeGame"
+              },
+              "game": {
+                "type": "object",
+                "properties": {
+                  "html": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 400000,
+                    "x-zirbel-prepare": "trim"
+                  },
+                  "maxPlayers": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4
+                  },
+                  "registerObjects": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "html"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "op",
+              "game"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "add"
+              },
+              "object": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "tree",
+                      "rock",
+                      "crystal",
+                      "campfire",
+                      "cabin",
+                      "water",
+                      "bridge",
+                      "spawn",
+                      "placeholder",
+                      "npc",
+                      "enemy"
+                    ]
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "x-zirbel-prepare": "trim"
+                  },
+                  "x": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 960
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 600
+                  },
+                  "size": {
+                    "type": "number",
+                    "minimum": 8,
+                    "maximum": 340
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[a-fA-F0-9]{6}$"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "health": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "power": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20
+                  },
+                  "requires": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "name",
+                  "x",
+                  "y",
+                  "size",
+                  "color"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "op",
+              "object"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "update"
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+              },
+              "changes": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "x-zirbel-prepare": "trim"
+                  },
+                  "x": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 960
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 600
+                  },
+                  "size": {
+                    "type": "number",
+                    "minimum": 8,
+                    "maximum": 340
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[a-fA-F0-9]{6}$"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "health": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "power": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20
+                  },
+                  "requires": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "op",
+              "id",
+              "changes"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "remove"
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+              }
+            },
+            "required": [
+              "op",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "background"
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[a-fA-F0-9]{6}$"
+              }
+            },
+            "required": [
+              "op",
+              "color"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "addAsset"
+              },
+              "asset": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 140
+                  },
+                  "author": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 140
+                  },
+                  "source": {
+                    "type": "string",
+                    "pattern": "^https?:\\/\\/",
+                    "x-zirbel-prepare": "url"
+                  },
+                  "license": {
+                    "type": "string",
+                    "enum": [
+                      "CC0-1.0",
+                      "CC-BY-4.0",
+                      "MIT",
+                      "local-only",
+                      "unknown"
+                    ]
+                  },
+                  "credit": {
+                    "type": "string",
+                    "maxLength": 600
+                  },
+                  "hash": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "media": {
+                    "type": "string",
+                    "enum": [
+                      "image/png",
+                      "image/jpeg",
+                      "image/webp"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "author",
+                  "source",
+                  "license",
+                  "credit",
+                  "hash",
+                  "media"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "op",
+              "asset"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "removeAsset"
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+              }
+            },
+            "required": [
+              "op",
+              "id"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "projectId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "date": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    }
+  },
+  "required": [
+    "baseRevision",
+    "branch",
+    "label",
+    "operations",
+    "id",
+    "projectId",
+    "date"
+  ],
+  "additionalProperties": false
+}

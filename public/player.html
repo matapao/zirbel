@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Zirbel · Play</title>
+  <link rel="stylesheet" href="player.css">
+  <script type="module" src="player.js"></script>
+</head>
+<body>
+  <main class="player">
+    <header>
+      <div><span class="mark">✦</span> <strong id="game-title">Zirbel</strong> <small id="badge"></small></div>
+      <div class="tools"><span id="connection" role="status"></span><button id="full" type="button" title="Full screen" aria-label="Full screen">⛶</button><button id="leave" type="button" hidden>Leave</button></div>
+    </header>
+    <section id="lobby" class="lobby">
+      <form id="join-form" hidden>
+        <p class="eyebrow">ZIRBEL · PRIVATE ROOM</p>
+        <h1 id="lobby-title"></h1>
+        <p id="lobby-description"></p>
+        <label>Display name <input name="name" maxlength="24" required placeholder="Explorer" autocomplete="nickname"></label>
+        <label>Join as <select name="role"><option value="player">Player</option><option value="spectator">Spectator</option></select></label>
+        <button class="primary">Join game</button>
+      </form>
+      <p id="message" role="status">Opening the game…</p>
+    </section>
+    <section class="game" id="game" hidden>
+      <canvas id="view" width="960" height="600" aria-label="Game view"></canvas>
+      <div id="board" hidden aria-label="Tessellate board"></div>
+      <div id="touch" aria-label="Movement controls" hidden>
+        <button type="button" aria-label="Move up" data-key="ArrowUp">↑</button>
+        <button type="button" aria-label="Move left" data-key="ArrowLeft">←</button>
+        <button type="button" aria-label="Move down" data-key="ArrowDown">↓</button>
+        <button type="button" aria-label="Move right" data-key="ArrowRight">→</button>
+      </div>
+      <section id="quest-panel" aria-label="Quest" hidden>
+        <p id="quest-message" role="status"></p>
+        <div id="quest-controls">
+          <button id="interact" type="button">Interact (E)</button>
+          <button id="attack" type="button" hidden>Attack</button>
+          <button id="guard" type="button" hidden>Guard</button>
+          <button id="restart-quest" type="button" hidden>Try again</button>
+        </div>
+      </section>
+      <footer><span id="instructions"></span><strong id="score" role="status"></strong><button id="reset" type="button" hidden>New round</button></footer>
+    </section>
+    <p id="error" class="error" role="status"></p>
+  </main>
+</body>
+</html>

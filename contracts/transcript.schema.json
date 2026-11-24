@@ -1,0 +1,26 @@
+{
+  "$id": "https://zirbel.app/contracts/transcript.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "transcript": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "intent": {
+      "type": "string",
+      "enum": [
+        "Inspiration",
+        "Material to copy",
+        "Text to transcribe",
+        "Motion to study",
+        "Asset to place"
+      ]
+    }
+  },
+  "required": [
+    "transcript",
+    "intent"
+  ],
+  "additionalProperties": false
+}

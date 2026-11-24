@@ -1,0 +1,13 @@
+# check=error=true
+# Native Go host: one static binary on distroless, no Node (about 12 MB).
+# Build first: pnpm build && pnpm build:host linux/amd64 linux/arm64 linux/arm/7
+# Then: docker buildx build -f Dockerfile.host --platform linux/amd64,linux/arm64,linux/arm/v7 .
+FROM gcr.io/distroless/static-debian12:nonroot
+ARG TARGETARCH
+ARG TARGETVARIANT
+COPY --chown=nonroot:nonroot host/bin/zirbel-host-linux-${TARGETARCH}${TARGETVARIANT} /zirbel-host
+# Creates /data owned by the non-root user, so a fresh volume is writable.
+COPY --chown=nonroot:nonroot host/webfiles/web/.gitkeep /data/.keep
+VOLUME ["/data"]
+EXPOSE 4174
+ENTRYPOINT ["/zirbel-host", "--host-only", "--data", "/data"]

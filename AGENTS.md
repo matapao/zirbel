@@ -1,0 +1,49 @@
+# AGENTS.md
+
+Zirbel: local web-game editor, player and host. TypeScript ESM on Node 24 (esbuild), plus a native Go host in `host/`. No framework.
+
+## Commands
+
+```sh
+pnpm install --frozen-lockfile && pnpm test  # build + node:test unit tests (must pass)
+pnpm check               # tsc --noEmit, strict
+pnpm lint                # oxlint --type-aware + knip + the 500-line limit, must pass
+pnpm check:go            # gofmt, vet, golangci-lint, deadcode, nilaway, stdlib-only, go test -race; --live adds govulncheck
+pnpm check:security      # lockfile, hidden characters, licences, Betterleaks, zizmor, actionlint, hadolint; --live adds OSV-Scanner, Semgrep
+pnpm coverage            # thresholds: Node 80/70/75% lines/branches/functions, Go 65% incl. contract tests
+pnpm format:check        # Prettier (.prettierrc.json); report-only in CI until the one-time reformat
+pnpm contracts           # regenerate contracts/*.schema.json from the Zod schemas (CI runs it with --check)
+pnpm build:host          # embed dist/web into the Go host binary (host/bin/)
+pnpm test:browser        # Playwright e2e (first: pnpm exec playwright install chromium)
+```
+
+The two `link:` dependencies in `package.json` resolve from sibling checkouts. Type errors in `harness-activity.ts` or `local-harnesses.ts` usually mean a sibling checkout is not at its pinned revision.
+
+## Layout
+
+| Path | Role |
+| --- | --- |
+| `packages/sdk` | Zod contracts, file formats, room protocol, browser client |
+| `packages/core` | Project revisions, release validation, room state |
+| `packages/server` | `cli.ts` launcher. `main.ts` editor API, MCP and harness runs. `host.ts` + `hosting.ts` headless host and listeners. `player-listener.ts` player HTTP and WebSocket |
+| `packages/web` | Workspace UI, player, sandboxed game SDK (`game-sdk.ts`) |
+| `packages/games` | Runtimes for older scene-based projects |
+| `public/` | Static HTML and CSS, copied into `dist/web` |
+| `contracts/` | Generated JSON Schemas (do not edit) and the Go loader that validates against them |
+| `host/` | Go host: `projects.go` store, `editor.go` API, `mcp.go`, `package.go` releases, `release.go` import checks, `rooms.go`, `listener.go` player |
+| `scripts/` | `build.mjs` (dist), `build-host.mjs` (Go binaries), `contracts.ts` (schemas) |
+| `test/` | `projects`, `rooms`, `mcp`, `harness` and `chat-control` `.test.ts` unit; `host.contract` + `editor.contract` run on both hosts; `browser.mjs` + `host-browser.ts` e2e. Go unit tests sit beside the code in `host/` and `contracts/` |
+
+## Rules
+
+- Validate all external input with the Zod schemas in `packages/sdk/contracts.ts`. Keep the existing size limits (48 MB files, 512 inspector entries).
+- Keep the trust boundary. The editor and MCP bind to loopback only. Game HTML runs in an opaque-origin sandbox with a CSP and never gets editor APIs, credentials or other projects. LAN guests reach only their room.
+- Never write credentials into the project data dir or the repo. Account files go in the per-user account dir.
+- `host.ts`, `hosting.ts` and everything they import must not import editor code (harnesses, MCP). That keeps `--host-only` around 80 MB for Raspberry Pi hosts.
+- Player and editor behaviour lives in both hosts. Change both; `test/editor.contract.test.ts` requires identical normalized responses. Harness chat is Node-only for now.
+- `game-sdk.ts` runs in every game frame. Keep it free of Zod and use `sdk/bounded.ts`.
+- Pin exact dependency versions, each at least a week old (pnpm-workspace.yaml). Run `pnpm check:security --live` after changing them; CI adds `pnpm audit`.
+- Go is standard library only (`check:go` fails on any module dependency). Tools run through `go run tool@version`.
+- No hand-written file over 500 lines; split by responsibility. The editor shares state through `ws` in `packages/web/state.ts`.
+- Keep changes small, typed (`strict`, `noUnusedLocals`) and covered by a test in `test/`.
+- `dist/` is generated. Don't edit it.

@@ -1,0 +1,395 @@
+{
+  "$id": "https://zirbel.app/contracts/release.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "manifest": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "number",
+          "const": 1
+        },
+        "releaseId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+        },
+        "gameId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+        },
+        "sourceRevision": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+        },
+        "template": {
+          "type": "string",
+          "enum": [
+            "blank",
+            "mosslight",
+            "tessellate",
+            "orbit-garden",
+            "lantern-quest"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "sdk": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "protocol": {
+          "type": "number",
+          "const": 1
+        },
+        "client": {
+          "type": "string",
+          "const": "player.html"
+        },
+        "simulation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "mosslight-v1",
+                "tessellate-v1",
+                "shared-state-v1"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "players": {
+          "type": "object",
+          "properties": {
+            "min": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4
+            }
+          },
+          "required": [
+            "min",
+            "max"
+          ],
+          "additionalProperties": false
+        },
+        "capabilities": {
+          "maxItems": 2,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "multiplayer",
+              "webgl"
+            ]
+          }
+        },
+        "permissions": {
+          "type": "object",
+          "properties": {
+            "play": {
+              "type": "boolean"
+            },
+            "download": {
+              "type": "boolean"
+            },
+            "remix": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "play",
+            "download",
+            "remix"
+          ],
+          "additionalProperties": false
+        },
+        "assets": {
+          "maxItems": 80,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 140
+              },
+              "author": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 140
+              },
+              "source": {
+                "type": "string",
+                "pattern": "^https?:\\/\\/",
+                "x-zirbel-prepare": "url"
+              },
+              "license": {
+                "type": "string",
+                "enum": [
+                  "CC0-1.0",
+                  "CC-BY-4.0",
+                  "MIT",
+                  "local-only",
+                  "unknown"
+                ]
+              },
+              "credit": {
+                "type": "string",
+                "maxLength": 600
+              },
+              "hash": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "media": {
+                "type": "string",
+                "enum": [
+                  "image/png",
+                  "image/jpeg",
+                  "image/webp"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "author",
+              "source",
+              "license",
+              "credit",
+              "hash",
+              "media"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "credits": {
+          "maxItems": 90,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "credit": {
+                "type": "string"
+              },
+              "license": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "credit",
+              "license"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "files": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^(?:chunks\\/)?[a-zA-Z0-9_-]+(?:\\.[a-zA-Z0-9_-]+)*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      },
+      "required": [
+        "format",
+        "releaseId",
+        "gameId",
+        "sourceRevision",
+        "title",
+        "sdk",
+        "protocol",
+        "client",
+        "simulation",
+        "players",
+        "capabilities",
+        "permissions",
+        "assets",
+        "credits",
+        "files"
+      ],
+      "additionalProperties": false
+    },
+    "scene": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+        },
+        "background": {
+          "type": "string",
+          "pattern": "^#[a-fA-F0-9]{6}$"
+        },
+        "objects": {
+          "maxItems": 160,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tree",
+                  "rock",
+                  "crystal",
+                  "campfire",
+                  "cabin",
+                  "water",
+                  "bridge",
+                  "spawn",
+                  "placeholder",
+                  "npc",
+                  "enemy"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "x-zirbel-prepare": "trim"
+              },
+              "x": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 960
+              },
+              "y": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 600
+              },
+              "size": {
+                "type": "number",
+                "minimum": 8,
+                "maximum": 340
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[a-fA-F0-9]{6}$"
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "health": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "power": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              },
+              "requires": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "name",
+              "x",
+              "y",
+              "size",
+              "color"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "id",
+        "background",
+        "objects"
+      ],
+      "additionalProperties": false
+    },
+    "game": {
+      "type": "object",
+      "properties": {
+        "html": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400000,
+          "x-zirbel-prepare": "trim"
+        },
+        "maxPlayers": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "registerObjects": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "html"
+      ],
+      "additionalProperties": false
+    },
+    "sceneHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "files": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^(?:chunks\\/)?[a-zA-Z0-9_-]+(?:\\.[a-zA-Z0-9_-]+)*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "assets": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "manifest",
+    "sceneHash",
+    "files",
+    "assets"
+  ],
+  "additionalProperties": false
+}
