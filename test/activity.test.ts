@@ -1,7 +1,7 @@
 // A harness turn's steps: the bounds every step and turn keeps, the Node editor's saved activity, and how the
 // harness's native events become steps.
 import assert from 'node:assert/strict';
-import { readdirSync, writeFileSync } from 'node:fs';
+import { readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { ENTRY_LIMIT, TITLE_LIMIT, TURN_LIMIT, TURN_STEPS, TurnLog, boundEntry } from '../packages/sdk/activity.ts';
@@ -78,6 +78,10 @@ test('the Node editor keeps each turn apart from the project file and validates 
   assert.throws(() => store.read(project, note), /could not be read/);
   writeFileSync(file, ' '.repeat(TURN_LIMIT * 4 + 1));
   assert.throws(() => store.read(project, note), /larger than a turn keeps/);
+  // A file that gives more than the size it reported (as one that grows while it is read) is refused, not read on.
+  rmSync(file);
+  symlinkSync('/dev/zero', file);
+  assert.throws(() => store.read(project, note), /changed while it was read/);
 });
 
 test('harness events become steps with their commands, output and diffs, without the game document', () => {
