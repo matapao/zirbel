@@ -268,8 +268,17 @@ test(
         ],
       },
     ];
+    // A long step, as a harness's own message often is, which must not push the thread sideways.
+    const activity = [
+      {
+        id: 'message:1',
+        kind: 'message',
+        title:
+          'The title screen shows a black polygon under the ship, so I will render the draws one by one, find the draw that makes it and then fix the mesh that draw comes from.',
+      },
+    ];
     const { page, errors } = await openEditor(t, (context, res) =>
-      answer(res, { action: 'reply', message: 'Done asking.' }, { asks }),
+      answer(res, { action: 'reply', message: 'Done asking.' }, { asks, activity }),
     );
     const ui = controls(page);
     await ui.send('Find the black polygon.');
@@ -294,6 +303,13 @@ test(
     await card.locator('details.ask-details > summary').click();
     assert.equal(await card.locator('pre.command').isVisible(), true);
     await card.getByText('Folder: the turn’s folder').waitFor();
+    // Long steps, the card and its command wrap inside the thread: nothing pushes it sideways.
+    const fits = await page.locator('#activity-feed').evaluate((feed) => ({
+      wide: feed.scrollWidth <= feed.clientWidth,
+      left: feed.scrollLeft,
+      card: feed.querySelector('.ask-card').getBoundingClientRect().right <= feed.getBoundingClientRect().right,
+    }));
+    assert.deepEqual(fits, { wide: true, left: 0, card: true });
     await card.getByRole('button', { name: 'Allow once' }).click();
 
     const outside = page.locator('.ask-card').filter({ hasText: 'Create an issue (github)' });
