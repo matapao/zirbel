@@ -33,7 +33,7 @@ The two `link:` dependencies in `package.json` are submodules in `deps/`, pinned
 | `contracts/` | Generated JSON Schemas (do not edit) and the Go loader that validates against them |
 | `host/` | Go host: `projects.go` store, `editor.go` API, `mcp.go`, `package.go` releases, `release.go` import checks, `rooms.go`, `listener.go` player |
 | `scripts/` | `build.mjs` (dist), `build-host.mjs` (Go binaries), `contracts.ts` (schemas) |
-| `test/` | `projects`, `rooms`, `mcp`, `harness` and `chat-control` `.test.ts` unit; `host.contract` + `editor.contract` run on both hosts; `browser.mjs` + `host-browser.ts` e2e. Go unit tests sit beside the code in `host/` and `contracts/` |
+| `test/` | `projects`, `rooms`, `mcp`, `harness` and `chat-control` `.test.ts` unit; `host.contract` + `editor.contract` run on both hosts; `browser.mjs` + `host-browser.ts` e2e (`fixture-editor.ts` starts the editor with a fake harness for `browser.mjs`). Go unit tests sit beside the code in `host/` and `contracts/` |
 
 ## Rules
 

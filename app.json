@@ -1,9 +1,0 @@
-{
-  "id": "zirbel",
-  "name": "Zirbel",
-  "icon": "public/favicon.svg",
-  "description": "Build, play and share a web game from your local workspace.",
-  "color": "#274336",
-  "asks": ["processors", "storage"],
-  "serve": { "command": "node", "args": ["dist/server.mjs", "--enable-mcp"], "port": 4173 }
-}

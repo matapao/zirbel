@@ -8,30 +8,24 @@ import type { RunSpec, SessionConfigOption } from 'celler/harness';
 import { chatStreamType, type ChatEvent, type ChatUpdate } from '../packages/sdk/chat-stream.ts';
 import { head } from '../packages/core/projects.ts';
 import { rights, legacyProject, install } from './helpers.ts';
+import { fakeHarnesses } from './fake-harnesses.ts';
 
-test('a hosted harness connection offers processors and runs each harness through the same chat path', async (t) => {
+test('a harness provider runs each harness through the same chat path', async (t) => {
   const { runHarnessChat } = await import('../packages/server/harness-chat.ts');
-  const { HarnessConnection } = await import('../packages/server/harness-connection.ts');
   const { projects } = install(t);
   const project = legacyProject(projects, 'blank', 'Untitled project');
-  const processors = [{ id: 'codex', name: 'Codex' }, { id: 'claude', name: 'Claude Code' }];
-  const requests: { processor: string; prompt: string; connectors: string[] }[] = [];
-  const harnesses = new HarnessConnection('http://127.0.0.1:7300', 'app-token', async (url, init, body) => {
-    assert.equal((init.headers as Record<string, string>).authorization, 'Bearer app-token');
-    if (url.endsWith('/access')) return { status: 200, data: { app: 'zirbel', storage: '/storage', processors } };
-    const run = JSON.parse(body!);
-    requests.push(run);
-    assert.deepEqual(run.connectors, []);
-    const message = JSON.parse(run.prompt.slice(run.prompt.lastIndexOf('\n') + 1)).message;
+  const requests: { processor: string; prompt: string }[] = [];
+  const harnesses = fakeHarnesses([{ id: 'codex', name: 'Codex' }, { id: 'claude', name: 'Claude Code' }], async (processor, prompt) => {
+    requests.push({ processor, prompt });
+    const message = JSON.parse(prompt.slice(prompt.lastIndexOf('\n') + 1)).message;
     const text = message === 'simple 3D game using three.js'
       ? { action: 'reply', message: 'What should the player do in the game?' }
       : message === 'A small 3D JRPG'
       ? { action: 'create', message: 'Created the quest draft.', title: 'Sunstone Road',
           game: { html: '<canvas></canvas><script>zirbel.register("prism", { facets: 7 })</script>' } }
       : { action: 'reply', message: 'Starting.' };
-    return { status: 200, data: { task: 'task-' + requests.length, stopReason: 'end_turn', text: JSON.stringify(text), usage: { totalTokens: 150 } } };
+    return { task: 'task-' + requests.length, stopReason: 'end_turn', text: JSON.stringify(text), usage: { totalTokens: 150 } };
   });
-  assert.deepEqual((await harnesses.describe()).processors, processors.map((processor) => ({ ...processor, activity: 'host' })));
   const send = (processor: string, text: string, projectId = project.id) => {
     const current = projects.read(projectId);
     return runHarnessChat(harnesses, processor, projects, current, head(current, 'main'), { text, branch: 'main', playing: false }, []);
@@ -54,18 +48,14 @@ test('a hosted harness connection offers processors and runs each harness throug
 
 test('workspace chat stays projectless until the harness creates a draft', async (t) => {
   const { runWorkspaceChat } = await import('../packages/server/harness-chat.ts');
-  const { HarnessConnection } = await import('../packages/server/harness-connection.ts');
   const { projects } = install(t);
-  const grants = { app: 'zirbel', storage: '/storage', processors: [{ id: 'codex', name: 'Codex' }], connectors: [] };
   const calls: Array<{game: unknown; recentConversation: unknown[]}> = [];
-  const harnesses = new HarnessConnection('http://127.0.0.1:7300', 'app-token', async (url, _init, body) => {
-    if (url.endsWith('/access')) return { status: 200, data: grants };
-    const { prompt } = JSON.parse(body!);
+  const harnesses = fakeHarnesses([{ id: 'codex', name: 'Codex' }], async (_processor, prompt) => {
     calls.push(JSON.parse(prompt.slice(prompt.lastIndexOf('\n') + 1)));
     const output = calls.length === 1 ? { action: 'reply', message: 'What should the player do?' } :
       { action: 'create', title: 'Sunstone Road', message: 'Here is a quest draft.',
         game: { html: '<button onclick="this.textContent=42">Play</button>' } };
-    return { status: 200, data: { task: 'task-' + calls.length, stopReason: 'end_turn', text: JSON.stringify(output) } };
+    return { task: 'task-' + calls.length, stopReason: 'end_turn', text: JSON.stringify(output) };
   });
   const clarification = await runWorkspaceChat(harnesses, 'codex', projects, 'A simple 3D game using Three.js', []);
   assert.ok('conversation' in clarification && clarification.conversation);
@@ -207,23 +197,6 @@ test('a chat connection closed before streaming does not start a harness turn', 
   const response = new ServerResponse(request);
   response.destroy();
   await chatReply(request, response, async () => assert.fail('The harness must not start for a closed connection.'));
-});
-
-test('hosted harness runs use the caller cancellation signal without a Zirbel deadline', async () => {
-  const { HarnessConnection } = await import('../packages/server/harness-connection.ts');
-  const controller = new AbortController();
-  const connected = Promise.withResolvers<void>();
-  const harnesses = new HarnessConnection('http://127.0.0.1:7300', 'token', async (url, { signal }) => {
-    if (url.endsWith('/access')) return { status: 200, data: { app: 'zirbel', processors: [{ id: 'claude', name: 'Claude Code' }] } };
-    assert.equal(signal, controller.signal);
-    connected.resolve();
-    return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason), { once: true }));
-  });
-  const run = harnesses.start('claude', 'Make a game', { signal: controller.signal });
-  await connected.promise;
-  controller.abort(new Error('Stopped by the creator'));
-  await assert.rejects(run, /Stopped by the creator/);
-  await assert.rejects(harnesses.start('claude', 'Make a game', { selection: { model: 'native-model' } }), /host does not expose model settings/);
 });
 
 test('the model picker reads native choices before the first prompt and applies only the selected variant options', async (t) => {

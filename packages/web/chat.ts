@@ -261,7 +261,7 @@ export function setupActivity() {
       const turn: ActivityTurn = { name, text, references: refs, status: 'Waiting for ' + name + '…', pending: true,
         showPrompt: true, connection, entries: new Map(), actions: new Map() };
       const messages = {
-        running: processor?.activity === 'host' ? name + ' is working… Check the host’s Activity for live updates and requests.' : name + ' is working…',
+        running: name + ' is working…',
         responding: name + ' is preparing a response…',
         validating: 'Checking the harness response…',
       };

@@ -48,8 +48,9 @@ async function openEditor(t, run) {
     await closed;
   }
   async function startHost(port) {
-    host = spawn(process.execPath, ['dist/server.mjs', '--port', port, '--data', data], {
-      env: { ...process.env, APP_TOKEN: '', HARNESS_URL: 'http://127.0.0.1:' + harnessHost.address().port, HARNESS_TOKEN: 'fixture' },
+    host = spawn(process.execPath, ['--experimental-transform-types', '--disable-warning=ExperimentalWarning',
+      'test/fixture-editor.ts', '--port', port, '--data', data], {
+      env: { ...process.env, FIXTURE_HARNESS_URL: 'http://127.0.0.1:' + harnessHost.address().port },
       stdio: ['ignore', 'pipe', 'inherit'],
     });
     const lines = createInterface({ input: host.stdout });
@@ -195,7 +196,7 @@ test('chat creates and edits an original executable game with a live inspector',
   assert.equal(await game.getByRole('button', { name: '17', exact: true }).isVisible(), true);
   await send('Keep building until I stop the turn.');
   await hostRunStarted.promise;
-  await progress.filter({ hasText: 'Check the host’s Activity' }).waitFor();
+  await progress.filter({ hasText: 'Test harness is working…' }).waitFor();
   await stop.click();
   await progress.filter({ hasText: 'Turn stopped.' }).waitFor();
   await hostRunClosed.promise;

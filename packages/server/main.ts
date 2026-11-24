@@ -15,9 +15,7 @@ import { Releases } from '../core/releases.ts';
 import { body, bytes, checkOrigin, fail, lanAddresses, listen, reply, requestUrl, secure, staticFile } from './http.ts';
 import { ChatRuns } from './chat-runs.ts';
 import { Rooms } from '../core/rooms.ts';
-import { shellEnvironment } from './app-shell.ts';
 import { importReleases, Players, readLanHost, readPort, stopOnSignal } from './hosting.ts';
-import { hostedHarnesses } from './harness-connection.ts';
 import { localHarnesses } from './local-harnesses.ts';
 import { modelId, modelSelection, processorId, type Processors } from './processors.ts';
 import { Mcp, stdioMcp } from './mcp.ts';
@@ -33,13 +31,10 @@ const { values, positionals } = parseArgs({
   },
 });
 
-const webRoot = fileURLToPath(new URL('./web/', import.meta.url));
-const shell = !positionals.length ? shellEnvironment() : undefined;
-const hosted = !positionals.length ? hostedHarnesses() : undefined;
-const port = readPort(values.port ?? (shell ? process.env.PORT : undefined) ?? process.env.ZIRBEL_PORT ?? '4173');
+const port = readPort(values.port ?? process.env.ZIRBEL_PORT ?? '4173');
 const playerPort = readPort(values['player-port'] ?? process.env.ZIRBEL_PLAYER_PORT ?? '4174');
 const lanHost = readLanHost(values['player-host'] ?? process.env.ZIRBEL_LAN_HOST);
-const enableMcp = Boolean(shell) || values['enable-mcp'] || process.env.ZIRBEL_ENABLE_MCP === '1';
+const enableMcp = values['enable-mcp'] || process.env.ZIRBEL_ENABLE_MCP === '1';
 const boot = newId();
 
 function browser(url: string) {
@@ -54,9 +49,11 @@ const permissionsInput = branchInput.extend({ baseRevision: id.optional(), permi
 const assetMetadata = asset.omit({ id: true, hash: true });
 const shareDefaults = { play: true, download: true, remix: true };
 
-async function start() {
-  const storage = shell ? (await hosted?.describe())?.storage : undefined;
-  const root = resolve(values.data ?? process.env.ZIRBEL_DATA ?? storage ?? join(homedir(), '.zirbel'));
+// What the editor is built from: tests pass their own harnesses and the built web files.
+type EditorOptions = { harnesses?: (root: string) => Processors; webRoot?: string };
+
+async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileURLToPath(new URL('./web/', import.meta.url)) }: EditorOptions) {
+  const root = resolve(values.data ?? process.env.ZIRBEL_DATA ?? join(homedir(), '.zirbel'));
   // Built before the claim so a missing build fails without holding the directory.
   const projects = new Projects(root);
   const releases = new Releases(projects, webRoot);
@@ -68,10 +65,10 @@ async function start() {
     if (claim.editor && claim.port) {
       const url = 'http://127.0.0.1:' + claim.port;
       try {
-        const response = await fetch(url + (shell?.path ?? '') + '/api/health', { signal: AbortSignal.timeout(2000) });
+        const response = await fetch(url + '/api/health', { signal: AbortSignal.timeout(2000) });
         const info = await response.json() as { boot?: string };
         if (response.ok && info.boot === claim.boot) {
-          if (values.open) browser(url + (shell?.path ?? '') + '/');
+          if (values.open) browser(url + '/');
           console.log(JSON.stringify({ editor: url, pid: claim.pid, existing: true }));
           return;
         }
@@ -98,7 +95,7 @@ async function start() {
 
   try {
     projects.archiveLegacyPreviews();
-    const harnesses: Processors = hosted ?? localHarnesses(root);
+    const harnesses = harnessesFor(root);
     const chat = new ChatRuns();
     const mcp = new Mcp(projects);
     importReleases(releases, values.import ?? []);
@@ -126,15 +123,11 @@ async function start() {
           if (!result) { response.writeHead(202); response.end(); } else reply(response, result);
           return;
         }
-        if (shell) {
-          if (!url.pathname.startsWith(shell.path + '/')) throw new ZirbelError(404, 'Route does not exist.');
-          url.pathname = url.pathname.slice(shell.path.length);
-        }
         const [, prefix, resource, pathID, action, tail, ...extra] = url.pathname.split('/');
         if (prefix !== 'api') {
           if (method !== 'GET') throw new ZirbelError(404, 'Route does not exist.');
           const playerOrigin = 'http://127.0.0.1:' + local.port;
-          response.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src " + playerOrigin + "; connect-src 'self'; base-uri 'none'; frame-ancestors " + (shell?.shellOrigins.join(' ') || "'none'") + "; form-action 'self'");
+          response.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src " + playerOrigin + "; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
           staticFile(response, webRoot, url.pathname === '/' ? 'index.html' : url.pathname.slice(1));
           return;
         }
@@ -348,25 +341,28 @@ async function start() {
     editor.requestTimeout = 25_000;
     editor.headersTimeout = 10_000;
     editorPort = await listen(editor, port, '127.0.0.1');
-    const local = await players.openLocal(0, [editorOrigin(), 'http://localhost:' + editorPort, ...(shell?.shellOrigins ?? [])]);
+    const local = await players.openLocal(0, [editorOrigin(), 'http://localhost:' + editorPort, ]);
     if (values.lan) await players.startLan();
     for (const id of values.release ?? []) console.log(JSON.stringify(await players.start(id, Boolean(values.lan))));
     const info = { pid: process.pid, port: editorPort, boot, editor: true };
     atomicWrite(serviceFile, JSON.stringify(info));
     console.log(JSON.stringify({ pid: process.pid, data: root, editor: editorOrigin(),
       player: 'http://127.0.0.1:' + local.port, mcp: Boolean(enableMcp) }));
-    if (values.open) browser(editorOrigin() + (shell?.path ?? '') + '/');
+    if (values.open) browser(editorOrigin() + '/');
     process.once('SIGINT', () => void stopOnSignal(stop));
     process.once('SIGTERM', () => void stopOnSignal(stop));
   } catch (error) { await stop(); throw error; }
 }
 
-try {
-  if (values.help) console.log('Zirbel\n  start: [--data DIR] [--port PORT] [--open] [--enable-mcp]\n  host: --host-only [--lan] [--player-port PORT] [--player-host HOST] [--import FILE] [--release ID]\n  mcp: set ZIRBEL_MCP_TOKEN and optional ZIRBEL_MCP_URL');
-  else if (positionals[0] === 'mcp') await stdioMcp(process.env.ZIRBEL_MCP_URL ?? 'http://127.0.0.1:4173/mcp', z.string().min(1).parse(process.env.ZIRBEL_MCP_TOKEN));
-  else if (positionals.length) throw new Error('Unknown command. Use --help.');
-  else await start();
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
+/** Runs the command line: the editor, `--help` or the stdio MCP bridge. */
+export async function main(options: EditorOptions = {}) {
+  try {
+    if (values.help) console.log('Zirbel\n  start: [--data DIR] [--port PORT] [--open] [--enable-mcp]\n  host: --host-only [--lan] [--player-port PORT] [--player-host HOST] [--import FILE] [--release ID]\n  mcp: set ZIRBEL_MCP_TOKEN and optional ZIRBEL_MCP_URL');
+    else if (positionals[0] === 'mcp') await stdioMcp(process.env.ZIRBEL_MCP_URL ?? 'http://127.0.0.1:4173/mcp', z.string().min(1).parse(process.env.ZIRBEL_MCP_TOKEN));
+    else if (positionals.length) throw new Error('Unknown command. Use --help.');
+    else await start(options);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }

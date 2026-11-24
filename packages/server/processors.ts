@@ -7,7 +7,7 @@ export const processorId = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
 export const modelId = z.string().min(1).max(240);
 export const modelSelection = z.strictObject({ model: modelId.optional(), effort: modelId.optional() });
 
-export type Processor = { id: string; name: string; ready?: boolean; signIn?: boolean; detail?: string; activity?: 'zirbel' | 'host'; modelSettings?: boolean };
+export type Processor = { id: string; name: string; ready?: boolean; signIn?: boolean; detail?: string; activity?: 'zirbel'; modelSettings?: boolean };
 type ProcessorReply = { name: string; task: string; stopReason: string; text?: string; usage?: { totalTokens: number } };
 export type SignInStatus = { status: 'pending' | 'complete' | 'failed'; url?: string };
 export type ProcessorRun = {

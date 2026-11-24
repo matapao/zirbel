@@ -2,4 +2,4 @@
 // everything else loads the full editor (harnesses and MCP).
 const args = process.argv.slice(2);
 if (args.includes('--host-only') && !args.includes('--help')) await import('./host.ts');
-else await import('./main.ts');
+else await (await import('./main.ts')).main();
