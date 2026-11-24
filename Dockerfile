@@ -1,5 +1,5 @@
 # check=error=true
-FROM node:24.22.3-bookworm-slim
+FROM node:26.13.0-bookworm-slim
 WORKDIR /app
 COPY dist/ /app/
 RUN mkdir /data && chown node:node /data
