@@ -25,7 +25,7 @@
     "mcp": "node dist/server.mjs mcp"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.101.0",
+    "@agentclientprotocol/claude-agent-acp": "0.108.0",
     "@agentclientprotocol/codex-acp": "2.7.0",
     "@matapao/vindu": "link:../vindu",
     "celler": "link:../celler",
