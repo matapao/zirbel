@@ -139,6 +139,8 @@ func browser(target string) {
 	case "windows":
 		opener = []string{"rundll32.exe", "url.dll,FileProtocolHandler"}
 	}
+	// The program is one of the three fixed openers above; target is this editor's own loopback URL.
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	_ = exec.CommandContext(context.Background(), opener[0], append(opener[1:], target)...).Start() // #nosec G204 -- fixed programs, our own URL
 }
 
