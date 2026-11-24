@@ -12,7 +12,7 @@ pnpm lint && pnpm check:go && pnpm check:security && pnpm coverage
 pnpm start --open                             # editor at http://127.0.0.1:4173/
 ```
 
-`pnpm build:host && host/bin/zirbel-host --open` runs the same editor natively, without Node. It has no harness chat yet, so use an MCP agent there. Projects live in `~/.zirbel`. Override with `--data DIR` or `ZIRBEL_DATA`. Harness credentials live outside the data dir (`ZIRBEL_ACCOUNT_DIR` overrides). `node dist/server.mjs --help` lists every flag.
+`pnpm build:host && host/bin/zirbel-host --open` runs the same editor natively, without Node. It has no harness chat yet, so use an MCP agent there: start it with `--enable-mcp` and connect over loopback `POST /mcp` with a project grant, or over stdio with `node dist/server.mjs mcp` and `ZIRBEL_MCP_TOKEN`. Projects live in `~/.zirbel`. Override with `--data DIR` or `ZIRBEL_DATA`. Harness credentials live outside the data dir (`ZIRBEL_ACCOUNT_DIR` overrides). `node dist/server.mjs --help` lists every flag.
 
 ## Use
 
@@ -37,12 +37,12 @@ A revision is one HTML document. Module scripts can `import * as THREE from 'thr
 Edit on a laptop, export a release, and host it anywhere. The Node and Go hosts are interchangeable on one data directory; the contract tests in `test/` run against both.
 
 ```sh
-pnpm build:host linux/arm/7            # native Go host, e.g. for a Raspberry Pi 2B -> host/bin/
+pnpm build:host linux/arm64            # native Go host for an os/arch[/arm] target -> host/bin/
 zirbel-host --host-only --lan --data DIR --import release.json --release ID
 node --max-semi-space-size=2 dist/server.mjs --host-only --lan ...   # same flags on Node
 ```
 
-The Go host is one static binary of about 10 MB with the player files embedded, so it needs no Node. On an M4 Mac with 24 players it used 25–31 MB of physical memory against 60–87 MB for Node. Both stayed under 10% of one core, with Go at 1.5–3x Node's CPU per message so far, but able to use every core. Other targets: `linux/arm64`, `linux/amd64`, `darwin/arm64`, `windows/amd64`. A release plays only on a host built from the same runtime. For Docker, build first, then `docker build -f Dockerfile.host .` (Go, distroless) or `docker build .` (Node), and run with `-p 4174:4174 -v DIR:/data --lan --player-host HOST`. External agents use `--enable-mcp` and loopback `POST /mcp` with a project grant, or stdio via `node dist/server.mjs mcp` and `ZIRBEL_MCP_TOKEN`.
+The Go host is one static binary with the player files embedded, so it needs no Node. A release plays only on a host built from the same runtime. For Docker, build first, then `docker build -f Dockerfile.host .` (Go) or `docker build .` (Node), and run the image with `-p 4174:4174 -v DIR:/data --lan --player-host HOST`.
 
 ## Security
 

@@ -39,7 +39,7 @@ The two `link:` dependencies in `package.json` resolve from sibling checkouts. T
 - Validate all external input with the Zod schemas in `packages/sdk/contracts.ts`. Keep the existing size limits (48 MB files, 512 inspector entries).
 - Keep the trust boundary. The editor and MCP bind to loopback only. Game HTML runs in an opaque-origin sandbox with a CSP and never gets editor APIs, credentials or other projects. LAN guests reach only their room.
 - Never write credentials into the project data dir or the repo. Account files go in the per-user account dir.
-- `host.ts`, `hosting.ts` and everything they import must not import editor code (harnesses, MCP). That keeps `--host-only` around 80 MB for Raspberry Pi hosts.
+- `host.ts`, `hosting.ts` and everything they import must not import editor code (harnesses, MCP). That keeps `--host-only` small for low-memory hosts.
 - Player and editor behaviour lives in both hosts. Change both; `test/editor.contract.test.ts` requires identical normalized responses. Harness chat is Node-only for now.
 - `game-sdk.ts` runs in every game frame. Keep it free of Zod and use `sdk/bounded.ts`.
 - Pin exact dependency versions, each at least a week old (pnpm-workspace.yaml). Run `pnpm check:security --live` after changing them; CI adds `pnpm audit`.
