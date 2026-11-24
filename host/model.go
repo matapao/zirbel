@@ -188,6 +188,10 @@ func normalizeGame(game *Game) error {
 		return err
 	}
 	game.HTML = html
+	// gameDocument's refinement on a built game's files; the schema checks each path.
+	if _, entry := game.Files["index.html"]; entry || len(game.Files) > maxGameFiles {
+		return fail(http.StatusBadRequest, "game.files · Provide up to 1000 files besides index.html.")
+	}
 	if game.MaxPlayers == 0 {
 		game.MaxPlayers = 1
 	}

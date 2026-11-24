@@ -124,8 +124,8 @@ func (l *Listener) serve(w http.ResponseWriter, r *http.Request) error {
 		" connect-src 'self' ws://"+r.Host+"; frame-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors "+frame)
 	get := r.Method == http.MethodGet
 	switch {
-	case route == "game" && get && len(parts) == 1 && room.Release.Game != nil && same(parts[0], room.DocumentKey):
-		return l.serveGame(w, r, room)
+	case route == "game" && get && len(parts) >= 1 && room.Release.Game != nil && same(parts[0], room.DocumentKey):
+		return l.serveGame(w, r, room, strings.Join(parts[1:], "/"))
 	case route == "join" && get && len(parts) == 0:
 		// room.ID is a server-generated hex ID from the room table, not request input.
 		// nosemgrep: go.lang.security.injection.raw-html-format.raw-html-format
@@ -144,7 +144,7 @@ func (l *Listener) serve(w http.ResponseWriter, r *http.Request) error {
 		}{summary: room.Summary(), Scene: room.Release.SceneRaw}
 		if game := room.Release.Game; game != nil {
 			info.RegisterObjects = game.RegisterObjects
-			info.GameURL = "/game/" + room.ID + "/" + room.DocumentKey
+			info.GameURL = gamePath(room)
 		}
 		reply(w, http.StatusOK, info)
 		return nil

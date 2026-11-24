@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/base64"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -25,19 +27,30 @@ type gamePageEntry struct {
 	gzip   []byte
 }
 
-// gamePage mirrors packages/server/game-page.ts.
-func gamePage(release *Release, runtime, ancestors string) (policy, html string) {
+// gamePath is the game document's own address; a built game's files sit beside it.
+func gamePath(room *Room) string { return "/game/" + room.ID + "/" + room.DocumentKey + "/" }
+
+// gamePage mirrors packages/server/game-page.ts. base is the document's own
+// address: a game imported as a built folder loads its files from beside it,
+// and only those.
+func gamePage(release *Release, runtime, ancestors, base string) (policy, html string) {
 	assets := map[string]string{}
 	for _, asset := range release.Manifest.Assets {
 		assets[asset.ID] = "data:" + asset.Media + ";base64," + release.Assets[asset.Hash]
 	}
-	policy = strings.Join([]string{
+	own, scripts, connect := "", "", "'none'"
+	workers := []string{}
+	if release.Game != nil && release.Game.Files != nil {
+		// Loaders turn embedded data into blob: and data: URLs and read them back; neither reaches the network.
+		own, scripts, connect = " "+base, "'wasm-unsafe-eval' "+base+" ", base+" data: blob:"
+		workers = []string{"worker-src " + base + " blob:"}
+	}
+	policy = strings.Join(slices.Concat([]string{
 		"sandbox allow-scripts", "default-src 'none'",
-		"script-src 'unsafe-inline' " + runtime + "game-sdk.js " + runtime + "three.module.js",
-		"style-src 'unsafe-inline'", "img-src data: blob:", "media-src data: blob:", "font-src data:",
-		"connect-src 'none'", "frame-src 'none'", "form-action 'none'", "base-uri 'none'",
-		"frame-ancestors " + ancestors,
-	}, "; ")
+		"script-src 'unsafe-inline' " + scripts + runtime + "game-sdk.js " + runtime + "three.module.js",
+		"style-src 'unsafe-inline'" + own, "img-src data: blob:" + own, "media-src data: blob:" + own, "font-src data:" + own,
+		"connect-src " + connect,
+	}, workers, []string{"frame-src 'none'", "form-action 'none'", "base-uri 'none'", "frame-ancestors " + ancestors}), "; ")
 	registration := ""
 	if game := release.Game; game.RegisterObjects != nil && !*game.RegisterObjects {
 		registration = ` data-registration="off"`
@@ -48,7 +61,9 @@ func gamePage(release *Release, runtime, ancestors string) (policy, html string)
 		`<script crossorigin="anonymous" src="` + runtime + `game-sdk.js"></script>`
 	return policy, "<!doctype html>" + bootstrap + doctype.ReplaceAllString(release.Game.HTML, "")
 }
-func (l *Listener) serveGame(w http.ResponseWriter, r *http.Request, room *Room) error {
+
+// serveGame serves the game document, or the built game's file at file.
+func (l *Listener) serveGame(w http.ResponseWriter, r *http.Request, room *Room, file string) error {
 	origin := "http://" + r.Host
 	value, _ := room.gamePages.LoadOrStore(origin, &gamePageEntry{})
 	entry, ok := value.(*gamePageEntry)
@@ -56,15 +71,29 @@ func (l *Listener) serveGame(w http.ResponseWriter, r *http.Request, room *Room)
 		return errors.New("the game page cache holds an unexpected value")
 	}
 	entry.once.Do(func() {
-		policy, html := gamePage(room.Release, origin+"/runtime/"+room.ID+"/", l.ancestors())
+		policy, html := gamePage(room.Release, origin+"/runtime/"+room.ID+"/", l.ancestors(), origin+gamePath(room))
 		var out bytes.Buffer
 		writer := gzip.NewWriter(&out)
 		_, _ = writer.Write([]byte(html))
 		_ = writer.Close()
 		entry.policy, entry.html, entry.gzip = policy, []byte(html), out.Bytes()
 	})
+	// A file opened on its own stays in the game's sandbox too.
 	w.Header().Set("content-security-policy", entry.policy)
 	w.Header().Set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+	if file != "" {
+		hash, ok := room.Release.Game.Files[file]
+		if !ok {
+			return fail(http.StatusNotFound, "Game file does not exist.")
+		}
+		data, err := base64.StdEncoding.DecodeString(room.Release.Assets[hash])
+		if err != nil {
+			return err
+		}
+		// The game's origin is opaque, so its module scripts, fonts and fetches are CORS requests.
+		bytesReply(w, data, gameFileType(file), map[string]string{"access-control-allow-origin": "*"})
+		return nil
+	}
 	if !acceptsGzip(r) {
 		bytesReply(w, entry.html, typeFor(".html"), nil)
 		return nil

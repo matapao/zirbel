@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { chatUsage, type Project, type Reference, type Revision } from '../sdk/contracts.ts';
 import { chatControl } from '../sdk/chat-control.ts';
-import { gameDocument, type RegisteredObject } from '../sdk/game.ts';
+import { editableGame, type RegisteredObject } from '../sdk/game.ts';
 import { head, ZirbelError, type Projects } from '../core/projects.ts';
 import { applyChatControl, finishChatEdit, startFromChat, type ChatReply } from '../core/chat.ts';
 import type { ProcessorRun, Processors } from './processors.ts';
@@ -9,8 +9,8 @@ import type { ProcessorRun, Processors } from './processors.ts';
 const message = z.string().trim().min(1).max(3000);
 const plan = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('reply'), message }),
-  z.strictObject({ action: z.literal('create'), message, title: z.string().trim().min(1).max(80), game: gameDocument }),
-  z.strictObject({ action: z.literal('edit'), message, game: gameDocument }),
+  z.strictObject({ action: z.literal('create'), message, title: z.string().trim().min(1).max(80), game: editableGame }),
+  z.strictObject({ action: z.literal('edit'), message, game: editableGame }),
 ]);
 
 export const workspaceHistory = z.array(z.strictObject({

@@ -116,7 +116,7 @@ test('game documents carry an HTTP sandbox and only the room-scoped game SDK', a
   const { projects, releases } = install(t);
   const game = { html: '<main>original source</main>', maxPlayers: 1 };
   const p = projects.createGame('Independent game', game);
-  const page = gamePage(releases.package(p.id, 'main', rights, false), 'http://localhost:4000/runtime/test/', "'self'");
+  const page = gamePage(releases.package(p.id, 'main', rights, false), 'http://localhost:4000/runtime/test/', "'self'", 'http://localhost:4000/game/test/key/');
   assert.match(page.policy, /sandbox allow-scripts;/);
   assert.doesNotMatch(page.policy, /allow-same-origin|unsafe-eval/);
   assert.match(page.policy, /connect-src 'none'/);

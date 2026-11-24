@@ -31,6 +31,9 @@ func applyOperations(base *Revision, operations []Operation) (*Preview, error) {
 	for _, operation := range operations {
 		switch operation.Op {
 		case "writeGame":
+			if game != nil && game.Files != nil {
+				return nil, fail(http.StatusUnprocessableEntity, "This game was imported as a built folder. Import a new build to change it.")
+			}
 			game = operation.Game
 		case "background":
 			background = operation.Color

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -366,5 +366,24 @@ test('new projects can start turns while another project is building', { timeout
   await feed.getByText(first.reply).waitFor();
   assert.equal(await prompt.inputValue(), 'Unsent first-project draft');
   assert.equal(await stop.isVisible(), false);
+  assert.deepEqual(errors, []);
+});
+
+test('a built game folder imports from the library and opens as a project', { timeout: 45_000 }, async (t) => {
+  const { page, errors } = await openEditor(t, (_context, res) => res.writeHead(400).end('{}'));
+  const parent = await mkdtemp(join(tmpdir(), 'zirbel-folder-'));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const folder = join(parent, 'Lantern Run');
+  await mkdir(join(folder, 'assets'), { recursive: true });
+  await writeFile(join(folder, 'index.html'), '<!doctype html><p>built</p><script type="module" src="./assets/main.js"></script>');
+  await writeFile(join(folder, 'assets', 'main.js'), 'document.body.dataset.ready = "yes";');
+  await writeFile(join(folder, '.DS_Store'), 'not a game file');
+  await page.getByRole('button', { name: 'Library', exact: true }).click();
+  await page.getByRole('button', { name: 'Import game folder…' }).click();
+  await page.getByLabel('Built game folder').setInputFiles(folder);
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.locator('#status').filter({ hasText: 'Imported 2 files. Skipped: .DS_Store.' }).waitFor();
+  // The new project is the one the picker shows.
+  await page.waitForFunction(() => document.querySelector('#project')?.selectedOptions[0]?.textContent === 'Lantern Run');
   assert.deepEqual(errors, []);
 });

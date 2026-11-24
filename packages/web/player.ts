@@ -102,7 +102,7 @@ function updateRoom() {
 window.addEventListener('message', (event) => {
   if (!authoredFrame || event.source !== authoredFrame.contentWindow || event.origin !== 'null') return;
   const port = event.ports[0];
-  const key = info.gameUrl?.split('/').at(-1);
+  const key = info.gameUrl?.split('/')[3]; // /game/<room>/<key>/
   if (!port || !key || event.data?.type !== 'zirbel.ready' || event.data.documentKey !== key) return;
   // A WindowProxy survives navigation. This port belongs to the document that opened it.
   gamePort?.close();

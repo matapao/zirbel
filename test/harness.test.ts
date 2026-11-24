@@ -281,7 +281,7 @@ test('generation records an explicit opt-out of editor object registration', asy
   assert.ok('projectId' in draft);
   const release = releases.package(draft.projectId, 'main', rights, false, true);
   assert.equal(release.game?.registerObjects, false);
-  assert.match(gamePage(release, 'http://127.0.0.1/runtime/room/', "'self'").html, /data-registration="off"/);
+  assert.match(gamePage(release, 'http://127.0.0.1/runtime/room/', "'self'", 'http://127.0.0.1/game/room/key/').html, /data-registration="off"/);
 });
 
 test('chat refuses an incomplete code response without inventing a game', async (t) => {

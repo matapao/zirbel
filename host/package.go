@@ -149,7 +149,7 @@ func (e *Editor) Package(projectID, branch, baseRevision string, permissions Per
 	if err != nil {
 		return nil, err
 	}
-	if release.Assets, err = e.projects.withAssetFiles(len(data), delivered); err != nil {
+	if release.Assets, err = e.projects.withAssetFiles(len(data), delivered, gameFileHashes(revision.Game)); err != nil {
 		return nil, err
 	}
 	if len(release.Assets) > 0 { // without assets the release is already encoded
@@ -213,6 +213,15 @@ func (e *Editor) Remix(releaseID string) (*Project, error) {
 			return nil, err
 		}
 		if err := e.projects.writeAsset(asset.Hash, data); err != nil {
+			return nil, err
+		}
+	}
+	for _, hash := range gameFileHashes(release.Game) {
+		data, err := gameFileBytes(hash, release.Assets)
+		if err != nil {
+			return nil, err
+		}
+		if err := e.projects.writeAsset(hash, data); err != nil {
 			return nil, err
 		}
 	}

@@ -4,6 +4,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { z } from 'zod';
 import { projectBundle, savedNote, savedProposal } from '../packages/core/projects.ts';
+import { gameFolder } from '../packages/core/game-files.ts';
 import {
   asset, attachment, ClientMessage, id, portableRelease, project, proposalInput, scene, ServerMessage,
 } from '../packages/sdk/contracts.ts';
@@ -28,6 +29,7 @@ const editor = {
   'asset-upload': asset.omit({ id: true, hash: true }).extend({ data: z.string().max(7_000_000), branch: id.default('main'), baseRevision: id }),
   transcript: attachment.pick({ transcript: true, intent: true }),
   'project-bundle': projectBundle,
+  'game-folder': gameFolder,
   grant: grantSchema,
 };
 

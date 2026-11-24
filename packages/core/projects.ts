@@ -61,6 +61,7 @@ function applyOperations(base: Pick<Revision, 'scene' | 'assets' | 'game'>, oper
   for (const operation of operations) {
     switch (operation.op) {
       case 'writeGame':
+        if (game?.files) throw new ZirbelError(422, 'This game was imported as a built folder. Import a new build to change it.');
         game = operation.game;
         break;
       case 'background':
@@ -337,10 +338,12 @@ export class Projects {
 
   export(projectId: string) {
     const { notes: _notes, attachments: _attachments, ...accepted } = this.read(projectId);
-    return this.withAssetFiles({ project: { ...accepted, notes: [], attachments: [] } }, deliveryAssets(accepted.revisions));
+    return this.withAssetFiles({ project: { ...accepted, notes: [], attachments: [] } }, deliveryAssets(accepted.revisions),
+      gameFileHashes(accepted.revisions));
   }
 
-  withAssetFiles<T extends object>(metadata: T, assets: readonly Asset[]) {
+  // The package's assets map carries image assets and a built game's files, each once, by hash.
+  withAssetFiles<T extends object>(metadata: T, assets: readonly Asset[], gameFiles: readonly string[] = []) {
     let remaining = PORTABLE_FILE_LIMIT - Buffer.byteLength(JSON.stringify({ ...metadata, assets: {} }));
     const files = new Map<string, string>();
     const checkSize = () => {
@@ -355,6 +358,14 @@ export class Projects {
       remaining -= 4 * Math.ceil(bytes.length / 3) + asset.hash.length + 5 + Number(files.size > 0);
       checkSize();
       files.set(asset.hash, bytes.toString('base64'));
+    }
+    for (const hash of gameFiles) {
+      if (files.has(hash)) continue;
+      const bytes = this.readAsset(hash);
+      if (digest(bytes) !== hash) throw new ZirbelError(422, 'A game file does not match its hash.');
+      remaining -= 4 * Math.ceil(bytes.length / 3) + hash.length + 5 + Number(files.size > 0);
+      checkSize();
+      files.set(hash, bytes.toString('base64'));
     }
     return { ...metadata, assets: Object.fromEntries(files) };
   }
@@ -381,6 +392,7 @@ export class Projects {
       verifyAssetBytes(item, bytes);
       assets.set(item.hash, bytes);
     }
+    for (const hash of gameFileHashes(source.revisions)) assets.set(hash, gameFileBytes(hash, bundle.assets[hash]));
     if (Object.keys(bundle.assets).length !== assets.size) throw new ZirbelError(422, 'The package contains undeclared assets.');
     for (const bytes of assets.values()) this.storeAsset(bytes);
     return this.save({ ...source, id: newId(), notes: [], attachments: [], imported: true });
@@ -421,6 +433,19 @@ export function deliveryAssets(revisions: ReadonlyArray<Pick<Revision, 'assets'>
     }
   }
   return [...unique.values()];
+}
+
+// Every file a built game lists, once each.
+export function gameFileHashes(revisions: ReadonlyArray<Pick<Revision, 'game'>>) {
+  return [...new Set(revisions.flatMap(({ game }) => Object.values(game?.files ?? {})))];
+}
+
+// A built game's file carried as base64, which must match its hash.
+export function gameFileBytes(hash: string, data: unknown) {
+  if (typeof data !== 'string') throw new ZirbelError(422, 'A game file is missing.');
+  const bytes = Buffer.from(data, 'base64');
+  if (digest(bytes) !== hash) throw new ZirbelError(422, 'A game file does not match its hash.');
+  return bytes;
 }
 
 export function verifyAssetBytes(asset: Asset, bytes: Buffer) {

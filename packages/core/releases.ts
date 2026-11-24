@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROTOCOL_VERSION, SDK_VERSION, distribution, portableRelease, type Manifest, type Revision, type Release } from '../sdk/contracts.ts';
 import { templates } from '../games/templates.ts';
-import { atomicWrite, deliveryAssets, digest, head, newId, readData, safeId, verifyAssetBytes, ZirbelError, type Projects } from './projects.ts';
+import { atomicWrite, deliveryAssets, digest, gameFileBytes, gameFileHashes, head, newId, readData, safeId, verifyAssetBytes, ZirbelError, type Projects } from './projects.ts';
 
 function runtimeSettings(template: Manifest['template'], game?: Revision['game']) {
   if (game) return { simulation: game.maxPlayers > 1 ? 'shared-state-v1' as const : null,
@@ -68,7 +68,7 @@ export class Releases {
     };
     const release = this.projects.withAssetFiles({
       manifest, game: revision.game, scene: revision.scene, sceneHash: digest(JSON.stringify(revision.game ?? revision.scene)), files: this.files,
-    }, draft ? revision.assets : deliveryAssets([revision]));
+    }, draft ? revision.assets : deliveryAssets([revision]), gameFileHashes([revision]));
     return publish ? this.save(release) : release;
   }
 
@@ -102,13 +102,15 @@ export class Releases {
         throw new ZirbelError(422, 'This package requires a verified build of the matching Zirbel runtime.');
     }
     const assets = deliveryAssets([manifest]);
-    if (Object.keys(release.assets).length !== assets.length)
+    const gameFiles = gameFileHashes([release]);
+    if (Object.keys(release.assets).length !== new Set([...assets.map(({ hash }) => hash), ...gameFiles]).size)
       throw new ZirbelError(422, 'The package has undeclared assets.');
     for (const asset of assets) {
       const data = release.assets[asset.hash];
       if (typeof data !== 'string') throw new ZirbelError(422, 'An asset file is missing.');
       verifyAssetBytes(asset, Buffer.from(data, 'base64'));
     }
+    for (const hash of gameFiles) gameFileBytes(hash, release.assets[hash]);
     return this.save(release);
   }
 
@@ -120,6 +122,7 @@ export class Releases {
       verifyAssetBytes(asset, bytes);
       this.projects.storeAsset(bytes);
     }
+    for (const hash of gameFileHashes([release])) this.projects.storeAsset(gameFileBytes(hash, release.assets[hash]));
     return this.projects.createRevision((release.manifest.title + ' remix').slice(0, 80), {
       label: 'Remixed release', template: release.manifest.template,
       game: release.game, scene: release.scene, assets: release.manifest.assets, upstream: releaseId,

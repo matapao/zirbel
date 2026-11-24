@@ -88,7 +88,9 @@ func (s *Projects) UploadAsset(projectID string, data []byte) (*proposalResult, 
 // withAssetFiles mirrors Projects.withAssetFiles: the package must stay under
 // the shared 48 MB limit, counted as the JSON it will become. It needs no
 // lock: asset files are named by their hash, written atomically and never removed.
-func (s *Projects) withAssetFiles(metadataSize int, assets []Asset) (map[string]string, error) {
+//
+// Built games' files (gameFiles, by hash) travel in the same map.
+func (s *Projects) withAssetFiles(metadataSize int, assets []Asset, gameFiles []string) (map[string]string, error) {
 	remaining := PortableFileLimit - metadataSize
 	if remaining < 0 {
 		return nil, fail(http.StatusRequestEntityTooLarge, "This package exceeds the 48 MB file limit.")
@@ -115,7 +117,35 @@ func (s *Projects) withAssetFiles(metadataSize int, assets []Asset) (map[string]
 		}
 		files[asset.Hash] = base64.StdEncoding.EncodeToString(data)
 	}
+	for _, hash := range gameFiles {
+		if _, done := files[hash]; done {
+			continue
+		}
+		data, err := s.readAsset(hash)
+		if err != nil {
+			return nil, err
+		}
+		if digest(data) != hash {
+			return nil, fail(http.StatusUnprocessableEntity, "A game file does not match its hash.")
+		}
+		extra := 0
+		if len(files) > 0 {
+			extra = 1
+		}
+		remaining -= 4*int(math.Ceil(float64(len(data))/3)) + len(hash) + 5 + extra
+		if remaining < 0 {
+			return nil, fail(http.StatusRequestEntityTooLarge, "This package exceeds the 48 MB file limit.")
+		}
+		files[hash] = base64.StdEncoding.EncodeToString(data)
+	}
 	return files, nil
+}
+func revisionGames(revisions []Revision) []*Game {
+	games := make([]*Game, 0, len(revisions))
+	for i := range revisions {
+		games = append(games, revisions[i].Game)
+	}
+	return games
 }
 func revisionAssets(revisions []Revision) []Asset {
 	all := []Asset{}
@@ -144,7 +174,7 @@ func (s *Projects) Export(projectID string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	files, err := s.withAssetFiles(len(data), assets)
+	files, err := s.withAssetFiles(len(data), assets, gameFileHashes(revisionGames(p.Revisions)...))
 	if err != nil {
 		return nil, err
 	}
@@ -199,6 +229,13 @@ func (s *Projects) Import(data []byte) (*Project, error) {
 			return nil, err
 		}
 		files[item.Hash] = decoded
+	}
+	for _, hash := range gameFileHashes(revisionGames(source.Revisions)...) {
+		decoded, err := gameFileBytes(hash, bundle.Assets)
+		if err != nil {
+			return nil, err
+		}
+		files[hash] = decoded
 	}
 	if len(bundle.Assets) != len(files) {
 		return nil, fail(http.StatusUnprocessableEntity, "The package contains undeclared assets.")

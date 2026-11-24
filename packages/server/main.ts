@@ -12,6 +12,7 @@ import { attachment, asset, distribution, id, PORTABLE_FILE_LIMIT } from '../sdk
 import { assertCurrent, atomicWrite, head, mediaMatches, newId, Projects, safeId, ZirbelError } from '../core/projects.ts';
 import { runHarnessChat, runWorkspaceChat, workspaceHistory } from './harness-chat.ts';
 import { Releases } from '../core/releases.ts';
+import { importGameFolder } from '../core/game-files.ts';
 import { body, bytes, checkOrigin, fail, lanAddresses, listen, reply, requestUrl, secure, staticFile } from './http.ts';
 import { ChatRuns } from './chat-runs.ts';
 import { Rooms } from '../core/rooms.ts';
@@ -187,6 +188,9 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
           if (!pathID && method === 'POST') {
             const input = z.strictObject({ title: z.string().optional() }).parse(await body(request));
             reply(response, projects.createGame(input.title), 201); return;
+          }
+          if (pathID === 'import-game' && method === 'POST') {
+            reply(response, importGameFolder(projects, await body(request, PORTABLE_FILE_LIMIT)), 201); return;
           }
           if (pathID === 'import' && method === 'POST') {
             reply(response, projects.import(await body(request, PORTABLE_FILE_LIMIT)), 201); return;

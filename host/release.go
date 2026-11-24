@@ -82,9 +82,10 @@ type Scene struct {
 }
 
 type Game struct {
-	HTML            string `json:"html"`
-	MaxPlayers      int    `json:"maxPlayers"`
-	RegisterObjects *bool  `json:"registerObjects,omitempty"`
+	HTML            string            `json:"html"`
+	MaxPlayers      int               `json:"maxPlayers"`
+	RegisterObjects *bool             `json:"registerObjects,omitempty"`
+	Files           map[string]string `json:"files,omitempty"` // a built game's files by path, beside index.html
 }
 
 // Release keeps the raw manifest and scene so responses carry them unchanged.
@@ -152,6 +153,11 @@ func ParseRelease(data []byte) (*Release, error) {
 		}
 	}
 	// The schema checks lengths, trims and URLs; these are Zod refinements.
+	if game := release.Game; game != nil {
+		if _, entry := game.Files["index.html"]; entry || len(game.Files) > maxGameFiles {
+			return nil, fail(http.StatusBadRequest, "game.files · Provide up to 1000 files besides index.html.")
+		}
+	}
 	if m := release.Manifest; m.Players.Min > m.Players.Max {
 		return nil, fail(http.StatusBadRequest, "manifest.players · min exceeds max")
 	}
@@ -242,7 +248,15 @@ func Verify(release *Release, runtime map[string]*webfiles.File) error {
 	if err != nil {
 		return err
 	}
-	if len(release.Assets) != len(assets) {
+	gameFiles := gameFileHashes(release.Game)
+	declared := map[string]bool{}
+	for _, asset := range assets {
+		declared[asset.Hash] = true
+	}
+	for _, hash := range gameFiles {
+		declared[hash] = true
+	}
+	if len(release.Assets) != len(declared) {
 		return fail(http.StatusUnprocessableEntity, "The package has undeclared assets.")
 	}
 	for _, asset := range assets {
@@ -251,6 +265,11 @@ func Verify(release *Release, runtime map[string]*webfiles.File) error {
 			return fail(http.StatusUnprocessableEntity, "An asset file is missing.")
 		}
 		if _, err := decodeAsset(asset, data); err != nil {
+			return err
+		}
+	}
+	for _, hash := range gameFiles {
+		if _, err := gameFileBytes(hash, release.Assets); err != nil {
 			return err
 		}
 	}

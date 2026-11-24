@@ -7,12 +7,20 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import WebSocket from 'ws';
+import { importGameFolder } from '../packages/core/game-files.ts';
 import { Projects } from '../packages/core/projects.ts';
 import { Releases } from '../packages/core/releases.ts';
 import type { Release } from '../packages/sdk/contracts.ts';
 import { hostsUnderTest, launch, legacyProject, rights, statusForHost, stopHost, tempDir } from './helpers.ts';
 
 const hosts = hostsUnderTest();
+
+// A built game: a document, a module script and a binary model beside it.
+const builtFiles = {
+  'index.html': '<!doctype html><script type="module" src="./assets/main.js"></script>',
+  'assets/main.js': 'fetch("./models/hero.glb")',
+  'models/hero.glb': Buffer.from([103, 108, 84, 70, 2, 0, 0, 0]),
+};
 
 function fixtures(t: TestContext) {
   const root = tempDir(t, 'zirbel-contract-');
@@ -29,6 +37,8 @@ function fixtures(t: TestContext) {
     shared: write('shared', releases.package(shared.id, 'main', rights, false)),
     tiles: write('tiles', releases.package(legacyProject(projects, 'tessellate').id, 'main', rights, false)),
     moss: write('moss', releases.package(legacyProject(projects, 'mosslight').id, 'main', rights, false)),
+    built: write('built', releases.package(importGameFolder(projects, { title: 'Built', files: Object.fromEntries(
+      Object.entries(builtFiles).map(([path, data]) => [path, Buffer.from(data).toString('base64')])) }).id, 'main', rights, false)),
   };
 }
 
@@ -143,6 +153,31 @@ for (const host of hosts) {
     assert.equal((await fetch(runtime, { headers: { 'if-none-match': etag } })).status, 304);
     assert.equal((await fetch(player + '/runtime/' + roomId + '/game-sdk.js')).headers.get('access-control-allow-origin'), '*');
     assert.equal((await fetch(player + '/runtime/' + roomId + '/missing.js')).status, 404);
+  });
+
+  test(host.name + ' host serves a built game\'s files beside its document, in its sandbox', async (t) => {
+    const data = fixtures(t);
+    const started = await startHost(t, host.command, ['--data', join(data.root, 'data'), '--import', data.built.file, '--release', data.built.id]);
+    const { player } = started;
+    const [roomId, invite] = started.rooms[0]!.link.split('/join/')[1]!.split('#') as [string, string];
+    const info = await (await fetch(player + '/rooms/' + roomId + '/info', { headers: { authorization: 'Bearer ' + invite } }))
+      .json() as { gameUrl: string };
+    assert.match(info.gameUrl, /^\/game\/[a-f0-9]{12}\/[\w-]+\/$/);
+    const page = await fetch(player + info.gameUrl);
+    const policy = page.headers.get('content-security-policy') ?? '';
+    assert.match(policy, /^sandbox allow-scripts; /);
+    assert.ok(policy.includes('connect-src ' + player + info.gameUrl + ' data: blob:; worker-src ' + player + info.gameUrl + ' blob:;'), policy);
+    assert.match(await page.text(), /src="\.\/assets\/main\.js"/);
+    for (const [path, type] of [['assets/main.js', 'text/javascript; charset=utf-8'], ['models/hero.glb', 'model/gltf-binary']] as const) {
+      const file = await fetch(player + info.gameUrl + path);
+      assert.equal(file.status, 200, path);
+      assert.equal(file.headers.get('content-type'), type);
+      assert.equal(file.headers.get('access-control-allow-origin'), '*');
+      assert.equal(file.headers.get('content-security-policy'), policy, 'a file opened on its own stays sandboxed');
+      assert.deepEqual(Buffer.from(await file.arrayBuffer()), Buffer.from(builtFiles[path]));
+    }
+    for (const path of ['assets/missing.js', 'index.html', '__proto__'])
+      assert.equal((await fetch(player + info.gameUrl + path)).status, 404, path);
   });
 
   test(host.name + ' host reserves seats and admits only invited players', async (t) => {

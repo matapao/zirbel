@@ -8,6 +8,7 @@ import type { Peer, Room, Rooms } from '../core/rooms.ts';
 import { ZirbelError } from '../core/projects.ts';
 import { ClientMessage } from '../sdk/contracts.ts';
 import { gamePage } from './game-page.ts';
+import { GAME_FILE_TYPES } from '../sdk/game.ts';
 import { body, bytes, checkOrigin, contentType, fail, lanAddresses, listen, reply, requestUrl, secure, typeFor } from './http.ts';
 
 const privateAddress = /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|169\.254\.|127\.)/;
@@ -45,13 +46,26 @@ function sendImmutable(request: IncomingMessage, response: ServerResponse, body:
 // The game page embeds its assets (up to tens of MB), so build and gzip it once
 // per room and origin rather than on every load.
 type GamePage = { policy: string; html: string; gzip: Promise<Buffer> };
+const gamePath = (room: Room) => '/game/' + room.id + '/' + room.documentKey + '/';
+// A built game's files, decoded once per room from the release they came in.
+const gameFiles = new WeakMap<Room, Map<string, Buffer>>();
+function gameFile(room: Room, path: string) {
+  const files = room.release.game?.files ?? {};
+  const hash = Object.hasOwn(files, path) ? files[path] : undefined;
+  if (!hash) throw new ZirbelError(404, 'Game file does not exist.');
+  const decoded = gameFiles.get(room) ?? new Map<string, Buffer>();
+  gameFiles.set(room, decoded);
+  const bytes = decoded.get(hash) ?? Buffer.from(room.release.assets[hash] ?? '', 'base64');
+  decoded.set(hash, bytes);
+  return bytes;
+}
 const gamePages = new WeakMap<Room, Map<string, GamePage>>();
 function cachedGamePage(room: Room, origin: string, ancestors: string) {
   const byOrigin = gamePages.get(room) ?? new Map<string, GamePage>();
   gamePages.set(room, byOrigin);
   let page = byOrigin.get(origin);
   if (!page) {
-    const built = gamePage(room.release, origin + '/runtime/' + room.id + '/', ancestors);
+    const built = gamePage(room.release, origin + '/runtime/' + room.id + '/', ancestors, origin + gamePath(room));
     const created: GamePage = { ...built, gzip: gzipAsync(built.html) };
     created.gzip.catch(() => byOrigin.delete(origin));
     byOrigin.set(origin, created);
@@ -99,11 +113,19 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
         // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
         " connect-src 'self' ws://" + url.host + "; frame-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors " + frame;
       response.setHeader('content-security-policy', playerPolicy);
-      if (route === 'game' && request.method === 'GET' && parts.length === 1 && room.release.game && parts[0] === room.documentKey) {
+      if (route === 'game' && request.method === 'GET' && room.release.game && parts[0] === room.documentKey) {
         const ancestors = ["'self'", ...(config.editorOrigins ?? [])].join(' ');
         const page = cachedGamePage(room, url.origin, ancestors);
+        // A file opened on its own stays in the game's sandbox too.
         response.setHeader('content-security-policy', page.policy);
         response.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+        const path = parts.slice(1).join('/');
+        if (path) {
+          // The game's origin is opaque, so its module scripts, fonts and fetches are CORS requests.
+          bytes(response, gameFile(room, path), GAME_FILE_TYPES[path.split('.').at(-1) ?? ''] ?? 'application/octet-stream',
+            { 'access-control-allow-origin': '*' });
+          return;
+        }
         if (!acceptsGzip(request)) { bytes(response, page.html, contentType.html!); return; }
         bytes(response, await page.gzip, contentType.html!, { 'content-encoding': 'gzip', vary: 'accept-encoding' });
         return;
@@ -118,7 +140,7 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
           throw new ZirbelError(403, 'An invitation or current seat is required.');
         reply(response, { ...room.summary(), scene: room.release.scene,
           registerObjects: room.release.game?.registerObjects,
-          gameUrl: room.release.game ? '/game/' + room.id + '/' + room.documentKey : undefined });
+          gameUrl: room.release.game ? gamePath(room) : undefined });
         return;
       }
       if (route === 'rooms' && parts[0] === 'reserve' && parts.length === 1 && request.method === 'POST') {

@@ -186,6 +186,18 @@ async function session(editor: string) {
   await record(post('/api/projects/' + id + '/grants/' + grant.id));
   await record(mcp({ jsonrpc: '2.0', id: 9, method: 'ping' }));
 
+  // A built folder imports as a game: its files ride along in the release, and proposals cannot rewrite it.
+  const encode = (text: string) => Buffer.from(text).toString('base64');
+  const folder = { 'index.html': encode('<!doctype html><script type="module" src="./assets/main.js"></script>'),
+    'assets/main.js': encode('document.body.append("built")'), 'fonts/face.woff2': encode('wOF2') };
+  await record(post('/api/projects/import-game', { files: { 'assets/main.js': folder['assets/main.js'] } }));
+  await record(post('/api/projects/import-game', { files: { ...folder, '.hidden/x.js': encode('x') } }));
+  const built = body<{ id: string; branches: { main: string } }>(await record(post('/api/projects/import-game', { title: 'Built', files: folder })));
+  await record(post('/api/projects/' + built.id + '/proposals', { baseRevision: built.branches.main, branch: 'main', label: 'Edit',
+    operations: [{ op: 'writeGame', game: { html: '<p>replaced</p>' } }] }));
+  const builtManifest = body<{ releaseId: string }>(await record(post('/api/projects/' + built.id + '/release', { branch: 'main', permissions: rights })));
+  const builtRelease = await record(get('/api/releases/' + builtManifest.releaseId + '/download'));
+
   // Refusals.
   await record(call('POST', '/api/projects', {}, { origin: 'http://evil.example' }));
   await record(call('POST', '/api/projects', undefined, { 'content-type': 'text/plain' }));
@@ -193,7 +205,7 @@ async function session(editor: string) {
   await record(get('/api/projects/no-such-project'));
   await record(post('/api/projects/' + id + '/remove'));
   await record(get('/api/projects/' + id));
-  return { steps, release: release.body, templateRelease: templateRelease.body };
+  return { steps, release: release.body, templateRelease: templateRelease.body, builtRelease: builtRelease.body };
 }
 
 const results = new Map<string, Awaited<ReturnType<typeof session>>>();
@@ -221,10 +233,10 @@ if (editors.length > 1) {
   test('a release published by either editor imports into the other', async (t) => {
     const start = async (name: string) => startEditor(t, editors.find((item) => item.name === name)!.command, join(tempDir(t, 'zirbel-cross-'), 'data'));
     for (const [from, to] of [['node', 'go'], ['go', 'node']] as const) {
-      const { release, templateRelease } = results.get(from)!;
+      const { release, templateRelease, builtRelease } = results.get(from)!;
       const target = await start(to);
       const api = client(target.editor);
-      for (const item of [release, templateRelease]) {
+      for (const item of [release, templateRelease, builtRelease]) {
         const imported = await api.post('/api/releases/import', item);
         assert.equal(imported.status, 201, from + ' -> ' + to + ': ' + JSON.stringify(imported.body));
       }

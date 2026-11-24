@@ -30,6 +30,14 @@ func (s *EditorServer) serveProjects(w http.ResponseWriter, r *http.Request, pat
 		p, err := s.projects.CreateGame(title, nil)
 		return send(w, http.StatusCreated, p, err)
 	}
+	if pathID == "import-game" && post {
+		data, err := readBody(r, PortableFileLimit)
+		if err != nil {
+			return err
+		}
+		p, err := s.projects.ImportGameFolder(data)
+		return send(w, http.StatusCreated, p, err)
+	}
 	if pathID == "import" && post {
 		data, err := readBody(r, PortableFileLimit)
 		if err != nil {

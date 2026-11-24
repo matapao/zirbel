@@ -1,4 +1,4 @@
-import { gameDocument } from './game.ts';
+import { editableGame, gameDocument } from './game.ts';
 import { z } from 'zod';
 
 export const SDK_VERSION = '1.0.0';
@@ -46,7 +46,7 @@ const change = sceneObject.omit({ id: true, kind: true }).partial().refine(
   (changes) => Object.keys(changes).length > 0, 'Provide at least one property.',
 );
 const operation = z.discriminatedUnion('op', [
-  z.strictObject({ op: z.literal('writeGame'), game: gameDocument }),
+  z.strictObject({ op: z.literal('writeGame'), game: editableGame }),
   z.strictObject({ op: z.literal('add'), object: sceneObject }),
   z.strictObject({ op: z.literal('update'), id, changes: change }),
   z.strictObject({ op: z.literal('remove'), id }),

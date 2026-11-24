@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { AxeBuilder } from '@axe-core/playwright';
 import { chromium, type Page } from 'playwright';
+import { importGameFolder } from '../packages/core/game-files.ts';
 import { Projects } from '../packages/core/projects.ts';
 import { Releases } from '../packages/core/releases.ts';
 import { hostsUnderTest, launch, rights, tempDir } from './helpers.ts';
@@ -53,6 +54,48 @@ for (const host of hosts) {
     }
     assert.deepEqual(failures, []);
     assert.deepEqual(await accessibility(pages[0]!), []);
+  });
+}
+
+// A built game in the sandbox: its stylesheet, a module importing a module, a fetch
+// and an image all load from beside its document, and a request elsewhere is refused.
+const dot = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+const builtGame: Record<string, string> = {
+  'index.html': '<!doctype html><link rel="stylesheet" href="./style.css"><p id="out">waiting</p><script type="module" src="./assets/main.js"></script>',
+  'style.css': '#out { color: rgb(1, 2, 3); }',
+  'assets/main.js': `import { word } from './word.js';
+    const level = await (await fetch('./data/level.json')).json();
+    const image = new Image(); image.src = './img/dot.png'; await image.decode();
+    const elsewhere = await fetch('/health').then(() => 'reached', () => 'refused');
+    const color = getComputedStyle(document.getElementById('out')).color;
+    document.getElementById('out').textContent = [word, level.rooms, image.width, color, elsewhere].join(' ');`,
+  'assets/word.js': "export const word = 'loaded';",
+  'data/level.json': '{"rooms":3}',
+};
+
+for (const host of hosts) {
+  test(host.name + ' host: a built game loads its own files in the sandbox', async (t) => {
+    const root = tempDir(t, 'zirbel-host-built-');
+    const projects = new Projects(join(root, 'source'));
+    const files = Object.fromEntries(Object.entries(builtGame).map(([path, text]) => [path, Buffer.from(text).toString('base64')]));
+    const project = importGameFolder(projects, { title: 'Built', files: { ...files, 'img/dot.png': dot } });
+    const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
+    const file = join(root, 'release.json');
+    writeFileSync(file, JSON.stringify(release));
+    const link = await launch(t, host.command, ['--host-only', '--player-port', '0',
+      '--data', join(root, 'data'), '--import', file, '--release', release.manifest.releaseId],
+    (line) => typeof line.link === 'string' ? line.link : undefined).ready;
+
+    const browser = await chromium.launch();
+    t.after(() => browser.close());
+    const page = await browser.newPage();
+    const failures: string[] = [];
+    page.on('pageerror', (error) => failures.push(error.message));
+    await page.goto(link);
+    await page.locator('#join-form input[name="name"]').fill('Player');
+    await page.locator('#join-form button.primary').click();
+    await page.frameLocator('iframe').locator('#out').filter({ hasText: 'loaded 3 1 rgb(1, 2, 3) refused' }).waitFor({ timeout: 15_000 });
+    assert.deepEqual(failures, []);
   });
 }
 

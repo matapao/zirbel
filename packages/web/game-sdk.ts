@@ -47,7 +47,8 @@ if (channel) {
     room = event.data.value as RoomState;
     for (const listener of listeners) listener(room);
   };
-  const documentKey = location.pathname.split('/').at(-1);
+  // /game/<room>/<key>/…: a built game's document and the pages beside it share the key.
+  const documentKey = location.pathname.split('/')[3];
   parent.postMessage({ type: 'zirbel.ready', documentKey }, location.origin, [channel.port2]);
 }
 window.addEventListener('error', (event) => {

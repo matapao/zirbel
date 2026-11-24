@@ -1,5 +1,6 @@
 import { PORTABLE_FILE_LIMIT, type Manifest, type Project } from '../sdk/contracts.ts';
 import { templates } from '../games/templates.ts';
+import { gameFilePath } from '../sdk/game.ts';
 import { action, api, attempt, dialog, el, inform, link, openDialog } from './editor-ui.ts';
 
 export type Room = {
@@ -19,7 +20,7 @@ export function createLibrary(projects: LibraryProjects) {
   async function libraryDialog() {
     const body = openDialog('Game library');
     const header = el('div', undefined, 'row');
-    header.append(action('New project', newDialog, 'primary'), action('Import file…', importDialog));
+    header.append(action('New project', newDialog, 'primary'), action('Import file…', importDialog), action('Import game folder…', folderDialog));
     const projectId = projects.active();
     if (projectId) header.append(link('Export editable project', new URL('api/projects/' + projectId + '/export', document.baseURI).href));
     body.append(header);
@@ -108,7 +109,39 @@ export function createLibrary(projects: LibraryProjects) {
     }, 'primary'));
   }
 
+  // A built web game: the folder a build writes, with index.html at its top. Files the import does
+  // not take (hidden files, other types) are named afterwards instead of sent.
+  function folderDialog() {
+    const body = openDialog('Import a built game folder');
+    const input = el('input');
+    input.type = 'file'; input.webkitdirectory = true; input.multiple = true; input.setAttribute('aria-label', 'Built game folder');
+    body.append(el('p', 'Choose the folder your build writes, such as dist/. Build it with relative paths (for Vite: --base ./).'),
+      input, action('Import', async () => {
+        const chosen = [...(input.files ?? [])];
+        const entries = chosen.map((file) => [file.webkitRelativePath.split('/').slice(1).join('/'), file] as const);
+        const kept = entries.filter(([path]) => gameFilePath.safeParse(path).success);
+        const skipped = entries.filter(([path]) => !gameFilePath.safeParse(path).success).map(([path]) => path);
+        if (!kept.some(([path]) => path === 'index.html')) throw new Error('Choose a folder with an index.html at its top.');
+        if (kept.reduce((total, [, file]) => total + file.size, 0) * 4 / 3 > PORTABLE_FILE_LIMIT)
+          throw new Error('Choose a built folder under 36 MB.');
+        const files = Object.fromEntries(await Promise.all(kept.map(async ([path, file]) => [path, await base64(file)] as const)));
+        const title = (chosen[0]?.webkitRelativePath.split('/')[0] ?? '').slice(0, 80).trim() || undefined;
+        const imported = await api<Project>('projects/import-game', { title, files });
+        dialog.close(); await projects.refresh(); await projects.open(imported.id);
+        if (skipped.length) inform('Imported ' + kept.length + ' files. Skipped: ' + skipped.slice(0, 8).join(', ') + (skipped.length > 8 ? '…' : '') + '.');
+      }, 'primary'));
+  }
+
   return { open: libraryDialog, create: newDialog };
+}
+
+function base64(file: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => { const url = typeof reader.result === 'string' ? reader.result : ''; resolve(url.slice(url.indexOf(',') + 1)); };
+    reader.onerror = () => reject(reader.error ?? new Error('The file could not be read.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 export function openGame(path: string, payload: object) {

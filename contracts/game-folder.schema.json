@@ -1,0 +1,30 @@
+{
+  "$id": "https://zirbel.app/contracts/game-folder.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "x-zirbel-prepare": "trim"
+    },
+    "files": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "maxLength": 240,
+        "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\\/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.(?:html|js|mjs|css|json|map|txt|csv|wasm|glb|gltf|bin|ktx2|png|jpg|jpeg|webp|gif|avif|svg|ico|woff2|woff|ttf|otf|mp3|ogg|opus|wav|m4a|aac|flac|mp4|webm)$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 48000000,
+        "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+      }
+    }
+  },
+  "required": [
+    "files"
+  ],
+  "additionalProperties": false
+}
