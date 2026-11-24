@@ -10,12 +10,18 @@ updates:
       dev-tools:
         dependency-type: development
     ignore:
-      # The two link: dependencies are sibling checkouts, pinned by revision in CI.
+      # The two link: dependencies are submodules in deps/; the gitsubmodule entry below updates them.
       - dependency-name: celler
       - dependency-name: '@matapao/vindu'
       # Node 24 is the runtime (.nvmrc, engines), so its types stay on 24.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7 # let a new commit age a week before proposing it
   - package-ecosystem: gomod
     directory: /
     schedule:

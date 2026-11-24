@@ -1,5 +1,6 @@
 # Generated, vendored or data files.
 dist/
+deps/
 node_modules/
 host/webfiles/web/
 host/bin/

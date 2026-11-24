@@ -8,6 +8,7 @@
     "node": ">=24.22.3 <25"
   },
   "scripts": {
+    "deps": "pnpm --dir deps/celler install --frozen-lockfile --ignore-workspace --pm-on-fail=ignore && pnpm --dir deps/celler run --pm-on-fail=ignore build && pnpm --dir deps/vindu install --frozen-lockfile && pnpm --dir deps/vindu run build",
     "build": "node scripts/build.mjs",
     "build:host": "node scripts/build-host.mjs",
     "contracts": "node --experimental-transform-types --disable-warning=ExperimentalWarning scripts/contracts.ts",
@@ -27,8 +28,8 @@
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.108.0",
     "@agentclientprotocol/codex-acp": "2.7.0",
-    "@matapao/vindu": "link:../vindu",
-    "celler": "link:../celler",
+    "@matapao/vindu": "link:deps/vindu",
+    "celler": "link:deps/celler",
     "qrcode": "1.5.4",
     "three": "0.187.0",
     "ws": "8.23.0",

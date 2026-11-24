@@ -1,0 +1,6 @@
+[submodule "deps/celler"]
+	path = deps/celler
+	url = https://github.com/matapao/celler.git
+[submodule "deps/vindu"]
+	path = deps/vindu
+	url = https://github.com/matapao/vindu.git

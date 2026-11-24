@@ -42,7 +42,7 @@ jobs:
           node-version-file: .nvmrc
       - run: corepack enable pnpm
       # pnpm audit signatures and the licence check read the installed packages. The two link: dependencies point
-      # at sibling checkouts, which this job doesn't need: neither is a registry package.
+      # at submodules in deps/, which this job doesn't check out: neither is a registry package.
       - run: pnpm install --frozen-lockfile
 
       - name: Tools, each checked against its release's checksum

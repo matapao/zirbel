@@ -15,6 +15,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: zirbel
+          submodules: true
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -24,29 +25,10 @@ jobs:
         with:
           go-version-file: zirbel/go.mod
           cache: false # the module is stdlib-only; tools are pinned in scripts/
-      - name: Build pinned sibling dependencies
-        env:
-          HARNESS_REPOSITORY: ${{ vars.HARNESS_REPOSITORY }}
-          HARNESS_REVISION: ${{ vars.HARNESS_REVISION }}
-          SHELL_REPOSITORY: ${{ vars.SHELL_REPOSITORY }}
-          SHELL_REVISION: ${{ vars.SHELL_REVISION }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          checkout_sibling() {
-            local directory="$1" repository="$2" revision="$3"
-            if [[ ! "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ || ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
-              echo "::error::Configure a public owner/repository and full commit SHA for $directory."
-              return 1
-            fi
-            git init --quiet "$directory"
-            git -C "$directory" fetch --quiet --depth=1 "https://github.com/$repository.git" "$revision"
-            git -C "$directory" checkout --quiet --detach FETCH_HEAD
-          }
-          checkout_sibling celler "$HARNESS_REPOSITORY" "$HARNESS_REVISION"
-          checkout_sibling vindu "$SHELL_REPOSITORY" "$SHELL_REVISION"
-          (cd celler && pnpm install --frozen-lockfile && pnpm run build)
-          (cd vindu && pnpm install --frozen-lockfile && pnpm build)
+      # The two link: dependencies are submodules in deps/, at the commits this repository records.
+      - name: Build the submodule dependencies
+        working-directory: zirbel
+        run: pnpm run deps
       - name: Install, build and test
         working-directory: zirbel
         run: |

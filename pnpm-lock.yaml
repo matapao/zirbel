@@ -15,11 +15,11 @@ importers:
         specifier: 2.7.0
         version: 2.7.0
       '@matapao/vindu':
-        specifier: link:../vindu
-        version: link:../vindu
+        specifier: link:deps/vindu
+        version: link:deps/vindu
       celler:
-        specifier: link:../celler
-        version: link:../celler
+        specifier: link:deps/celler
+        version: link:deps/celler
       qrcode:
         specifier: 1.5.4
         version: 1.5.4

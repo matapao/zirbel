@@ -4,7 +4,7 @@ Author, play and host web games locally. Describe a game in Activity and a harne
 
 ## Run
 
-Needs Node 24 (`.nvmrc`) with pnpm (`corepack enable pnpm`), Go 1.27 for the native host, and the two `link:` dependencies in `package.json` built in sibling checkouts (`pnpm install --frozen-lockfile && pnpm build` in each; CI pins their revisions).
+Needs Node 24 (`.nvmrc`) with pnpm (`corepack enable pnpm`), Go 1.27 for the native host, and the two `link:` dependencies in `package.json`, which are submodules in `deps/`: clone with `--recurse-submodules` (or run `git submodule update --init`), then `pnpm run deps` builds them.
 
 ```sh
 pnpm install --frozen-lockfile && pnpm test   # install, build, unit and contract tests

@@ -5,6 +5,7 @@ Zirbel: local web-game editor, player and host. TypeScript ESM on Node 24 (esbui
 ## Commands
 
 ```sh
+git submodule update --init && pnpm run deps  # check out and build the two submodule dependencies
 pnpm install --frozen-lockfile && pnpm test  # build + node:test unit tests (must pass)
 pnpm check               # tsc --noEmit, strict
 pnpm lint                # oxlint --type-aware + knip + the 500-line limit, must pass
@@ -17,7 +18,7 @@ pnpm build:host          # embed dist/web into the Go host binary (host/bin/)
 pnpm test:browser        # Playwright e2e (first: pnpm exec playwright install chromium)
 ```
 
-The two `link:` dependencies in `package.json` resolve from sibling checkouts. Type errors in `harness-activity.ts` or `local-harnesses.ts` usually mean a sibling checkout is not at its pinned revision.
+The two `link:` dependencies in `package.json` are submodules in `deps/`, pinned to the commits this repository records; `pnpm run deps` installs and builds them, and Dependabot proposes updates. Type errors in `harness-activity.ts` or `local-harnesses.ts` usually mean the submodules are not at those commits (`git submodule update --init`, then `pnpm run deps`).
 
 ## Layout
 
