@@ -2,12 +2,12 @@ import { PORTABLE_FILE_LIMIT, type Manifest, type Project } from '../sdk/contrac
 import { templates } from '../games/templates.ts';
 import { gameFilePath } from '../sdk/game.ts';
 import { action, api, attempt, dialog, el, inform, link, openDialog } from './editor-ui.ts';
+import type { ProjectCard } from './state.ts';
 
 export type Room = {
   id: string; manifest: Manifest; development: boolean; link: string; localLink: string;
   qr: string | null; lan: boolean; status: string;
 };
-export type ProjectCard = Pick<Project, 'id' | 'title' | 'template'>;
 
 type LibraryProjects = {
   active(): string | undefined;
@@ -132,7 +132,7 @@ export function createLibrary(projects: LibraryProjects) {
       }, 'primary'));
   }
 
-  return { open: libraryDialog, create: newDialog };
+  return { open: libraryDialog, importFolder: folderDialog, importFile: importDialog };
 }
 
 function base64(file: Blob) {

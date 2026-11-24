@@ -26,7 +26,7 @@ The two `link:` dependencies in `package.json` are submodules in `deps/`, pinned
 | --- | --- |
 | `packages/sdk` | Zod contracts, file formats, room protocol, browser client |
 | `packages/core` | Project revisions, release validation, room state |
-| `packages/server` | `cli.ts` launcher. `main.ts` editor API, MCP and harness runs. `host.ts` + `hosting.ts` headless host and listeners. `player-listener.ts` player HTTP and WebSocket |
+| `packages/server` | `cli.ts` launcher. `main.ts` editor API, MCP and harness runs; `activity-log.ts` keeps each turn's steps. `host.ts` + `hosting.ts` headless host and listeners. `player-listener.ts` player HTTP and WebSocket |
 | `packages/web` | Workspace UI, player, sandboxed game SDK (`game-sdk.ts`) |
 | `packages/games` | Runtimes for older scene-based projects |
 | `public/` | Static HTML and CSS, copied into `dist/web` |
@@ -34,7 +34,7 @@ The two `link:` dependencies in `package.json` are submodules in `deps/`, pinned
 | `host/` | Go host: `projects.go` store, `editor.go` API, `mcp.go`, `package.go` releases, `release.go` import checks, `rooms.go`, `listener.go` player |
 | `desktop/` | Electron app, a pnpm project with its own lockfile: `src/main.ts` window and hardening, `editor.ts` starts and stops `dist/server.mjs`, `routes.ts` where pages may go, `scripts/pack.mjs` packs it for macOS. Its `typecheck`, `lint` (this repo's oxlint config) and Playwright `test` run in `desktop/` after `pnpm build` here |
 | `scripts/` | `build.mjs` (dist), `build-host.mjs` (Go binaries), `contracts.ts` (schemas) |
-| `test/` | `projects`, `rooms`, `mcp`, `harness` and `chat-control` `.test.ts` unit; `host.contract` + `editor.contract` run on both hosts; `browser.mjs` + `host-browser.ts` e2e (`fixture-editor.ts` starts the editor with a fake harness for `browser.mjs`). Go unit tests sit beside the code in `host/` and `contracts/` |
+| `test/` | `projects`, `rooms`, `mcp`, `harness`, `activity`, `ask-summary` and `chat-control` `.test.ts` unit; `host.contract` + `editor.contract` run on both hosts; `browser.mjs`, `browser-workspace.mjs` + `host-browser.ts` e2e (`browser-editor.mjs` starts `fixture-editor.ts`, the editor with a fake harness). Go unit tests sit beside the code in `host/` and `contracts/` |
 
 ## Rules
 

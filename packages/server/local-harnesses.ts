@@ -225,14 +225,16 @@ export class LocalHarnesses implements Processors {
         if ((model || effort) && event.type === 'options' && event.modes) effective = modelSettings(event.options);
         report?.(event);
       };
-      const handle = runtime.run({ ...spec, prompt, model: model ?? '', effort, ask }, progress);
+      const place = { folder: spec.cwd, harness: name };
+      const handle = runtime.run({ ...spec, prompt, model: model ?? '', effort,
+        ask: ask && ((question, withdrawn) => ask(question, withdrawn, place)) }, progress);
       const stop = () => handle.cancel();
       signal?.addEventListener('abort', stop, { once: true });
       if (signal?.aborted) stop();
-      const result = await handle.done.finally(() => signal?.removeEventListener('abort', stop));
+      const result = await handle.done.finally(() => { signal?.removeEventListener('abort', stop); report?.flush(); });
       signal?.throwIfAborted();
-      result.permissionDenials.slice(0, 12).forEach((detail, index) => update?.({ type: 'activity',
-        entry: { id: 'denied:' + index, kind: 'notice', title: 'Permission denied', detail: detail.slice(0, 1600) },
+      result.permissionDenials.slice(0, 40).forEach((detail, index) => update?.({ type: 'activity',
+        entry: { id: 'denied:' + index, kind: 'notice', title: 'Permission denied', detail },
       }));
       const task = spec.sessionId;
       if (result.cancelled) return { task, name, stopReason: 'cancelled' };

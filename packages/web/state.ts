@@ -1,38 +1,50 @@
 // Split from workspace.ts; shares state through ws in state.ts.
 import { type Asset, type ChatUsage, type Note, type Project, type Reference, type Scene } from '../sdk/contracts.ts';
 import { type GameDocument, type RegisteredObject } from '../sdk/game.ts';
-import { type ActivityEntry, type HarnessAction } from '../sdk/chat-stream.ts';
-import { modelPicker } from './model-picker.ts';
+import { type HarnessAction } from '../sdk/chat-stream.ts';
+import { TurnLog } from '../sdk/activity.ts';
+import type { modelPicker } from './model-picker.ts';
 
-export const modes = ['edit', 'context', 'review', 'play'] as const;
-export type Mode = typeof modes[number];
 export type Proposal = { id: string; label: string; baseRevision: string };
 export type Preview = { proposal: Proposal; preview: { scene?: Scene; game?: GameDocument; assets: Asset[] } };
 export type Box = { x: number; y: number; width: number; height: number };
 export type WorkspaceMessage = { role: 'creator' | 'assistant'; text: string; usage?: ChatUsage };
-export type ChatReply = { projectId?: string; branch?: string; conversation?: WorkspaceMessage[]; mode?: 'edit' | 'review' | 'play'; proposalId?: string };
+export type ChatReply = { projectId?: string; branch?: string; conversation?: WorkspaceMessage[]; proposalId?: string };
+export type ProjectCard = Pick<Project, 'id' | 'title' | 'template'>;
 export type ActivityTurn = {
   name: string; text: string; references: Reference[]; status: string; pending: boolean; showPrompt: boolean;
   connection?: AbortController; id?: string; note?: Note; failed?: boolean; stopping?: boolean;
-  entries: Map<string, ActivityEntry>; actions: Map<string, HarnessAction>;
+  startedAt: number; log: TurnLog; actions: Map<string, HarnessAction>;
+  /** The turn's steps as the thread draws them, kept while the turn is shown. */
+  steps?: HTMLElement;
 };
 // Mutable workspace state that more than one workspace module reads or
 // writes. State with a single owner lives in that module.
 export const ws = {
   project: undefined as Project | undefined,
+  /** The conversation before a project exists; the harness's first game takes it into the new project. */
+  conversation: [] as WorkspaceMessage[],
   branch: 'main',
-  mode: 'edit' as Mode,
+  /** Edit shows the editing affordances on the running game; otherwise the person plays it. */
+  editing: false,
+  objectsOpen: false,
+  sourceVisible: false,
+  threadOpen: true,
   selected: new Set<string>(),
   region: undefined as Box | undefined,
+  /** The proposal the running game shows, while its card is switched to After. */
   candidate: undefined as Preview | undefined,
+  proposals: [] as Proposal[],
+  /** The proposal the card shows, among several. */
+  proposalChoice: undefined as string | undefined,
+  projectCards: [] as ProjectCard[],
   modelControl: undefined as ReturnType<typeof modelPicker> | undefined,
   registerObjects: true,
-  health: undefined as unknown as { mcp: boolean },
+  health: { mcp: false } as { mcp: boolean; chat?: boolean },
   view: { x: 0, y: 0, zoom: 1, grid: false, tool: 'select' as 'select' | 'pan' },
   playtest: undefined as { id: string; link: string } | undefined,
   playtestKey: undefined as string | undefined,
   previewError: '',
-  sourceVisible: false,
   navigation: 0,
   registered: [] as RegisteredObject[],
 };
@@ -44,7 +56,12 @@ export const activityKey = () => threadKey(ws.project?.id, ws.branch);
 export const visibleTurn = () => activityTurns.get(activityKey());
 export const chatBusy = () => visibleTurn()?.pending === true;
 export const lastProjectKey = 'zirbel-last-project-v1';
+export const recentProjectsKey = 'zirbel-recent-projects-v1';
+export const threadOpenKey = 'zirbel-thread-open-v1';
 export const chatSettingsKey = 'zirbel-chat-settings-v1';
 export const chatSettings = { suggestions: true, count: 3 };
+/** Suggested messages, once a game exists: they ask about or explain the game on screen, never propose content. */
+export const SUGGESTIONS = ['Describe this game', 'Suggest two changes', 'Explain the controls'] as const;
+export const MAX_SUGGESTIONS = SUGGESTIONS.length;
 export const objectPreferenceKey = 'zirbel-register-objects';
 export const markedObjects = new Set<string>();

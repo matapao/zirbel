@@ -3,17 +3,24 @@ import { $, action, attempt, el, formValue, option } from './editor-ui.ts';
 import { markedObjects, ws } from './state.ts';
 import { authored, bind, current, displayedRevision, displayedScene, edit, uid } from './workspace.ts';
 import { renderChips } from './chat.ts';
-import { WORLD, legacyScene, type Reference, type SceneObject } from '../sdk/contracts.ts';
-import { assetDialog } from './dialogs.ts';
+import { WORLD, type Reference, type SceneObject } from '../sdk/contracts.ts';
 import { newObject, palette } from '../games/templates.ts';
 import { scheduleDraw } from './viewport.ts';
 
+function countObjects(count: number) {
+  const toggle = $('toggle-objects');
+  toggle.querySelector('.count')?.remove();
+  if (count) { const badge = el('span', String(count), 'count'); badge.setAttribute('aria-hidden', 'true'); toggle.append(badge); }
+}
+
+/** The object list in Edit: the game's registered objects to mark for chat, or a template scene's objects to edit. */
 export function renderObjects() {
   const objects = $('objects');
   if (!objects || !ws.project) return;
   const search = $<HTMLInputElement>('search').value.toLowerCase().trim();
-  $<HTMLSelectElement>('add-object').closest('label')!.hidden = authored();
+  $('add-object-label').hidden = authored() || Boolean(ws.candidate);
   if (authored()) {
+    countObjects(ws.registered.length);
     objects.replaceChildren();
     for (const item of ws.registered.filter(({ id, properties }) => (id + ' ' + (typeof properties.name === 'string' ? properties.name : '')).toLowerCase().includes(search))) {
       const button = action(typeof item.properties.name === 'string' ? item.properties.name : item.id, () => {
@@ -27,10 +34,11 @@ export function renderObjects() {
     if (!ws.registered.length) objects.append(el('p', displayedRevision().game?.registerObjects === false
       ? 'Object registration is off for this revision.' : 'Objects registered by the running game appear here.'));
     renderRegisteredInspector();
-    renderAssets();
     return;
   }
-  const matches = legacyScene(current()).objects.filter((item) => item.name.toLowerCase().includes(search) || item.kind.includes(search));
+  const scene = displayedScene();
+  countObjects(scene.objects.length);
+  const matches = scene.objects.filter((item) => item.name.toLowerCase().includes(search) || item.kind.includes(search));
   const groups = new Map<string, SceneObject[]>();
   const pinned = ['rangers-cabin', 'mirror-pond', 'footbridge', 'campfire', 'player-spawn'];
   const organize = (item: SceneObject) => pinned.includes(item.id) || search ? '' :
@@ -61,7 +69,6 @@ export function renderObjects() {
   }
   if (!matches.length) objects.append(el('p', search ? 'No matching objects.' : 'Add an object to start the scene.'));
   renderInspector();
-  renderAssets();
 }
 
 export function renderRegisteredInspector() {
@@ -72,7 +79,7 @@ export function renderRegisteredInspector() {
 function renderInspector() {
   const node = $('inspector');
   node.replaceChildren(el('h3', 'Inspector'));
-  const reviewing = ws.mode === 'review';
+  const reviewing = Boolean(ws.candidate);
   const items = displayedScene().objects.filter((item) => ws.selected.has(item.id));
   const item = items[0];
   if (!item || items.length > 1) {
@@ -109,18 +116,6 @@ function renderInspector() {
   node.append(form);
 }
 
-function renderAssets() {
-  const node = $('assets');
-  node.replaceChildren(action('Import image asset', () => assetDialog()));
-  if (!current().assets.length) node.append(el('p', 'No imported assets.'));
-  for (const asset of current().assets) {
-    const item = el('div', undefined, 'item');
-    item.append(el('strong',asset.name), el('small', asset.author + ' · ' + asset.license),
-      action('Remove', () => edit('Remove asset ' + asset.name, [{ op: 'removeAsset', id: asset.id }])));
-    node.append(item);
-  }
-}
-
 export function setupObjects() {
   const add = $<HTMLSelectElement>('add-object');
   for (const value of Object.keys(palette)) add.append(option(value, value.charAt(0).toUpperCase() + value.slice(1)));
@@ -132,12 +127,6 @@ export function setupObjects() {
     const item = newObject(kind, uid(), 480, 300);
     attempt(async () => { await edit('Add ' + item.name, [{ op: 'add', object: item }]); choose(item, false); });
   });
-  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-panel]')) button.addEventListener('click', () => {
-    const objects = button.dataset.panel === 'objects';
-    for (const element of document.querySelectorAll('[data-panel]')) element.setAttribute('aria-pressed', String(element === button));
-    for (const id of ['objects', 'object-tools','inspector']) $(id).hidden = !objects;
-    $('assets').hidden = objects;
-  });
   if (ws.project) renderObjects();
 }
 
@@ -145,7 +134,6 @@ export function choose(item: SceneObject, additive: boolean) {
   if (!additive) { ws.selected.clear(); ws.region = undefined; }
   if (additive && ws.selected.has(item.id)) ws.selected.delete(item.id);
   else if (ws.selected.size < 32) ws.selected.add(item.id);
-  $('hits').hidden = true;
   renderObjects();
   renderChips();
   scheduleDraw();

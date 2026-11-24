@@ -179,9 +179,10 @@ async function showGame() {
   lobby.hidden = true;
   game.hidden = false;
   byId('leave').hidden = false;
+  // In the editor the game fills its pane, without the player's own title bar.
+  if (info.solo && window.parent !== window && new URLSearchParams(location.search).has('preview'))
+    document.body.dataset.preview = '';
   if (info.gameUrl) {
-    if (info.solo && window.parent !== window && new URLSearchParams(location.search).has('preview'))
-      document.body.dataset.preview = '';
     canvas.hidden = true;
     game.querySelector('footer')!.hidden = true;
     authoredFrame = document.createElement('iframe');

@@ -1,4 +1,5 @@
 import { editableGame, gameDocument } from './game.ts';
+import { ENTRY_LIMIT, STEP_ID_LIMIT, TITLE_LIMIT, TURN_LIMIT, TURN_STEPS, entryWeight } from './activity.ts';
 import { z } from 'zod';
 
 export const SDK_VERSION = '1.0.0';
@@ -84,6 +85,18 @@ export const note = z.strictObject({
   usage: chatUsage.optional(),
   designPrompt: z.string().trim().min(1).max(3000).optional(),
 });
+// One step of a harness turn, as the Node editor keeps it beside the projects. Not part of the project file.
+const activityEntry = z.strictObject({
+  id: z.string().min(1).max(STEP_ID_LIMIT), title: z.string().max(TITLE_LIMIT),
+  detail: z.string().max(ENTRY_LIMIT).optional(), diff: z.string().max(ENTRY_LIMIT).optional(),
+  kind: z.enum(['message', 'plan', 'tool', 'helper', 'file', 'notice', 'request']),
+  state: z.enum(['pending', 'running', 'waiting', 'idle', 'completed', 'failed']).optional(),
+  parent: z.string().min(1).max(STEP_ID_LIMIT).optional(),
+});
+export const turnActivity = z.strictObject({
+  version: z.literal(1), entries: z.array(activityEntry).max(TURN_STEPS), dropped: z.number().int().nonnegative(),
+}).refine((record) => record.entries.reduce((total, entry) => total + entryWeight(entry), 0) <= TURN_LIMIT,
+  'The turn activity exceeds its size limit.');
 export const project = z.strictObject({
   version: z.literal(1), id, title: z.string().trim().min(1).max(80), template: template.optional(),
   branches: z.record(id, id), revisions: z.array(revision).min(1), notes: z.array(note), attachments: z.array(attachment),
@@ -150,6 +163,7 @@ export type Attachment = z.infer<typeof attachment>;
 export type Reference = z.infer<typeof sceneReference>;
 export type ChatUsage = z.infer<typeof chatUsage>;
 export type Note = z.infer<typeof note>;
+export type ActivityEntry = z.infer<typeof activityEntry>;
 export type Operation = z.infer<typeof operation>;
 export type Revision = z.infer<typeof revision>;
 export type Project = z.infer<typeof project>;

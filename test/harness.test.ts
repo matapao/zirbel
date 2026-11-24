@@ -28,22 +28,34 @@ test('a harness provider runs each harness through the same chat path', async (t
   });
   const send = (processor: string, text: string, projectId = project.id) => {
     const current = projects.read(projectId);
-    return runHarnessChat(harnesses, processor, projects, current, head(current, 'main'), { text, branch: 'main', playing: false }, []);
+    return runHarnessChat(harnesses, processor, projects, current, head(current, 'main'), { text, branch: 'main' }, []);
   };
   const question = await send('codex', 'simple 3D game using three.js');
-  assert.equal(question.mode, undefined);
+  assert.equal(question.proposalId, undefined);
   assert.equal(projects.list().length, 1);
   assert.equal(projects.read(project.id).notes.at(-1)?.text, 'What should the player do in the game?');
   assert.deepEqual(projects.read(project.id).notes.at(-1)?.usage, { source: 'Codex', total: 150 });
   const created = await send('claude', 'A small 3D JRPG');
-  assert.equal(created.mode, 'edit');
+  assert.notEqual(created.projectId, project.id);
   assert.match(requests[1]?.prompt ?? '', /What should the player do/);
   const game = projects.read(created.projectId);
   assert.equal(game.title, 'Sunstone Road');
   assert.equal(head(game, 'main').game?.html.includes('facets: 7'), true);
-  assert.equal((await send('codex', 'play it', game.id)).mode, 'play');
+  // The game always runs: "play it" is a message for the harness, not a command that switches modes.
+  const played = await send('codex', 'play it', game.id);
+  assert.deepEqual(Object.keys(played).sort(), ['branch', 'projectId', 'task']);
+  assert.equal(projects.read(game.id).notes.at(-1)?.text, 'Starting.');
   await assert.rejects(send('ungranted', 'Make a game'), /does not offer that harness/i);
-  assert.deepEqual(requests.map(({ processor }) => processor), ['codex', 'claude']);
+  assert.deepEqual(requests.map(({ processor }) => processor), ['codex', 'claude', 'codex']);
+});
+
+test('the instructions say how to reply and what the sandbox offers, and nothing about the game itself', async () => {
+  const { instructions } = await import('../packages/server/harness-chat.ts');
+  for (const contract of ['{"action":"reply","message":"..."}',
+    '{"action":"create","title":"...","message":"...","game":{"html":"...","maxPlayers":1}}',
+    '{"action":"edit","message":"...","game":{"html":"...","maxPlayers":1}}']) assert.ok(instructions.includes(contract), contract);
+  for (const steer of ['original', 'You choose', 'even a short one', 'Three.js use', 'viewport'])
+    assert.equal(instructions.includes(steer), false, steer);
 });
 
 test('workspace chat stays projectless until the harness creates a draft', async (t) => {
@@ -62,7 +74,7 @@ test('workspace chat stays projectless until the harness creates a draft', async
   assert.deepEqual(projects.list(), []);
   const draft = await runWorkspaceChat(harnesses, 'codex', projects, 'A short JRPG', clarification.conversation);
   assert.ok('projectId' in draft && draft.projectId);
-  assert.equal(draft.mode, 'edit');
+  assert.equal('mode' in draft, false);
   assert.deepEqual(calls.map(({game}) => game), [null, null]);
   assert.equal(calls[1]?.recentConversation.length, 2);
   assert.equal(projects.read(draft.projectId).notes.length, 4);
@@ -175,6 +187,11 @@ test('streamed harness requests accept a single reviewed answer and stopping end
   const first = frames.find((event) => event.type === 'action');
   assert.ok(run && first?.action.kind === 'permission');
   assert.deepEqual(first.action.options, [{ id: 'yes', title: 'Allow once' }]);
+  assert.equal(first.action.summary, 'Edit index.html');
+  assert.equal(first.action.scope, 'sandboxed');
+  // Each request is a step of the turn too: waiting while open, then with the answer it got.
+  const asked = frames.find((event) => event.type === 'activity' && event.entry.kind === 'request');
+  assert.ok(asked?.type === 'activity' && asked.entry.state === 'waiting' && asked.entry.title === 'Edit index.html');
   assert.throws(() => chat.answer(run.id, first.action.id, { choice: 'option', option: 'always' }), /offered/);
   chat.answer(run.id, first.action.id, { choice: 'option', option: 'yes' });
   assert.throws(() => chat.answer(run.id, first.action.id, { choice: 'option', option: 'yes' }), /no longer open/);
@@ -184,6 +201,9 @@ test('streamed harness requests accept a single reviewed answer and stopping end
   assert.throws(() => chat.answer(run.id, form.action.id, { choice: 'submit', values: { players: 1.5 } }), /Check the value/);
   chat.answer(run.id, form.action.id, { choice: 'submit', values: { players: 2 } });
   await responded.promise;
+  const answered = frames.filter((event) => event.type === 'activity' && event.entry.state === 'completed')
+    .map((event) => event.type === 'activity' ? event.entry.detail?.split('\n')[0] : '');
+  assert.deepEqual(answered, ['Answered: Allow once', 'Sent']);
   chat.stop(run.id);
   await completed;
   assert.deepEqual(frames.at(-1), { type: 'error', error: 'Turn stopped.' });

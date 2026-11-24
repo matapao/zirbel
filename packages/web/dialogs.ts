@@ -1,28 +1,50 @@
 // Split from workspace.ts; shares state through ws in state.ts.
 import { action, api, attempt, dialog, el, formValue, inform, openDialog, option } from './editor-ui.ts';
-import { current, library, loadProject, openProject, refreshProject, route, scope, setMode } from './workspace.ts';
+import { current, library, loadProject, openProject, refreshProject, route, scope } from './workspace.ts';
 import { Preview, ws } from './state.ts';
 import { type Project } from '../sdk/contracts.ts';
 import { templates } from '../games/templates.ts';
 import { roomCard, type Room } from './library.ts';
 
-export function forkDialog(id: string) {
+function forkDialog(id: string) {
   const body = openDialog('Apply to a new branch');
+  const label = el('label', 'Branch name');
   const field = el('input');
   field.placeholder = 'experiment'; field.pattern = '[a-z0-9][a-z0-9_-]{0,79}';
-  body.append(field, action('Create branch', async () => {
+  label.append(field);
+  body.append(label, action('Create branch', async () => {
     if (!field.value.trim() || !field.reportValidity()) throw new Error('Choose a branch name using lowercase letters, digits, dashes or underscores.');
     const result = await api<{ branch: string }>(route('apply/' + id), { fork: field.value.trim() });
     dialog.close(); await loadProject(openProject().id, result.branch);
   }, 'primary'));
 }
 
+/** History: the branches to switch between, staged proposals to apply to a new branch, and revisions to restore. */
 export function historyDialog() {
-  const body = openDialog('Revision history');
+  const body = openDialog('History');
   const visit = ws.navigation;
+  const project = openProject();
   const restore = route('restore');
   const base = scope();
-  for (const revision of [...openProject().revisions].reverse()) {
+  const branches = Object.keys(project.branches);
+  body.append(el('h3', 'Branches'));
+  for (const name of branches) {
+    const item = el('div', undefined, 'item history-branch');
+    item.append(el('strong', name));
+    if (name === ws.branch) item.append(el('span', 'Current branch'));
+    else item.append(action('Switch to ' + name, async () => { dialog.close(); await loadProject(project.id, name); }));
+    body.append(item);
+  }
+  if (ws.proposals.length) {
+    body.append(el('h3', 'Proposals'), el('p', 'Apply a staged proposal to a new branch, and keep this one as it is.'));
+    for (const proposal of ws.proposals) {
+      const item = el('div', undefined, 'item');
+      item.append(el('strong', proposal.label), action('Apply to a new branch…', () => forkDialog(proposal.id)));
+      body.append(item);
+    }
+  }
+  body.append(el('h3', 'Revisions'));
+  for (const revision of [...project.revisions].reverse()) {
     const item = el('article', undefined, 'item');
     item.append(el('strong', revision.label), el('small', revision.id.slice(0, 8) + ' · ' + new Date(revision.date).toLocaleString()));
     if (revision.id === base.baseRevision) item.append(el('span','Current revision'));
@@ -34,7 +56,6 @@ export function historyDialog() {
       ws.region = undefined;
       await refreshProject();
       if (visit !== ws.navigation) return;
-      setMode('edit');
       historyDialog();
     }));
     body.append(item);
@@ -88,10 +109,9 @@ export async function sharingDialog() {
       inform('Published to this host’s library.'); await library.open();
     }, publish);
   });
-  if (ws.health.mcp) body.append(action('Agent access…', () => grantDialog(id, title)));
 }
 
-async function grantDialog(projectId: string, title: string) {
+export async function agentAccessDialog(projectId: string, title: string) {
   const body = openDialog('Agent access · ' + title);
   const grants = 'projects/' + projectId + '/grants';
   body.append(el('p', 'Give an MCP client permission to propose changes to this project.'),
@@ -107,7 +127,7 @@ async function grantDialog(projectId: string, title: string) {
   const records = await api<Array<{ id: string; expires: number; write: boolean }>>(grants);
   for (const record of records) {
     body.append(el('p', 'Grant ' + record.id.slice(0,8) + ' · ' + new Date(record.expires).toLocaleString()),
-      action('Revoke ' + record.id.slice(0,8), async () => { await api(grants + '/' + record.id, {}); await grantDialog(projectId, title); }));
+      action('Revoke ' + record.id.slice(0,8), async () => { await api(grants + '/' + record.id, {}); await agentAccessDialog(projectId, title); }));
   }
 }
 

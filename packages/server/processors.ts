@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import type { RunSpec } from 'celler/harness';
+import type { AgentAsk, AskAnswer } from 'celler/harness';
 import type { ChatUpdate } from '../sdk/chat-stream.ts';
+import type { AskPlace } from './ask-summary.ts';
 import type { ModelSelection, ModelSettings } from '../sdk/model-settings.ts';
 
 export const processorId = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
@@ -13,7 +14,8 @@ export type SignInStatus = { status: 'pending' | 'complete' | 'failed'; url?: st
 export type ProcessorRun = {
   signal?: AbortSignal;
   update?: (event: ChatUpdate) => void;
-  ask?: RunSpec['ask'];
+  /** Puts a request to the person: place says which harness asks, and from which working folder. */
+  ask?: (question: AgentAsk, withdrawn: AbortSignal, place?: AskPlace) => Promise<AskAnswer | null>;
   selection?: ModelSelection;
 };
 

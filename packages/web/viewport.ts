@@ -1,12 +1,16 @@
 // Split from workspace.ts; shares state through ws in state.ts.
-import { authored, bind, current, displayedRevision, displayedScene, edit, route } from './workspace.ts';
+// The stage: the running game, and in Edit its tools, the object list and the source. A template scene without a game
+// shows its scene editor in Edit and plays in the player otherwise.
+import { authored, bind, current, displayedRevision, displayedScene, edit, render } from './workspace.ts';
 import { type Box, ws } from './state.ts';
-import { $, action, attempt } from './editor-ui.ts';
+import { $, attempt } from './editor-ui.ts';
 import { drawScene, hitObjects } from './scene.ts';
-import { WORLD, legacyScene, type SceneObject } from '../sdk/contracts.ts';
+import { WORLD, type SceneObject } from '../sdk/contracts.ts';
 import { choose, renderObjects } from './inspector.ts';
 import { renderChips } from './chat.ts';
-import { openGame } from './library.ts';
+import { renderEditing } from './edit-mode.ts';
+import { renderMessages } from './thread.ts';
+import { setThreadOpen } from './desk.ts';
 
 // The viewport's own state. What the workspace modules share is in ws.
 let drawFrame = 0;
@@ -14,27 +18,32 @@ let drag: { start: { x: number; y: number }; clientX: number; clientY: number; p
   object?: SceneObject; moved?: SceneObject; region?: Box; movedPointer: boolean } | undefined;
 
 export function renderViewport() {
+  if (!ws.project) return;
   const revision = displayedRevision();
-  const legacyEdit = !authored() && ws.mode !== 'play';
-  const canToggle = Boolean(revision.game);
-  const showSource = canToggle && ws.sourceVisible;
-  const toggle = $('toggle-source');
-  toggle.hidden = !canToggle;
-  toggle.setAttribute('aria-pressed', String(showSource));
-  $('source-pane').hidden = !showSource;
+  const sceneEditor = ws.editing && !authored();
+  const sourceShown = ws.editing && ws.sourceVisible && Boolean(revision.game);
+  $('edit-bar').hidden = !ws.editing;
+  $('view-tools').hidden = !sceneEditor;
+  const objectsToggle = $('toggle-objects');
+  objectsToggle.setAttribute('aria-pressed', String(ws.objectsOpen));
+  $('objects-drawer').hidden = !ws.editing || !ws.objectsOpen;
+  const sourceToggle = $('toggle-source');
+  sourceToggle.hidden = !revision.game;
+  sourceToggle.setAttribute('aria-pressed', String(sourceShown));
+  $('source-drawer').hidden = !sourceShown;
   const source = $<HTMLTextAreaElement>('game-source');
-  source.readOnly = ws.mode !== 'edit';
-  $('save-source').hidden = source.readOnly || source.value === (revision.game?.html ?? '');
-  $('playframe').hidden = showSource || !ws.playtest;
-  $('open-player').hidden = showSource || !ws.playtest;
-  $('scene-wrap').hidden = !legacyEdit;
-  $('view-tools').hidden = !legacyEdit;
-  $('zoom').hidden = !legacyEdit;
-  document.querySelector<HTMLElement>('.viewport-meta')!.hidden = !legacyEdit;
-  document.querySelector<HTMLElement>('.scene-bottom span:last-child')!.hidden = !legacyEdit;
+  // The source is editable in Edit, on the saved revision; a proposal's source is shown as it is.
+  source.readOnly = !ws.editing || Boolean(ws.candidate);
+  $('save-source').hidden = source.readOnly || source.value === (current().game?.html ?? '');
+  $('playframe').hidden = sceneEditor || !ws.playtest;
+  $('scene-wrap').hidden = !sceneEditor;
+  const tag = $('preview-tag');
+  tag.hidden = !ws.candidate;
+  tag.textContent = ws.candidate ? 'After · ' + ws.candidate.proposal.label : '';
   const message = $('preview-message');
-  message.hidden = showSource || legacyEdit || Boolean(ws.playtest);
-  message.textContent = ws.previewError || (ws.playtestKey ? 'Opening game…' : 'Describe a game in Activity to build this project.');
+  message.hidden = sceneEditor || Boolean(ws.playtest);
+  message.textContent = ws.previewError || 'Opening game…';
+  $('show-thread').hidden = ws.threadOpen;
 }
 
 export function scheduleDraw() {
@@ -53,7 +62,6 @@ export function scheduleDraw() {
     drawScene(ctx, scene, { selected: ws.selected, blank: ws.project.template === 'blank' || ws.project.template === 'tessellate',
       grid: ws.view.grid, region: drag?.region ?? ws.region, time: 1000 });
     $('zoom').textContent = Math.round(ws.view.zoom * 100) + '%';
-    $('preview-tag').textContent = ws.mode === 'review' && ws.candidate ? ws.candidate.proposal.label : 'Saved revision · ' + current().id.slice(0, 8);
   });
 }
 
@@ -65,12 +73,23 @@ function point(event: PointerEvent) {
   };
 }
 
-export function setupScene() {
+function setupStageControls() {
   const source = $<HTMLTextAreaElement>('game-source');
-  bind('toggle-source', 'click', () => { ws.sourceVisible = !ws.sourceVisible; renderViewport(); });
+  bind('toggle-objects', 'click', () => { ws.objectsOpen = !ws.objectsOpen; renderEditing(); });
+  bind('toggle-source', 'click', () => { ws.sourceVisible = !ws.sourceVisible; renderViewport(); if (ws.sourceVisible) source.focus(); });
   bind('game-source', 'input', () => { $('save-source').hidden = source.value === (current().game?.html ?? ''); });
   bind('save-source', 'click', () => attempt(() => edit('Edit game source', [{ op: 'writeGame',
     game: { ...current().game, html: source.value, maxPlayers: current().game?.maxPlayers ?? 1 } }]), $<HTMLButtonElement>('save-source')));
+  bind('show-thread', 'click', () => {
+    setThreadOpen(true);
+    render();
+    $('hide-thread').focus();
+    renderMessages();
+  });
+}
+
+export function setupScene() {
+  setupStageControls();
   const canvas = $<HTMLCanvasElement>('scene');
   const tool = (name: 'select' | 'pan') => {
     ws.view.tool = name; canvas.classList.toggle('pan', name === 'pan');
@@ -93,11 +112,12 @@ export function setupScene() {
     scheduleDraw();
   }, { passive: false });
   canvas.addEventListener('pointerdown', (event) => {
-    if (!ws.project || !['edit', 'context'].includes(ws.mode) || event.button !== 0) return;
+    // A proposal shown After is for comparing; edits go to the saved revision.
+    if (!ws.project || !ws.editing || ws.candidate || event.button !== 0) return;
     canvas.setPointerCapture(event.pointerId);
     const start = point(event);
     drag = { start, clientX: event.clientX, clientY: event.clientY, panX: ws.view.x, panY: ws.view.y, movedPointer: false,
-      object: ws.view.tool === 'select' && ws.mode === 'edit' ? hitObjects(legacyScene(current()), start.x, start.y)[0] : undefined };
+      object: ws.view.tool === 'select' ? hitObjects(displayedScene(), start.x, start.y)[0] : undefined };
   });
   canvas.addEventListener('pointermove', (event) => {
     if (!drag) return;
@@ -109,12 +129,13 @@ export function setupScene() {
       const bounds = canvas.getBoundingClientRect();
       ws.view.x = drag.panX + dx * WORLD.width / bounds.width;
       ws.view.y = drag.panY + dy * WORLD.height / bounds.height;
-    } else if (ws.mode === 'context') {
-      drag.region = { x: Math.min(end.x, drag.start.x), y: Math.min(end.y, drag.start.y),
-        width: Math.abs(end.x - drag.start.x), height: Math.abs(end.y - drag.start.y) };
     } else if (drag.object) {
       drag.moved = { ...drag.object, x: Math.round(Math.max(0, Math.min(WORLD.width, drag.object.x + end.x - drag.start.x))),
         y: Math.round(Math.max(0, Math.min(WORLD.height, drag.object.y + end.y - drag.start.y))) };
+    } else {
+      // A drag across empty space marks a region for the next message.
+      drag.region = { x: Math.min(end.x, drag.start.x), y: Math.min(end.y, drag.start.y),
+        width: Math.abs(end.x - drag.start.x), height: Math.abs(end.y - drag.start.y) };
     }
     scheduleDraw();
   });
@@ -129,19 +150,11 @@ export function setupScene() {
       if (!event.shiftKey) ws.selected.clear();
       ws.region = ended.region; renderChips(); renderObjects(); scheduleDraw();
     } else if (!ended.movedPointer) {
-      const matches = hitObjects(legacyScene(current()), ended.start.x, ended.start.y);
-      if (matches.length > 1 && ws.mode === 'context') {
-        const menu = $('hits');
-        menu.hidden = false;
-        menu.replaceChildren(...matches.map((item) => action(item.name, () => choose(item, event.shiftKey || event.metaKey))));
-      } else if (matches[0]) choose(matches[0], event.shiftKey || event.metaKey);
-      else { ws.selected.clear(); ws.region = undefined; $('hits').hidden = true; renderChips(); renderObjects(); scheduleDraw(); }
+      const match = hitObjects(displayedScene(), ended.start.x, ended.start.y)[0];
+      if (match) choose(match, event.shiftKey || event.metaKey);
+      else { ws.selected.clear(); ws.region = undefined; renderChips(); renderObjects(); scheduleDraw(); }
     }
   });
   canvas.addEventListener('pointercancel', () => { drag = undefined; scheduleDraw(); });
-  $('open-player').addEventListener('click', (event) => {
-    event.preventDefault();
-    if (ws.project) openGame(route('playtest'), { branch: ws.branch, proposalId: ws.candidate?.proposal.id });
-  });
   scheduleDraw();
 }

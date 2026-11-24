@@ -1,6 +1,6 @@
 # Zirbel
 
-Author, play and host web games locally. Describe a game in Activity and a harness (Codex or Claude Code) writes it. Zirbel stores each revision, runs the game in a sandboxed player, and can host it for LAN guests.
+Author, play and host web games locally. Describe a game and a harness (Codex or Claude Code) writes it. Zirbel stores each revision, runs the game in a sandboxed player, and can host it for LAN guests.
 
 ## Run
 
@@ -31,10 +31,13 @@ Its windows are sandboxed, with context isolation and no Node or preload. The ed
 
 ## Use
 
-- **Projects…** opens or creates a project. **Library** imports `.zirbel-project.json` files (samples in `examples/`). **Remove…** moves one to `removed-projects/`; published releases stay.
-- **Activity**: pick a harness and **Model**, then describe the game or edit. A turn gets one hour of active runtime. **Stop turn** cancels it.
-- **Source** shows the HTML, CSS and JS. In Edit mode you can change it and save a revision.
-- **Share → Development multiplayer** opens an invite-only LAN room pinned to the saved revision (up to 4 players, if the game declares it).
+The game runs in the middle, playable, with its thread beside it. Before a game exists, the editor shows one prompt.
+
+- **The game's title** at the top left switches games, starts a **New game** and opens the **Library**, which imports `.zirbel-project.json` files (samples in `examples/`) and built game folders. **Remove…** moves a project to `removed-projects/`; published releases stay.
+- **The thread**: pick a harness and **Model**, then describe the game or a change. Each turn shows the harness's plan, tool calls, file edits, messages and requests inline, with the current step and the time it has run. The Node editor keeps each turn's steps in `activity/` in the data directory. A turn gets one hour of active runtime. **Stop** cancels it.
+- **Edit** (or the E key) shows the editing tools on the running game: the object list to mark objects for chat, the **Source**, which you can change and save as a revision, and the scene tools of a template scene. A click into the game ends Edit.
+- A change staged for review is a card in the thread: **Before** and **After** switch the running game, then **Apply** or **Discard** it. **⋯ → History** switches branches, applies a proposal to a new branch and restores revisions.
+- **Assets** lists the imported images and imports another. **Share → Development multiplayer** opens an invite-only LAN room pinned to the saved revision (up to 4 players, if the game declares it).
 
 ## Game API
 

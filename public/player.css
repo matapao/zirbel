@@ -59,4 +59,5 @@ footer{width:100%;border:0;border-top:1px solid var(--line);font-size:.91rem;min
 .game:has(.authored-game){display:flex;flex:1;padding:0;min-height:0}
 .authored-game{display:block;flex:1;width:100%;height:calc(100dvh - 4rem);border:0;background:white}
 body[data-preview] .player>header{display:none}
+body[data-preview] .game canvas{max-height:calc(100dvh - 3.5rem)}
 body[data-preview] .authored-game{height:100dvh}

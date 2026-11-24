@@ -1,15 +1,8 @@
-import type { Note } from './contracts.ts';
+import type { ActivityEntry, Note } from './contracts.ts';
 
+export type { ActivityEntry } from './contracts.ts';
 export const chatStreamType = 'application/x-ndjson';
 type ChatPhase = 'running' | 'responding' | 'validating';
-export type ActivityEntry = {
-  id: string;
-  title: string;
-  detail?: string;
-  kind: 'message' | 'plan' | 'tool' | 'helper' | 'file' | 'notice';
-  state?: 'pending' | 'running' | 'waiting' | 'idle' | 'completed' | 'failed';
-  parent?: string;
-};
 export type ActionField = {
   name: string;
   title: string;
@@ -18,8 +11,19 @@ export type ActionField = {
   required: boolean;
   choices?: { value: string; label: string }[];
 };
-export type HarnessAction = { id: string; title: string } & (
-  | { kind: 'permission'; detail?: string; options: { id: string; title: string }[] }
+/** Where an answered request takes effect: inside the turn's sandbox, or outside it; reach says so in plain words. */
+export type ActionReach = { scope: 'sandboxed' | 'outside'; reach: string };
+/** A permission request in plain language: a headline, and what it runs or changes for the details. */
+export type PermissionRequest = {
+  summary: string;
+  tool: string;
+  command?: string;
+  file?: string;
+  folder?: string;
+  diff?: string;
+};
+export type HarnessAction = { id: string; title: string } & ActionReach & (
+  | ({ kind: 'permission'; detail?: string; options: { id: string; title: string }[] } & PermissionRequest)
   | { kind: 'form'; fields: ActionField[] }
   | { kind: 'link'; url: string }
 );

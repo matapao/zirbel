@@ -1,51 +1,56 @@
 // Split from workspace.ts; shares state through ws in state.ts.
-import { $, action, api, attempt, chatApi, dialog, el, openDialog, option } from './editor-ui.ts';
-import { type Note, type Reference } from '../sdk/contracts.ts';
-import { ActivityTurn, ChatReply, WorkspaceMessage, activityKey, activityTurns, chatBusy, chatSettings, chatSettingsKey, markedObjects, objectPreferenceKey, promptDrafts, threadKey, type Preview, visibleTurn, ws } from './state.ts';
-import { renderRunActions, renderRunEntries } from './run-activity.ts';
-import { authored, listProjects, loadProject, refreshProject, route, scope, setMode, showProposal } from './workspace.ts';
+// The composer and each turn: sending, the harness's events as they stream, the live status line with the current
+// step and elapsed time, and Stop while a turn runs.
+import { $, action, api, attempt, chatApi, dialog, option } from './editor-ui.ts';
+import { TurnLog } from '../sdk/activity.ts';
+import { ActivityTurn, ChatReply, activityKey, activityTurns, chatBusy, markedObjects, promptDrafts, threadKey, visibleTurn, ws } from './state.ts';
+import { authored, hasContent, library, listProjects, loadProject, recentCards, refreshProject, render, route, scope, showProposal } from './workspace.ts';
 import { references, renderObjects } from './inspector.ts';
 import { scheduleDraw } from './viewport.ts';
 import { type Processor } from '../server/processors.ts';
 import { modelPicker } from './model-picker.ts';
 import { showHarnessAccounts } from './harness-accounts.ts';
+import { renderSuggestions } from './chat-settings.ts';
+import { keepTurn, renderMessages, renderTurnActions, setupThread, showStep } from './thread.ts';
+import { setThreadOpen } from './desk.ts';
 
 // Chat's own state. What the workspace modules share is in ws.
-let workspaceConversation: WorkspaceMessage[] = [];
 let providers: Processor[] = [];
 let processorNotice = 'Checking harnesses…';
 let preferredProcessor = '';
 let refreshingProcessors: Promise<void> | undefined;
-let renderedTurn: ActivityTurn | undefined;
+let clock: ReturnType<typeof setInterval> | undefined;
 
-export function renderMessages() {
-  const node = $('messages');
-  if (!node) return;
-  const notes: ReadonlyArray<Note | WorkspaceMessage> = ws.project ? ws.project.notes.filter((note) => note.branch === ws.branch) : workspaceConversation;
-  const turn = visibleTurn();
-  const messages = notes.map((note) => chatMessage(note.text, note.role === 'assistant', 'references' in note ? note.references : []));
-  if (turn?.showPrompt && !notes.some((note) => 'id' in note && note.id === turn.note?.id))
-    messages.push(chatMessage(turn.text, false, turn.note?.references ?? turn.references));
-  node.replaceChildren(...messages);
-  renderChatStatus();
+export const harnessReady = () => providers.some(({ ready }) => ready !== false);
+
+function elapsed(since: number) {
+  const seconds = Math.max(0, Math.floor((Date.now() - since) / 1000));
+  return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
 }
 
-function chatMessage(text: string, assistant: boolean, refs: Reference[]) {
-  const article = el('article', undefined, assistant ? 'note assistant-note' : 'note');
-  if (assistant) article.append(el('strong', 'Zirbel'));
-  article.append(el('div', text));
-  const labels = refs.map((reference) => reference.type === 'instance' ? reference.object.name : 'Marked region');
-  if (labels.length) article.append(el('small', labels.join(' · ') + ' · ' + refs[0]?.revision.slice(0, 8)));
-  return article;
+/** The step a running turn is on: its newest unfinished step, else the phase the harness reported. */
+function currentStep(turn: ActivityTurn) {
+  if (turn.stopping) return 'Stopping the turn…';
+  if (turn.actions.size) return 'Waiting for your response…';
+  if (!turn.pending) return turn.status;
+  const steps = [...turn.log.entries.values()];
+  const active = steps.findLast(({ state }) => state === 'running' || state === 'pending') ?? steps.at(-1);
+  const title = active?.kind === 'message' ? 'Writing a reply' : active?.title;
+  return title ? turn.name + ' · ' + title.split('\n', 1)[0] : turn.status;
 }
 
-function renderChatStatus(refreshEntries = false) {
+function renderChatStatus() {
   const turn = visibleTurn();
   const status = $('chat-run');
-  const text = turn?.stopping ? 'Stopping the turn…' : turn?.actions.size ? 'Waiting for your response…' : turn?.status ?? '';
-  if (status.textContent !== text) status.textContent = text;
+  if (!status) return;
+  const step = turn ? currentStep(turn) : '';
+  if ($('chat-step').textContent !== step) $('chat-step').textContent = step;
+  $('chat-elapsed').textContent = turn?.pending ? elapsed(turn.startedAt) : '';
   status.classList.toggle('waiting', turn?.pending === true && !turn.actions.size);
   status.classList.toggle('failed', turn?.failed === true);
+  status.hidden = !step;
+  clearInterval(clock);
+  clock = turn?.pending ? setInterval(() => { $('chat-elapsed').textContent = elapsed(turn.startedAt); }, 1000) : undefined;
   const stop = $<HTMLButtonElement>('stop-run');
   const send = $<HTMLButtonElement>('send');
   const focusStop = Boolean(turn?.connection) && document.activeElement === send;
@@ -53,73 +58,7 @@ function renderChatStatus(refreshEntries = false) {
   send.hidden = !stop.hidden;
   stop.disabled = turn?.stopping === true;
   if (focusStop) stop.focus();
-  const log = $<HTMLDetailsElement>('chat-log');
-  if (renderedTurn !== turn) {
-    renderedTurn = turn;
-    log.open = turn?.pending === true;
-    $('chat-log-title').textContent = (turn?.name ?? 'Harness') + ' activity';
-    refreshEntries = true;
-  }
-  log.hidden = !turn?.entries.size;
-  if (refreshEntries) renderRunEntries(turn?.entries);
-  renderRunActions(turn?.id, turn?.actions);
-  const feed = $('activity-feed');
-  feed.scrollTop = feed.scrollHeight;
-}
-
-function updateChatDetails() {
-  const context = $('chat-context');
-  const usage = $('chat-usage');
-  if (!context || !usage) return;
-  const selected = providers.find(({ id }) => id === $<HTMLSelectElement>('provider').value);
-  const thread = ws.project ? ws.project.notes.filter((note) => note.branch === ws.branch) : workspaceConversation;
-  const refCount = ws.project ? authored() ? markedObjects.size : references().length : 0;
-  const marks = refCount ? ' · ' + refCount + ' marked' : '';
-  context.textContent = selected ? 'Context · ' + (ws.project ? 'game + ' : '') + Math.min(thread.length, 12) + ' recent messages' + marks : processorNotice;
-  const amounts = thread.findLast((note) => note.role === 'assistant')?.usage;
-  const number = (value?: number) => value?.toLocaleString() ?? '—';
-  usage.textContent = amounts ? 'Last turn · ' + amounts.source + ' · ' + (amounts.input !== undefined || amounts.output !== undefined ?
-    number(amounts.input) + ' in / ' + number(amounts.output) + ' out' : number(amounts.total) + ' tokens') :
-    selected ? 'Usage · shown when reported by the harness' : '';
-
-  usage.title = amounts?.total === undefined ? '' : String(amounts.total) + ' total tokens';
-}
-
-export function renderSuggestions() {
-  const host = $('chat-suggestions');
-  if (!host || !ws.project) return;
-  host.replaceChildren();
-  if (!chatSettings.suggestions || !providers.some(({ ready }) => ready !== false)) return;
-  const status = ws.mode === 'play' ? 'Stop playing' : ws.mode === 'review' && ws.candidate ? 'Apply and play' : 'Play it';
-  const available = [status, 'Help me design a game', 'Describe this game', 'Add a clear goal for the player', 'Suggest two changes'];
-  for (const text of available.slice(0, chatSettings.count)) {
-    host.append(action(text, () => { $<HTMLTextAreaElement>('prompt').value = text; $('prompt').focus(); }, 'suggest'));
-  }
-}
-
-function openChatSettings() {
-  const body = openDialog('Chat settings');
-  const show = el('input');
-  show.type = 'checkbox';
-  show.checked = chatSettings.suggestions;
-  const showLabel = el('label', 'Show suggested messages');
-  showLabel.append(show);
-  const count = el('select');
-  count.append(...Array.from({ length: 5 }, (_, index) => option(String(index + 1), String(index + 1))));
-  count.value = String(chatSettings.count);
-  count.disabled = !show.checked;
-  const countLabel = el('label', 'Number of suggestions');
-  countLabel.append(count);
-  body.append(showLabel, countLabel);
-  const save = () => {
-    chatSettings.suggestions = show.checked;
-    chatSettings.count = Number(count.value);
-    count.disabled = !show.checked;
-    try { localStorage.setItem(chatSettingsKey, JSON.stringify(chatSettings)); } catch { /* Use memory for this session. */ }
-    renderSuggestions();
-  };
-  show.addEventListener('change', save);
-  count.addEventListener('change', save);
+  $('show-thread').classList.toggle('working', turn?.pending === true);
 }
 
 export function renderChips() {
@@ -129,7 +68,6 @@ export function renderChips() {
     marked.replaceChildren(...[...markedObjects].map((id) => action(id + ' ×', () => {
       markedObjects.delete(id); renderChips(); renderObjects();
     }, 'chip')));
-    updateChatDetails();
     return;
   }
   marked.replaceChildren(...references().map((reference) => action(
@@ -139,8 +77,35 @@ export function renderChips() {
       renderObjects(); renderChips(); scheduleDraw();
     }, 'chip',
   )));
-  updateChatDetails();
+}
 
+/** The empty desk: one prompt, the folder import, and the games opened recently. */
+function renderStart() {
+  const empty = !hasContent();
+  const label = empty ? 'Describe a game' : 'Describe a change';
+  $('prompt-label').textContent = label;
+  $<HTMLTextAreaElement>('prompt').placeholder = label + '…';
+  const recent = $('recent-games');
+  recent.replaceChildren();
+  const cards = recentCards(6).filter(({ id }) => id !== ws.project?.id);
+  if (!empty || !cards.length) return;
+  const list = document.createElement('ul');
+  for (const card of cards) {
+    const item = document.createElement('li');
+    item.append(action(card.title, () => loadProject(card.id), 'recent'));
+    list.append(item);
+  }
+  const heading = document.createElement('h2');
+  heading.textContent = 'Recent games';
+  recent.append(heading, list);
+}
+
+/** Why chat cannot start: no harness signed in, or an editor without harness chat. */
+function renderNotice(ready: boolean) {
+  const notice = $('chat-notice');
+  notice.hidden = ready || processorNotice === 'Checking harnesses…';
+  notice.replaceChildren(ws.health.chat ? processorNotice : 'This editor has no harness chat. Import a game folder, or open a game from the Library.');
+  if (!notice.hidden && ws.health.chat) notice.append(' ', action('Harnesses', () => openHarnesses(), 'link'));
 }
 
 export function renderProcessors() {
@@ -153,8 +118,10 @@ export function renderProcessors() {
   select.replaceChildren(...(available.length ? available.map(({ id, name }) => option(id, name)) : [option('', empty)]));
   select.value = available.some(({ id }) => id === preferredProcessor) ? preferredProcessor : available[0]?.id ?? '';
   select.disabled = chatBusy() || !available.length;
+  renderNotice(available.length > 0);
   updateModelControls();
-  updateChatDetails();
+  renderChatStatus();
+  renderStart();
   renderSuggestions();
 }
 
@@ -185,6 +152,11 @@ export async function refreshProcessors() {
   try { await refreshingProcessors; } finally { refreshingProcessors = undefined; }
 }
 
+export const openHarnesses = () => showHarnessAccounts(async () => {
+  await refreshProcessors();
+  return { providers, notice: processorNotice };
+});
+
 // Send marked objects first; keep automatic context small enough for a chat turn.
 function chatObjects() {
   const sorted = ws.registered.toSorted((a, b) => Number(markedObjects.has(b.id)) - Number(markedObjects.has(a.id)));
@@ -197,158 +169,133 @@ function chatObjects() {
   });
 }
 
+async function stopTurn() {
+  const turn = visibleTurn();
+  if (!turn?.connection || turn.stopping) return;
+  turn.stopping = true;
+  renderChatStatus();
+  if (!turn.id) {
+    turn.connection.abort();
+    return;
+  }
+  try { await api('chat/' + turn.id + '/stop', {}); }
+  catch (error) {
+    turn.stopping = false;
+    if (!turn.pending || visibleTurn() !== turn) return;
+    renderChatStatus();
+    throw error;
+  }
+}
+
+async function runTurn(text: string, selectedProvider: string) {
+  const input = $<HTMLTextAreaElement>('prompt');
+  const key = activityKey();
+  const startedAt = ws.navigation;
+  const projectId = ws.project?.id;
+  const name = providers.find((choice) => choice.id === selectedProvider)?.name ?? 'the harness';
+  const refs = ws.project ? references() : [];
+  const path = ws.project ? route('prompt') : 'chat';
+  const modelSettings = ws.modelControl?.selection();
+  const payload = ws.project ? {
+    ...scope(), text, references: refs, provider: selectedProvider, registerObjects: ws.registerObjects, modelSettings,
+    ...(authored() ? { objects: chatObjects(), markedIds: [...markedObjects] } : {}),
+    proposalId: ws.proposalChoice,
+  } : { text, provider: selectedProvider, conversation: ws.conversation, registerObjects: ws.registerObjects, modelSettings };
+  const connection = new AbortController();
+  const turn: ActivityTurn = { name, text, references: refs, status: 'Waiting for ' + name + '…', pending: true,
+    showPrompt: true, connection, startedAt: Date.now(), log: new TurnLog(), actions: new Map() };
+  const phases = { running: name + ' is working…', responding: name + ' is preparing a response…', validating: 'Checking the harness response…' };
+  input.value = '';
+  const previous = activityTurns.get(key);
+  if (previous) keepTurn(previous, projectId);
+  activityTurns.set(key, turn);
+  renderMessages();
+  renderProcessors();
+  try {
+    const response = await chatApi<ChatReply>(path, payload, (event) => {
+      if (activityTurns.get(key) !== turn || event.type === 'heartbeat') return;
+      if (event.type === 'note') {
+        turn.note = event.note;
+        if (ws.project && ws.project.id === projectId && !ws.project.notes.some(({ id }) => id === event.note.id)) ws.project.notes.push(event.note);
+        if (key === activityKey()) renderMessages();
+        return;
+      }
+      if (event.type === 'run') turn.id = event.id;
+      if (event.type === 'progress') turn.status = phases[event.phase];
+      if (event.type === 'activity') showStep(turn, event.entry, turn.log.add(event.entry));
+      if (event.type === 'action') turn.actions.set(event.action.id, event.action);
+      if (event.type === 'action-closed') turn.actions.delete(event.id);
+      if (event.type === 'action' || event.type === 'action-closed') renderTurnActions(turn);
+      if (visibleTurn() === turn) renderChatStatus();
+    }, connection.signal);
+    if (activityTurns.get(key) !== turn) return;
+    Object.assign(turn, { connection: undefined, stopping: false, showPrompt: false, status: '', id: undefined });
+    turn.actions.clear();
+    renderTurnActions(turn, false);
+    if (visibleTurn() === turn) renderChatStatus();
+    if (response.conversation) ws.conversation = response.conversation;
+    let visit = ws.navigation;
+    if (response.projectId && response.projectId !== projectId) {
+      const openResult = key === activityKey() && visit === startedAt && !dialog.open;
+      if (!projectId) {
+        activityTurns.delete(key);
+        activityTurns.set(threadKey(response.projectId, response.branch ?? 'main'), turn);
+        ws.conversation = [];
+      }
+      await listProjects();
+      if (!openResult || visit !== ws.navigation || dialog.open) return;
+      const loading = loadProject(response.projectId, response.branch);
+      visit = ws.navigation;
+      await loading;
+    } else if (response.projectId && response.projectId === ws.project?.id) {
+      await refreshProject();
+    }
+    const replyThread = threadKey(response.projectId, response.branch ?? 'main');
+    if (visit !== ws.navigation || replyThread !== activityKey()) return;
+    if (response.proposalId) await showProposal(response.proposalId);
+  } catch (error) {
+    if (activityTurns.get(key) !== turn) return;
+    turn.status = connection.signal.aborted ? 'Turn stopped.' : (error as Error).message;
+    turn.failed = turn.status !== 'Turn stopped.';
+    if (key === activityKey()) {
+      if (!input.value.trim()) input.value = text;
+      if (turn.failed) void refreshProcessors();
+    } else if (!promptDrafts.get(key)?.trim()) {
+      promptDrafts.set(key, text);
+    }
+  } finally {
+    Object.assign(turn, { connection: undefined, stopping: false, pending: false });
+    turn.actions.clear();
+    if (key === activityKey() || visibleTurn() === turn) {
+      renderMessages();
+      renderProcessors();
+    }
+  }
+}
+
 export function setupActivity() {
-  renderedTurn = undefined;
+  setupThread();
   const provider = $<HTMLSelectElement>('provider');
   ws.modelControl = modelPicker(updateSendButton);
-  const objects = $<HTMLInputElement>('register-objects');
-  objects.checked = ws.registerObjects;
-  objects.addEventListener('change', () => {
-    ws.registerObjects = objects.checked;
-    try { localStorage.setItem(objectPreferenceKey, ws.registerObjects ? 'on' : 'off'); } catch { /* Use memory for this session. */ }
+  $('stop-run').addEventListener('click', () => attempt(stopTurn));
+  $('hide-thread').addEventListener('click', () => {
+    setThreadOpen(false);
+    render();
+    $('show-thread').focus();
   });
-  $('stop-run').addEventListener('click', () => attempt(async () => {
-    const turn = visibleTurn();
-    if (!turn?.connection || turn.stopping) return;
-    turn.stopping = true;
-    renderChatStatus();
-    if (!turn.id) {
-      turn.connection.abort();
-      return;
-    }
-    try { await api('chat/' + turn.id + '/stop', {}); }
-    catch (error) {
-      turn.stopping = false;
-      if (!turn.pending || visibleTurn() !== turn) return;
-      renderChatStatus();
-      throw error;
-    }
-  }));
+  $('import-folder').addEventListener('click', () => library.importFolder());
   provider.addEventListener('change', () => {
     preferredProcessor = provider.value;
     updateModelControls();
-    updateChatDetails();
   });
-  $('chat-settings').addEventListener('click', openChatSettings);
-  $('harness-accounts').addEventListener('click', () => attempt(() => showHarnessAccounts(async () => {
-    await refreshProcessors();
-    return { providers, notice: processorNotice };
-  })));
   renderProcessors();
   const form = $<HTMLFormElement>('prompt-form');
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const input = $<HTMLTextAreaElement>('prompt');
     const text = input.value.trim();
-    if (!text) return;
-    const selectedProvider = provider.value;
-    if (!selectedProvider || chatBusy() || ws.modelControl?.loading) return;
-    const run = async () => {
-      const key = activityKey();
-      const startedAt = ws.navigation;
-      const projectId = ws.project?.id;
-      const processor = providers.find((choice) => choice.id === selectedProvider);
-      const name = processor?.name ?? 'the harness';
-      const refs = ws.project ? references() : [];
-      const path = ws.project ? route('prompt') : 'chat';
-      const modelSettings = ws.modelControl?.selection();
-      const payload = ws.project ? {
-        ...scope(), text, references: refs, provider: selectedProvider, registerObjects: ws.registerObjects, modelSettings,
-        ...(authored() ? { objects: chatObjects(), markedIds: [...markedObjects] } : {}),
-        proposalId: ws.candidate?.proposal.id, playing: ws.mode === 'play',
-      } : { text, provider: selectedProvider, conversation: workspaceConversation, registerObjects: ws.registerObjects, modelSettings };
-      const connection = new AbortController();
-      const turn: ActivityTurn = { name, text, references: refs, status: 'Waiting for ' + name + '…', pending: true,
-        showPrompt: true, connection, entries: new Map(), actions: new Map() };
-      const messages = {
-        running: name + ' is working…',
-        responding: name + ' is preparing a response…',
-        validating: 'Checking the harness response…',
-      };
-      input.value = '';
-      activityTurns.set(key, turn);
-      renderMessages();
-      renderProcessors();
-      try {
-        const response = await chatApi<ChatReply>(path, payload, (event) => {
-          if (activityTurns.get(key) !== turn) return;
-          if (event.type === 'heartbeat') return;
-          if (event.type === 'note') {
-            turn.note = event.note;
-            if (ws.project && ws.project.id === projectId && !ws.project.notes.some(({ id }) => id === event.note.id)) ws.project.notes.push(event.note);
-            if (key === activityKey()) renderMessages();
-            return;
-          }
-          if (event.type === 'run') turn.id = event.id;
-          if (event.type === 'progress') turn.status = messages[event.phase];
-          if (event.type === 'activity') {
-            turn.entries.set(event.entry.id, event.entry);
-            if (turn.entries.size > 150) turn.entries.delete(turn.entries.keys().next().value!);
-          }
-          if (event.type === 'action') turn.actions.set(event.action.id, event.action);
-          if (event.type === 'action-closed') turn.actions.delete(event.id);
-          if (visibleTurn() === turn) renderChatStatus(event.type === 'activity');
-        }, connection.signal);
-        if (activityTurns.get(key) !== turn) return;
-        turn.connection = undefined;
-        turn.stopping = false;
-        turn.showPrompt = false;
-        turn.status = '';
-        turn.id = undefined;
-        turn.actions.clear();
-        if (visibleTurn() === turn) renderChatStatus();
-        if (response.conversation) workspaceConversation = response.conversation;
-        let visit = ws.navigation;
-        if (response.projectId && response.projectId !== projectId) {
-          const openResult = key === activityKey() && visit === startedAt && !dialog.open;
-          if (!projectId) {
-            activityTurns.delete(key);
-            activityTurns.set(threadKey(response.projectId, response.branch ?? 'main'), turn);
-            workspaceConversation = [];
-          }
-          await listProjects();
-          if (!openResult || visit !== ws.navigation || dialog.open) return;
-          const loading = loadProject(response.projectId, response.branch);
-          visit = ws.navigation;
-          await loading;
-        } else if (response.projectId && response.projectId === ws.project?.id) {
-          await refreshProject();
-        }
-        const replyThread = threadKey(response.projectId, response.branch ?? 'main');
-        if (visit !== ws.navigation || replyThread !== activityKey()) return;
-        if (response.mode) ws.sourceVisible = false;
-        if (response.mode === 'review' && response.proposalId) await showProposal(response.proposalId);
-        else if (response.mode === 'play') {
-          const preview = response.proposalId ? await api<Preview>(route('proposals/' + response.proposalId)) : undefined;
-          if (visit !== ws.navigation || replyThread !== activityKey()) return;
-          ws.candidate = preview;
-          setMode('play');
-        } else if (response.mode) {
-          ws.candidate = undefined;
-          setMode(response.mode);
-        }
-      } catch (error) {
-        if (activityTurns.get(key) !== turn) return;
-        turn.status = connection.signal.aborted ? 'Turn stopped.' : (error as Error).message;
-        turn.failed = turn.status !== 'Turn stopped.';
-        if (key === activityKey()) {
-          if (!input.value.trim()) input.value = text;
-          if (turn.failed) void refreshProcessors();
-        } else if (!promptDrafts.get(key)?.trim()) {
-          promptDrafts.set(key, text);
-        }
-      } finally {
-        turn.connection = undefined;
-        turn.stopping = false;
-        turn.pending = false;
-        turn.actions.clear();
-        if (key === activityKey() || visibleTurn() === turn) {
-          renderMessages();
-          renderProcessors();
-        }
-      }
-    };
-    attempt(run);
+    if (!text || !provider.value || chatBusy() || ws.modelControl?.loading) return;
+    attempt(() => runTurn(text, provider.value));
   });
   $('prompt').addEventListener('keydown', (key) => {
     if (key.key !== 'Enter' || key.shiftKey || key.isComposing || $<HTMLButtonElement>('send').disabled) return;
