@@ -1,0 +1,23 @@
+# pnpm's settings for the desktop app, a project of its own with its own lockfile: the same rules as the repository's.
+# - a version only once it has been out for a week (Dependabot waits as long);
+minimumReleaseAge: 10080
+# - no version whose publisher is proven less well than for the versions before it, checked for versions out less
+#   than 30 days;
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 43200
+# - a dependency's own dependencies only from the registry, never from git or a tarball's address.
+blockExoticSubdeps: true
+# No package runs code as it is installed. Each one with an install script is named here; one that isn't named fails
+# the install until it is decided.
+strictDepBuilds: true
+allowBuilds:
+  # Its script downloads Electron's binary and checks it against the checksums in the package. `pnpm electron:fetch`
+  # runs the same script when asked to.
+  electron: false
+  # Its script picks the 7-Zip for a Windows installer by the machine it builds on; only a Windows build needs it.
+  electron-winstaller: false
+# The packer's two users of minimatch take its named API, which minimatch 11 keeps; 11.0.1 and later bound the pattern
+# expansion that GHSA-g3hv-75wg-m249 is about (9.x and 10.x do not).
+overrides:
+  'app-builder-lib>minimatch': 11.0.9
+  '@electron/universal>minimatch': 11.0.9

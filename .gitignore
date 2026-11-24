@@ -19,3 +19,6 @@ playwright-report/
 host/bin/
 host/webfiles/web/*
 !host/webfiles/web/.gitkeep
+
+# The desktop app's packed builds.
+desktop/out/

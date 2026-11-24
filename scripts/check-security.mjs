@@ -27,6 +27,7 @@ const SEMGREP_LOCAL = []; // the repository's own rules, at the code's revision:
 const SEMGREP_REGISTRY = ['p/default', 'p/typescript', 'p/nodejs', 'p/golang']; // Semgrep's, as they are today: --live only
 const SEMGREP_OFF = []; // rule ids turned off everywhere: prefer a `nosemgrep` line with its reason
 const DOCKERFILES = ['Dockerfile', 'Dockerfile.host'];
+const PNPM_PROJECTS = ['.', 'desktop']; // folders with a pnpm-lock.yaml of their own
 const SHELL_SCRIPTS = [];
 // Licences a package that ships with this one may carry (SPDX). Development tools are not checked.
 const LICENCES = ['MIT', 'ISC', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', '0BSD', 'BlueOak-1.0.0', 'CC0-1.0', 'MPL-2.0', 'Unlicense', 'Python-2.0', 'CC-BY-4.0'];
@@ -64,23 +65,26 @@ function emojiPart(chars, i) {
   return false;
 }
 
-/** The lockfile one YAML document, each package from the registry with nothing but its hash, no other registry named,
+/** Each lockfile one YAML document, each package from the registry with nothing but its hash, no other registry named,
  *  and no hidden characters in tracked text files. A lockfile written as two documents has the project's packages only
  *  in the second, and a scanner that reads the first finds none of them and says all is well. */
 function sources() {
   const problems = [];
-  const lock = readFileSync(path.join(root, 'pnpm-lock.yaml'), 'utf8');
-  if (lock.startsWith('---')) problems.push("pnpm-lock.yaml is two documents: a scanner that reads the first misses the project's packages");
-  const start = lock.indexOf('\npackages:\n');
-  const end = lock.indexOf('\nsnapshots:\n');
-  if (start < 0 || end < start) problems.push('pnpm-lock.yaml has no packages to check');
-  let entry = '';
-  for (const line of lock.slice(start, end).split('\n')) {
-    if (/^ {2}\S/.test(line)) entry = line.trim().replace(/:$/, '');
-    else if (line.startsWith('    resolution: ') && !/^ {4}resolution: \{integrity: sha512-[A-Za-z0-9+/]+={0,2}\}$/.test(line)) problems.push(`${entry} comes from ${line.slice(16)}`);
-  }
-  for (const [file, setting] of [['.npmrc', /^\s*(@[^:]+:)?registry\s*=/m], ['pnpm-workspace.yaml', /^(registries|namedRegistries):/m]]) {
-    if (existsSync(path.join(root, file)) && setting.test(readFileSync(path.join(root, file), 'utf8'))) problems.push(`${file} names another registry`);
+  for (const project of PNPM_PROJECTS) {
+    const at = (file) => path.join(project, file);
+    const lock = readFileSync(path.join(root, at('pnpm-lock.yaml')), 'utf8');
+    if (lock.startsWith('---')) problems.push(`${at('pnpm-lock.yaml')} is two documents: a scanner that reads the first misses the project's packages`);
+    const start = lock.indexOf('\npackages:\n');
+    const end = lock.indexOf('\nsnapshots:\n');
+    if (start < 0 || end < start) problems.push(`${at('pnpm-lock.yaml')} has no packages to check`);
+    let entry = '';
+    for (const line of lock.slice(start, end).split('\n')) {
+      if (/^ {2}\S/.test(line)) entry = line.trim().replace(/:$/, '');
+      else if (line.startsWith('    resolution: ') && !/^ {4}resolution: \{integrity: sha512-[A-Za-z0-9+/]+={0,2}\}$/.test(line)) problems.push(`${at('pnpm-lock.yaml')}: ${entry} comes from ${line.slice(16)}`);
+    }
+    for (const [file, setting] of [['.npmrc', /^\s*(@[^:]+:)?registry\s*=/m], ['pnpm-workspace.yaml', /^(registries|namedRegistries):/m]]) {
+      if (existsSync(path.join(root, at(file))) && setting.test(readFileSync(path.join(root, at(file)), 'utf8'))) problems.push(`${at(file)} names another registry`);
+    }
   }
   const files = spawnSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: root, encoding: 'utf8' }).stdout.split('\0');
   const text = /\.(ts|tsx|mts|cts|mjs|cjs|js|go|json|md|ya?ml|sh|css|html|toml|txt)$|Dockerfile[^/]*$/;

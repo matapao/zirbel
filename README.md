@@ -14,6 +14,21 @@ pnpm start --open                             # editor at http://127.0.0.1:4173/
 
 `pnpm build:host && host/bin/zirbel-host --open` runs the same editor natively, without Node. It has no harness chat yet, so use an MCP agent there: start it with `--enable-mcp` and connect over loopback `POST /mcp` with a project grant, or over stdio with `node dist/server.mjs mcp` and `ZIRBEL_MCP_TOKEN`. Projects live in `~/.zirbel`. Override with `--data DIR` or `ZIRBEL_DATA`. Harness credentials live outside the data dir (`ZIRBEL_ACCOUNT_DIR` overrides). `node dist/server.mjs --help` lists every flag.
 
+## Desktop app
+
+`desktop/` is an Electron app around the same editor, a pnpm project of its own. It starts the editor from the built `dist/` on loopback and a free port, with the same data folder (`~/.zirbel` or `ZIRBEL_DATA`), and opens it in its window. If an editor already owns that folder, the app opens that one and leaves it running. Quitting stops the editor the app started.
+
+```sh
+pnpm build                                              # the editor the app runs
+cd desktop
+pnpm install --frozen-lockfile && pnpm electron:fetch   # install scripts don't run: this fetches Electron itself
+pnpm build && pnpm start                                # run it from the checkout
+pnpm typecheck && pnpm lint && pnpm test                # Playwright drives the app; its windows show meanwhile
+pnpm pack:app && pnpm test:packed                       # a local macOS bundle in desktop/out/, signed ad hoc
+```
+
+Its windows are sandboxed, with context isolation and no Node or preload. The editor's window stays on the editor's origin, playtests open in windows of their own on loopback player origins, other web links open in the system browser, and pages get no permission but fullscreen. The packed app includes the Codex harness. Claude Code's SDK is under Anthropic's terms and is not bundled, so use Claude Code from a checkout (`pnpm start` in `desktop/`) or the web editor. A distributable build (`node scripts/pack.mjs` without `--dir`) needs a Developer ID and notarization credentials.
+
 ## Use
 
 - **Projects…** opens or creates a project. **Library** imports `.zirbel-project.json` files (samples in `examples/`). **Remove…** moves one to `removed-projects/`; published releases stay.

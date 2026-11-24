@@ -67,3 +67,35 @@ jobs:
           done
           docker logs "$container"
           exit 1
+
+  desktop:
+    name: Desktop app (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: zirbel
+          submodules: true
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: zirbel/.nvmrc
+      - run: corepack enable pnpm
+      - name: Build the editor the app runs
+        working-directory: zirbel
+        run: |
+          pnpm run deps
+          pnpm install --frozen-lockfile
+          pnpm build
+      # Its windows show on the runner's screen while Playwright drives them.
+      - name: Build, lint, test, pack and test the packed app
+        working-directory: zirbel/desktop
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm electron:fetch
+          pnpm typecheck
+          pnpm lint
+          pnpm test
+          pnpm pack:app
+          pnpm test:packed

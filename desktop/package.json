@@ -1,0 +1,28 @@
+{
+  "name": "zirbel-desktop",
+  "productName": "Zirbel",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Zirbel's desktop app: the editor in a window of its own, started on loopback from the built dist/.",
+  "type": "module",
+  "main": "dist/src/main.js",
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "lint": "pnpm --dir .. exec oxlint --type-aware --deny-warnings desktop/src desktop/test desktop/scripts",
+    "electron:fetch": "node node_modules/electron/install.js",
+    "start": "node node_modules/electron/cli.js .",
+    "test": "tsc -p . && node --test --test-timeout=120000 dist/test/routes.test.js dist/test/editor.test.js dist/test/app.js",
+    "pack:app": "node scripts/pack.mjs --dir",
+    "test:packed": "node --test --test-timeout=120000 dist/test/packed.js"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "electron": "45.3.4",
+    "electron-builder": "26.18.0",
+    "playwright-core": "1.65.1",
+    "typescript": "7.0.2"
+  },
+  "packageManager": "pnpm@11.28.9+sha512.35421cea2720eca3f5ad722b67e8ef18f4d3cd4745ed2fcfeb0dc288d4e9437fad3870d91ee6e83f268f0f6f7e0f62723317b19617bb45ee4333172ef51159f8"
+}

@@ -1,23 +1,32 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": [
-    "packages/server/cli.ts",
-    "packages/web/{workspace,player,game-sdk,garden-3d}.ts",
-    "test/*.{ts,mjs}"
-  ],
-  "ignore": ["deps/**"],
-  "project": [
-    "packages/**/*.ts",
-    "scripts/**/*.mjs",
-    "test/**/*.{ts,mjs}"
-  ],
-  "ignoreDependencies": [
-    "@agentclientprotocol/claude-agent-acp",
-    "@agentclientprotocol/codex-acp"
-  ],
-  "ignoreBinaries": [
-    "go",
-    "rundll32.exe",
-    "xdg-open"
-  ]
+  "workspaces": {
+    ".": {
+      "entry": [
+        "packages/server/cli.ts",
+        "packages/web/{workspace,player,game-sdk,garden-3d}.ts",
+        "test/*.{ts,mjs}"
+      ],
+      "ignore": ["deps/**"],
+      "project": [
+        "packages/**/*.ts",
+        "scripts/**/*.mjs",
+        "test/**/*.{ts,mjs}"
+      ],
+      "ignoreDependencies": [
+        "@agentclientprotocol/claude-agent-acp",
+        "@agentclientprotocol/codex-acp"
+      ],
+      "ignoreBinaries": [
+        "go",
+        "rundll32.exe",
+        "xdg-open"
+      ]
+    },
+    "desktop": {
+      "entry": ["test/*.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs"],
+      "ignoreBinaries": ["sips"]
+    }
+  }
 }
