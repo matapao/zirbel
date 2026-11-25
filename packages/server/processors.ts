@@ -56,7 +56,7 @@ export interface Processors {
   signInStatus?(id: string): SignInStatus;
   submitSignInCode?(id: string, code: string): SignInStatus;
   /** Removes what the harness keeps of a session that ran in cwd: once the thread it belonged to is gone. */
-  removeTranscript?(id: string, session: { cwd: string; sessionId: string }): Promise<void>;
+  removeSession?(id: string, session: { cwd: string; sessionId: string }): Promise<void>;
   /** Stops the turns still running and waits until what they left is gone. */
   close?(): Promise<void>;
 }

@@ -30,7 +30,7 @@ function recording(answer: (call: Call, index: number) => Promise<void> | void =
       if (sessionId) run.session?.(sessionId);
       return { name: id, task: sessionId ?? '', stopReason: 'end_turn', text: '{"action":"reply","message":"ok"}', sessionId };
     },
-    async removeTranscript(id, session) { removed.push({ id, ...session }); },
+    async removeSession(id, session) { removed.push({ id, ...session }); },
   };
   return { harnesses, calls, removed };
 }

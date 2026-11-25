@@ -186,8 +186,8 @@ export class LocalHarnesses implements Processors {
     return { task, name, stopReason: 'end_turn', text: result.text, usage: totalTokens ? { totalTokens } : undefined, sessionId };
   }
 
-  async removeTranscript(id: string, session: { cwd: string; sessionId: string }) {
-    await this.get(id).runtime.removeTranscript?.(session);
+  async removeSession(id: string, session: { cwd: string; sessionId: string }) {
+    await this.get(id).runtime.removeSession?.(session);
   }
 
   async close() {

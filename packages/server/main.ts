@@ -215,7 +215,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
             await chat.stopThreads((thread) => thread.startsWith(projectId + '.'));
             projects.remove(projectId);
             rooms.closeProject(projectId);
-            await threads.removeProject(projectId, (harness, session) => harnesses.removeTranscript?.(harness, session) ?? Promise.resolve());
+            await threads.removeProject(projectId, (harness, session) => harnesses.removeSession?.(harness, session) ?? Promise.resolve());
             reply(response, {});
             return;
           }

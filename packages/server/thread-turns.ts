@@ -25,8 +25,8 @@ function threadHarness(harnesses: Processors, threads: Threads, key: string, fol
   const start: Processors['start'] = async (id, prompt, run = {}) => {
     let state = threads.open(key);
     if (state.sessionId && state.harness && state.harness !== id) {
-      // A session of another harness is discarded: a new one starts here, and the old one's transcript goes.
-      await harnesses.removeTranscript?.(state.harness, { cwd: folder, sessionId: state.sessionId })
+      // A session of another harness is discarded: a new one starts here, and all the old one's harness kept of it goes.
+      await harnesses.removeSession?.(state.harness, { cwd: folder, sessionId: state.sessionId })
         .catch(() => console.warn('Could not remove a thread’s earlier session.'));
       state = threads.update(key, { sessionId: undefined, harness: id });
     }

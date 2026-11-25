@@ -119,7 +119,7 @@ export class Threads {
     this.write(key, { version: 1, folder: state.folder, project: projectId });
   }
 
-  /** Removes every thread of a project: its folder and, through remove, each session's transcript. */
+  /** Removes every thread of a project: its folder and, through remove, all its harness kept of each session. */
   async removeProject(projectId: string, remove: (harness: string, session: { cwd: string; sessionId: string }) => Promise<void>) {
     for (const key of this.keys()) {
       let state: ThreadState | undefined;
