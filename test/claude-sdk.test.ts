@@ -49,8 +49,10 @@ async function registry(t: TestContext, tarballs: Record<string, Buffer>, hold?:
   const asked: string[] = [];
   const server = createServer((request, response) => {
     asked.push(request.url ?? '');
-    const body =
-      tarballs[/\/@anthropic-ai\/claude-agent-sdk\/-\/claude-agent-sdk-(.+)\.tgz$/.exec(request.url ?? '')?.[1] ?? ''];
+    const prefix = '/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-';
+    const url = request.url ?? '';
+    const version = url.startsWith(prefix) && url.endsWith('.tgz') ? url.slice(prefix.length, -'.tgz'.length) : '';
+    const body = Object.hasOwn(tarballs, version) ? tarballs[version] : undefined;
     void Promise.resolve(hold).then(() => response.writeHead(body ? 200 : 404).end(body));
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
