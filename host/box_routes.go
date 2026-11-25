@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"html"
 	"io"
 	"mime"
 	"net"
@@ -291,9 +292,10 @@ func pairForm(r *http.Request) (url.Values, error) {
 	return form, nil
 }
 
-var pageEscapes = strings.NewReplacer("&", "&#38;", "<", "&#60;", ">", "&#62;", `"`, "&#34;", "'", "&#39;")
-
-// pairPage writes the pairing page, character for character as the Node editor does.
+// pairPage writes the pairing page as the Node editor does. Its values are
+// escaped by html.EscapeString, which writes &amp;, &lt; and &gt; where Node
+// writes numeric references: the page with a code is the same character for
+// character, and an error with one of those characters says the same.
 func pairPage(w http.ResponseWriter, status int, claimable bool, code, problem string) {
 	claim := ""
 	if claimable {
@@ -303,7 +305,7 @@ func pairPage(w http.ResponseWriter, status int, claimable bool, code, problem s
 	}
 	alert := ""
 	if problem != "" {
-		alert = `<p class="error" role="alert">` + pageEscapes.Replace(problem) + `</p>`
+		alert = `<p class="error" role="alert">` + html.EscapeString(problem) + `</p>`
 	}
 	html := `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Pair with Zirbel</title><style>body{font:16px system-ui,sans-serif;max-width:26rem;margin:12vh auto;padding:0 1.2rem;color:#1d2b24}
@@ -312,7 +314,7 @@ input{width:100%;box-sizing:border-box;letter-spacing:.15em;text-transform:upper
 .error{color:#a3271f}.or{color:#5c6b62;margin-top:1.6rem}</style></head><body><h1>Pair this device with Zirbel</h1>
 ` + alert + claim + `<form method="post">
 <label for="code">Pairing code, from a device already paired or the box's setup</label>
-<input id="code" name="code" autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX" value="` + pageEscapes.Replace(code) + `" required>
+<input id="code" name="code" autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX" value="` + html.EscapeString(code) + `" required>
 <button>Pair this device</button></form></body></html>`
 	header := w.Header()
 	header.Set("content-type", "text/html; charset=utf-8")
