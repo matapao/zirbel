@@ -108,6 +108,8 @@ export class LocalHarnesses implements Processors {
         const health = await runtime.health(false);
         if (health.ok) return { id, name, ready: true, modelSettings: true };
         if (health.fix === 'login') return { id, name, ready: false, signIn: true };
+        // Found, but not one that runs here (older than its SDK is made with): the library says what to do.
+        if (health.program && !health.fix) return { id, name, ready: false, detail: health.detail.slice(0, 300) };
       } catch { /* One unavailable harness should leave the others usable. */ }
       return { id, name, ready: false, detail: 'Unavailable on this device' };
     }));

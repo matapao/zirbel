@@ -331,6 +331,21 @@ test('the model picker offers the tiers and each agent’s efforts, and a turn t
   assert.equal(calls[0]?.effort, 'max');
 });
 
+test('a harness older than its SDK is made with says so, and one not found is unavailable', async (t) => {
+  const { LocalHarnesses } = await import('../packages/server/local-harnesses.ts');
+  const { root } = install(t);
+  const runtime = (health: { detail: string; program?: string; fix?: 'find' }) => ({ kind: 'codex', async health() { return { ok: false, checkedAt: 0, ...health }; },
+    login() { return { error: 'none' }; }, run() { throw new Error('Unexpected run'); } });
+  const harnesses = new LocalHarnesses(root, [
+    { id: 'codex', name: 'Codex', runtime: runtime({ program: '/usr/local/bin/codex', detail: 'Codex 0.100.0 is older than 0.171.0, the oldest that runs here: update it.' }) },
+    { id: 'claude', name: 'Claude Code', runtime: runtime({ fix: 'find', detail: 'Claude Code is unavailable.' }) },
+  ]);
+  assert.deepEqual(await harnesses.list(), [
+    { id: 'codex', name: 'Codex', ready: false, detail: 'Codex 0.100.0 is older than 0.171.0, the oldest that runs here: update it.' },
+    { id: 'claude', name: 'Claude Code', ready: false, detail: 'Unavailable on this device' },
+  ]);
+});
+
 test('a turn that ends for a known reason says so in plain words', async (t) => {
   const { LocalHarnesses } = await import('../packages/server/local-harnesses.ts');
   const { TurnEndedError } = await import('../packages/server/processors.ts');
