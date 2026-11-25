@@ -1,0 +1,57 @@
+#!/bin/bash
+# The base stage, in the image's own root (provision.sh): what a Zirbel box runs beside Raspberry Pi OS Lite.
+#   chroot-base.sh COUNTRY SSH_KEY_FILE
+# - Bluetooth setup's Python bindings, Claude Code's and Codex's command sandboxes (bubblewrap, socat), and Chromium
+#   for view_game.
+# - Node 24, from nodejs.org, checked against its published SHA-256.
+# - Two users: `zirbel` runs the editor and the harnesses and can't use sudo; `admin` is for maintenance over SSH,
+#   with the given public key only.
+# - Claude Code from Anthropic's installer, which keeps it up to date, and Codex from npm, both as `zirbel`'s.
+# - The Wi-Fi country, which Wi-Fi needs before it turns on, and the host name `zirbel` (zirbel.local).
+set -euo pipefail
+COUNTRY=$1 SSH_KEY_FILE=$2
+NODE_VERSION=24.22.3
+NODE_SHA256=6e51a2ada00f0011cc266f65d98922b403d7ad88f809ca2aa615a5fe1ce6e86c
+CODEX_VERSION=0.171.0
+export DEBIAN_FRONTEND=noninteractive
+[[ $COUNTRY =~ ^[A-Z]{2}$ ]] || { echo "The Wi-Fi country must be two capital letters." >&2; exit 1; }
+
+apt-get update -qq
+apt-get install -y -qq --no-install-recommends python3-dbus python3-gi bubblewrap socat chromium ca-certificates xz-utils
+apt-get clean
+
+node=node-v$NODE_VERSION-linux-arm64.tar.xz
+curl -fsSLo "/tmp/$node" "https://nodejs.org/dist/v$NODE_VERSION/$node"
+echo "$NODE_SHA256  /tmp/$node" | sha256sum -c --quiet
+tar -xJf "/tmp/$node" -C /usr/local --strip-components=1 --no-same-owner --exclude='*/CHANGELOG.md' --exclude='*/README.md'
+rm "/tmp/$node"
+node --version
+
+id admin >/dev/null 2>&1 || useradd --create-home --shell /bin/bash --groups sudo,adm admin
+passwd --lock admin >/dev/null
+install -d -m 700 -o admin -g admin /home/admin/.ssh
+install -m 600 -o admin -g admin "$SSH_KEY_FILE" /home/admin/.ssh/authorized_keys
+echo 'admin ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/010-admin
+chmod 440 /etc/sudoers.d/010-admin
+install -m 644 /tmp/zirbel-build/files/sshd.conf /etc/ssh/sshd_config.d/zirbel.conf
+systemctl enable ssh >/dev/null 2>&1
+
+id zirbel >/dev/null 2>&1 || useradd --create-home --home-dir /home/zirbel --shell /bin/bash --groups netdev zirbel
+passwd --lock zirbel >/dev/null
+# Anthropic's installer, as `zirbel`: its own binary for this system, checked against its manifest, in ~/.local.
+runuser -u zirbel -- bash -c 'cd ~ && curl -fsSL https://claude.ai/install.sh | bash' </dev/null
+runuser -u zirbel -- /home/zirbel/.local/bin/claude --version
+npm install --global --no-fund --no-audit "@openai/codex@$CODEX_VERSION"
+codex --version
+
+# No first-boot wizard asks for a user: the box has its two.
+systemctl disable userconfig.service >/dev/null 2>&1 || true
+rm -f /etc/ssh/sshd_config.d/rename_user.conf
+
+echo zirbel > /etc/hostname
+sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tzirbel/' /etc/hosts
+grep -q '^127\.0\.1\.1' /etc/hosts || printf '127.0.1.1\tzirbel\n' >> /etc/hosts
+# Wi-Fi stays blocked until a country is set; the kernel takes it at boot, and the saved block is cleared.
+sed -i "s/ cfg80211\.ieee80211_regdom=[A-Z]*//; s/\$/ cfg80211.ieee80211_regdom=$COUNTRY/" /boot/firmware/cmdline.txt
+for state in /var/lib/systemd/rfkill/*:wlan; do [ -e "$state" ] && echo 0 > "$state"; done
+echo "Base ready: $(node --version), $(codex --version 2>/dev/null | head -1), Wi-Fi country $COUNTRY."

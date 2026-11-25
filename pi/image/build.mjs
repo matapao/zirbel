@@ -1,0 +1,89 @@
+// Builds a Zirbel box's image for the Raspberry Pis that run 64-bit Raspberry Pi OS: Pi 3, 4, 400, 5 and Zero 2 W
+// (the editor turns harnesses on by default where there is memory for them). Raspberry Pi OS Lite (64-bit) as
+// Raspberry Pi publishes it, checked against its published hashes, gets what the box runs (chroot-base.sh), then the
+// editor and its setup service (chroot-app.sh). It runs on an arm64 computer with Docker, where the image's own
+// programs run natively in a container; nothing is emulated. Build the repository first (pnpm build).
+//   node pi/image/build.mjs --out DIR --country XX --ssh-key FILE [--base IMAGE] [--rebuild-base] [--base-only]
+// DIR keeps the downloaded OS, zirbel-base.img (the slow stage, reused) and zirbel.img, the image to write to a card.
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { parseArgs } from 'node:util';
+import { stageEditor } from '../../desktop/scripts/stage.mjs';
+
+const OS_LIST = 'https://downloads.raspberrypi.com/os_list_imagingutility_v4.json';
+const OS_NAME = 'Raspberry Pi OS Lite (64-bit)';
+const SIZE = '8G';
+const HERE = import.meta.dirname;
+const REPO = path.resolve(HERE, '../..');
+
+const { values } = parseArgs({ options: {
+  out: { type: 'string' }, country: { type: 'string' }, 'ssh-key': { type: 'string' }, base: { type: 'string' },
+  'rebuild-base': { type: 'boolean', default: false }, 'base-only': { type: 'boolean', default: false },
+} });
+if (!values.out || !/^[A-Z]{2}$/.test(values.country ?? '') || !values['ssh-key'])
+  throw new Error('Usage: build.mjs --out DIR --country XX --ssh-key FILE [--base IMAGE] [--rebuild-base]');
+const out = path.resolve(values.out);
+const key = path.resolve(values['ssh-key']);
+if (!/^(ssh-ed25519|ecdsa-sha2-\S+|ssh-rsa) \S+/.test(fs.readFileSync(key, 'utf8'))) throw new Error('--ssh-key must be a public key.');
+fs.mkdirSync(out, { recursive: true });
+
+const sha256 = (file) => {
+  const hash = createHash('sha256');
+  const handle = fs.openSync(file, 'r');
+  const buffer = Buffer.alloc(8 * 1024 * 1024);
+  try { for (let read; (read = fs.readSync(handle, buffer, 0, buffer.length, null)) > 0;) hash.update(buffer.subarray(0, read)); }
+  finally { fs.closeSync(handle); }
+  return hash.digest('hex');
+};
+
+/** Raspberry Pi OS Lite (64-bit) for a Pi 5, as Raspberry Pi's own list names it, downloaded once and checked twice:
+ *  the download against the SHA-256 published beside it, the image against the list's. */
+async function osImage() {
+  if (values.base) return path.resolve(values.base);
+  const list = await (await fetch(OS_LIST)).json();
+  const walk = (items) => items.flatMap((item) => item.subitems ? walk(item.subitems) : [item]);
+  const os = walk(list.os_list).find((item) => item.name === OS_NAME && item.devices?.includes('pi5-64bit'));
+  if (!os || !/^https:\/\/downloads\.raspberrypi\.com\/.+\.img\.xz$/.test(os.url)) throw new Error(`${OS_NAME} is not in Raspberry Pi's list.`);
+  const image = path.join(out, path.basename(os.url, '.xz'));
+  if (fs.existsSync(image) && sha256(image) === os.extract_sha256) return image;
+  const archive = image + '.xz';
+  const published = (await (await fetch(os.url + '.sha256')).text()).split(/\s/)[0];
+  console.log(`Downloading ${path.basename(os.url)} (${os.release_date})`);
+  const response = await fetch(os.url);
+  if (!response.ok) throw new Error(`The download failed: HTTP ${response.status}.`);
+  await fs.promises.writeFile(archive, response.body);
+  if (sha256(archive) !== published) throw new Error('The download does not match its published SHA-256.');
+  execFileSync('xz', ['--decompress', '--keep', '--force', archive], { stdio: 'inherit' });
+  if (sha256(image) !== os.extract_sha256) throw new Error("The image does not match Raspberry Pi's list.");
+  fs.rmSync(archive);
+  return image;
+}
+
+/** One stage in a privileged arm64 container, on a copy of the image (a clone, where the file system has them). */
+function stage(from, to, name, args, mounts = {}) {
+  fs.rmSync(to, { force: true });
+  fs.copyFileSync(from, to, fs.constants.COPYFILE_FICLONE);
+  const volumes = Object.entries({ [out]: '/out', [HERE]: '/build', [key]: '/key.pub', ...mounts })
+    .flatMap(([source, target]) => ['-v', `${source}:${target}:${target === '/out' ? 'rw' : 'ro'}`]);
+  execFileSync('docker', ['run', '--rm', '--privileged', '--platform', 'linux/arm64', ...volumes, 'debian:trixie',
+    'bash', '/build/provision.sh', '/out/' + path.basename(to), SIZE, name, ...args], { stdio: 'inherit' });
+}
+
+const base = path.join(out, 'zirbel-base.img');
+if (values['rebuild-base'] || !fs.existsSync(base)) {
+  const building = base + '.building';
+  stage(await osImage(), building, 'base', [values.country, '/tmp/zirbel-build/key.pub']);
+  fs.renameSync(building, base);
+}
+if (values['base-only']) process.exit(0);
+
+const editor = path.join(out, 'editor');
+fs.rmSync(editor, { recursive: true, force: true });
+stageEditor(editor, REPO, { os: 'linux', cpu: 'arm64' });
+const setup = path.join(REPO, 'pi', 'setup');
+stage(base, path.join(out, 'zirbel.img'), 'app', [values.country], {
+  [editor]: '/editor', ...(fs.existsSync(setup) ? { [setup]: '/setup' } : {}),
+});
+console.log(`Ready: ${path.join(out, 'zirbel.img')}`);
