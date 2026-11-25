@@ -1,5 +1,5 @@
 # check=error=true
-# Native Go host: one static binary on distroless, no Node (about 12 MB).
+# Native Go host: one static binary on distroless, no Node (about 14 MB).
 # Build first: pnpm build && pnpm build:host linux/amd64 linux/arm64 linux/arm/7
 # Then: docker buildx build -f Dockerfile.host --platform linux/amd64,linux/arm64,linux/arm/v7 .
 FROM gcr.io/distroless/static-debian12:nonroot

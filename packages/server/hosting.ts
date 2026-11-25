@@ -5,6 +5,7 @@ import type { Releases } from '../core/releases.ts';
 import type { Room, Rooms } from '../core/rooms.ts';
 import { lanAddresses, roomLink } from './http.ts';
 import { playerListener } from './player-listener.ts';
+import { threeAddons, type Addons } from './runtime-files.ts';
 
 // Shared by the editor and the headless host. Keep editor-only code (harnesses,
 // MCP) out of this file so `--host-only` loads only what players need.
@@ -43,21 +44,26 @@ export class Players {
   private lan?: Listener;
   private startingLan?: Promise<Listener>;
 
+  // Read from the build beside the release runtime, and shared by both listeners.
+  private readonly addons: Addons;
+
   // qr renders a LAN link for the editor; the headless host prints links only.
   constructor(readonly rooms: Rooms, private releases: Releases,
-    private options: { playerPort: number; lanHost?: string; qr?: (link: string) => Promise<string> }) {}
+    private options: { playerPort: number; lanHost?: string; qr?: (link: string) => Promise<string> }) {
+    this.addons = threeAddons(releases.webRoot);
+  }
 
   get lanHost() { return this.options.lanHost; }
 
   async openLocal(port: number, editorOrigins: string[] = []) {
-    this.local = await playerListener(this.rooms, this.releases.runtime, { bind: '127.0.0.1', lan: false, port, editorOrigins });
+    this.local = await playerListener(this.rooms, this.releases.runtime, this.addons, { bind: '127.0.0.1', lan: false, port, editorOrigins });
     return this.local;
   }
 
   startLan() {
     if (this.lan) return Promise.resolve(this.lan);
     const { playerPort, lanHost } = this.options;
-    this.startingLan ??= playerListener(this.rooms, this.releases.runtime, { bind: '0.0.0.0', lan: true, port: playerPort,
+    this.startingLan ??= playerListener(this.rooms, this.releases.runtime, this.addons, { bind: '0.0.0.0', lan: true, port: playerPort,
       extraHosts: lanHost ? [lanHost] : [] }).then((active) => (this.lan = active))
       .finally(() => { this.startingLan = undefined; });
     return this.startingLan;

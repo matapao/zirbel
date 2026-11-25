@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 )
@@ -30,33 +29,37 @@ type gamePageEntry struct {
 // gamePath is the game document's own address; a built game's files sit beside it.
 func gamePath(room *Room) string { return "/game/" + room.ID + "/" + room.DocumentKey + "/" }
 
+// threeAddons mirrors THREE_ADDONS in game-page.ts: three.js's addons, served
+// from the host's own build beside three.module.js (webfiles.Addon).
+const threeAddons = "three/addons/"
+
 // gamePage mirrors packages/server/game-page.ts. base is the document's own
 // address: a game imported as a built folder loads its files from beside it,
-// and only those.
+// and only those. Every game gets the same policy: WebAssembly, workers and
+// loaders reading data: and blob: URLs, and no other origin anywhere.
 func gamePage(release *Release, runtime, ancestors, base string) (policy, html string) {
 	assets := map[string]string{}
 	for _, asset := range release.Manifest.Assets {
 		assets[asset.ID] = "data:" + asset.Media + ";base64," + release.Assets[asset.Hash]
 	}
-	own, scripts, connect := "", "", "'none'"
-	workers := []string{}
-	if release.Game != nil && release.Game.Files != nil {
-		// Loaders turn embedded data into blob: and data: URLs and read them back; neither reaches the network.
-		own, scripts, connect = " "+base, "'wasm-unsafe-eval' "+base+" ", base+" data: blob:"
-		workers = []string{"worker-src " + base + " blob:"}
-	}
-	policy = strings.Join(slices.Concat([]string{
+	addons := runtime + threeAddons
+	policy = strings.Join([]string{
 		"sandbox allow-scripts", "default-src 'none'",
-		"script-src 'unsafe-inline' " + scripts + runtime + "game-sdk.js " + runtime + "three.module.js",
-		"style-src 'unsafe-inline'" + own, "img-src data: blob:" + own, "media-src data: blob:" + own, "font-src data:" + own,
-		"connect-src " + connect,
-	}, workers, []string{"frame-src 'none'", "form-action 'none'", "base-uri 'none'", "frame-ancestors " + ancestors}), "; ")
+		"script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + " " + runtime + "game-sdk.js " + runtime + "three.module.js " + addons,
+		"style-src 'unsafe-inline' " + base, "img-src data: blob: " + base, "media-src data: blob: " + base, "font-src data: " + base,
+		// Loaders turn embedded data into blob: and data: URLs and read them back, and fetch the decoders
+		// the addons ship with (Draco, Basis); none of it reaches the network.
+		"connect-src " + base + " " + addons + " data: blob:", "worker-src " + base + " blob:",
+		"frame-src 'none'", "form-action 'none'", "base-uri 'none'", "frame-ancestors " + ancestors,
+	}, "; ")
 	registration := ""
 	if game := release.Game; game.RegisterObjects != nil && !*game.RegisterObjects {
 		registration = ` data-registration="off"`
 	}
+	// encoding/json sorts the keys, which puts them in game-page.ts's order: "three", then "three/addons/".
+	imports := map[string]string{"three": runtime + "three.module.js", threeAddons: addons}
 	bootstrap := `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
-		`<script type="importmap">` + scriptJSON(map[string]any{"imports": map[string]string{"three": runtime + "three.module.js"}}) + `</script>` +
+		`<script type="importmap">` + scriptJSON(map[string]any{"imports": imports}) + `</script>` +
 		`<script type="application/json" id="zirbel-assets"` + registration + `>` + scriptJSON(assets) + `</script>` +
 		`<script crossorigin="anonymous" src="` + runtime + `game-sdk.js"></script>`
 	return policy, "<!doctype html>" + bootstrap + doctype.ReplaceAllString(release.Game.HTML, "")

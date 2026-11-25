@@ -16,7 +16,8 @@ export class Releases {
   readonly fileHashes: Manifest['files'];
   private readonly files: Release['files'];
 
-  constructor(private projects: Projects, webRoot: string) {
+  // webRoot is the build the runtime comes from (dist/web), which the player listeners also serve from.
+  constructor(private projects: Projects, readonly webRoot: string) {
     const files = ['player.html', 'player.js', 'garden-3d.js', 'garden-3d.js.LEGAL.txt', 'player.css',
       'game-sdk.js', 'three.module.js', 'three-license.txt', 'zod-license.txt',
       ...readdirSync(join(webRoot, 'chunks')).map((file) => 'chunks/' + file)];

@@ -2,7 +2,9 @@
 // Run `pnpm build` first. Usage: node scripts/build-host.mjs [os/arch[/arm]]...
 // Examples: linux/arm/7 (Raspberry Pi 2B), linux/arm64, darwin/arm64, windows/amd64.
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { gzipSync, constants } from 'node:zlib';
 
 const runtime = ['player.html', 'player.js', 'garden-3d.js', 'garden-3d.js.LEGAL.txt', 'player.css',
   'game-sdk.js', 'three.module.js', 'three-license.txt', 'zod-license.txt'];
@@ -15,6 +17,16 @@ for (const file of readdirSync('dist/web/chunks')) cpSync('dist/web/chunks/' + f
 // The editor UI, served by the Go host on its loopback editor port.
 for (const file of ['index.html', 'workspace.js', 'workspace.css', 'favicon.svg']) cpSync('dist/web/' + file, web + '/' + file);
 if (existsSync('dist/web/editor-chunks')) cpSync('dist/web/editor-chunks', web + '/editor-chunks', { recursive: true });
+// three.js's addons (dist/web/three/examples/jsm), each gzipped, which keeps them at about a quarter of their size
+// in the binary. The host sends a file's gzip as it is, and unpacks the file on its first request (webfiles.Addon).
+const addons = 'dist/web/three/examples/jsm';
+for (const entry of readdirSync(addons, { recursive: true, withFileTypes: true })) {
+  if (!entry.isFile()) continue;
+  const name = join(entry.parentPath, entry.name).slice(addons.length + 1).replaceAll('\\', '/');
+  const target = web + '/three/addons/' + name + '.gz';
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, gzipSync(readFileSync(addons + '/' + name), { level: constants.Z_BEST_COMPRESSION }));
+}
 
 const targets = process.argv.slice(2);
 for (const target of targets.length ? targets : ['']) {

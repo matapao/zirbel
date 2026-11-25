@@ -41,7 +41,7 @@ The game runs in the middle, playable, with its thread beside it. Before a game 
 
 ## Game API
 
-A revision is one HTML document. Module scripts can `import * as THREE from 'three'`. The sandbox provides:
+A revision is one HTML document, or a built web folder imported with its files. Module scripts can `import * as THREE from 'three'`, and three.js's addons from `three/addons/...` (for example `three/addons/loaders/GLTFLoader.js`); the host serves both from its own build, with the Draco, Basis and meshopt decoders the addons load. Every game gets the same sandbox: WebAssembly, workers, and `data:` and `blob:` URLs, but no network. The sandbox provides:
 
 | API | Purpose |
 | --- | --- |

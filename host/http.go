@@ -48,6 +48,8 @@ func typeFor(name string) string {
 		return "image/svg+xml"
 	case ".txt":
 		return "text/plain; charset=utf-8"
+	case ".wasm":
+		return "application/wasm"
 	}
 	return "application/octet-stream"
 }

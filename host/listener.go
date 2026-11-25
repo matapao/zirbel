@@ -179,10 +179,15 @@ func (l *Listener) serveRuntime(w http.ResponseWriter, r *http.Request, parts []
 	// Game assets are inlined as data URLs in the game page; only runtime files are served here.
 	name := strings.Join(parts, "/")
 	file := l.runtime[name]
+	addon, isAddon := strings.CutPrefix(name, threeAddons)
+	if isAddon {
+		file = webfiles.Addon(addon)
+	}
 	if file == nil {
 		return fail(http.StatusNotFound, "Runtime file does not exist.")
 	}
-	if name == "three.module.js" || name == "game-sdk.js" {
+	// The game's origin is opaque, so the modules and decoders it loads are CORS requests.
+	if isAddon || name == "three.module.js" || name == "game-sdk.js" {
 		w.Header().Set("access-control-allow-origin", "*")
 	}
 	header := w.Header()
@@ -202,7 +207,7 @@ func (l *Listener) serveRuntime(w http.ResponseWriter, r *http.Request, parts []
 	w.WriteHeader(http.StatusOK)
 	// Not XSS: runtime files with their own content type, nosniff and a CSP.
 	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
-	_, _ = w.Write(body)
+	_, _ = w.Write(body) // #nosec G705 -- the request only picks which embedded runtime file to send
 	return nil
 }
 

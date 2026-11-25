@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { promisify } from 'node:util';
 import { gzip } from 'node:zlib';
@@ -7,41 +6,14 @@ import { z } from 'zod';
 import type { Peer, Room, Rooms } from '../core/rooms.ts';
 import { ZirbelError } from '../core/projects.ts';
 import { ClientMessage } from '../sdk/contracts.ts';
-import { gamePage } from './game-page.ts';
+import { gamePage, THREE_ADDONS } from './game-page.ts';
 import { GAME_FILE_TYPES } from '../sdk/game.ts';
 import { body, bytes, checkOrigin, contentType, fail, lanAddresses, listen, reply, requestUrl, secure, typeFor } from './http.ts';
+import { acceptsGzip, prepareRuntime, sendImmutable, type Addons } from './runtime-files.ts';
 
 const privateAddress = /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|169\.254\.|127\.)/;
 
 const gzipAsync = promisify(gzip);
-const acceptsGzip = (request: IncomingMessage) => /\bgzip\b/.test(String(request.headers['accept-encoding'] ?? ''));
-const IMMUTABLE = 'private, max-age=31536000, immutable';
-
-// Runtime files are fixed for the life of the process. Hash and gzip each once,
-// off the event loop, and share the result between the local and LAN listeners.
-type RuntimeEntry = { etag: string; gzip?: Buffer };
-const prepared = new WeakMap<ReadonlyMap<string, Buffer>, Map<string, RuntimeEntry>>();
-function prepareRuntime(runtime: ReadonlyMap<string, Buffer>) {
-  let entries = prepared.get(runtime);
-  if (entries) return entries;
-  entries = new Map();
-  prepared.set(runtime, entries);
-  for (const [name, file] of runtime) {
-    const entry: RuntimeEntry = { etag: '"' + createHash('sha256').update(file).digest('base64url') + '"' };
-    entries.set(name, entry);
-    if (/\.(?:js|css|html|txt)$/.test(name) && file.length > 1024)
-      gzipAsync(file).then((data) => { entry.gzip = data; }, () => {});
-  }
-  return entries;
-}
-
-function sendImmutable(request: IncomingMessage, response: ServerResponse, body: Buffer, type: string, entry: RuntimeEntry) {
-  const headers = { 'content-type': type, 'cache-control': IMMUTABLE, etag: entry.etag, vary: 'accept-encoding' };
-  if (request.headers['if-none-match'] === entry.etag) { response.writeHead(304, headers); response.end(); return; }
-  const compressed = entry.gzip && acceptsGzip(request) ? entry.gzip : undefined;
-  response.writeHead(200, compressed ? { ...headers, 'content-encoding': 'gzip' } : headers);
-  response.end(compressed ?? body);
-}
 
 // The game page embeds its assets (up to tens of MB), so build and gzip it once
 // per room and origin rather than on every load.
@@ -79,7 +51,7 @@ const reserveSchema = z.strictObject({
   role: z.enum(['player', 'spectator']),
 });
 
-export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, Buffer>, config: {
+export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, Buffer>, addons: Addons, config: {
   port: number; bind: string; lan: boolean; editorOrigins?: string[]; extraHosts?: string[];
 }) {
   let port: number;
@@ -152,8 +124,12 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
       if (route === 'runtime' && request.method === 'GET') {
         const name = parts.join('/');
         // Game assets are inlined as data URLs in the game page; only runtime files are served here.
-        if (name === 'three.module.js' || name === 'game-sdk.js') response.setHeader('access-control-allow-origin', '*');
-        sendImmutable(request, response, runtimeFile(name), typeFor(name), runtimeEntries.get(name)!);
+        const addon = name.startsWith(THREE_ADDONS) ? addons(name.slice(THREE_ADDONS.length)) : undefined;
+        const entry = addon ?? runtimeEntries.get(name);
+        if (!entry) throw new ZirbelError(404, 'Runtime file does not exist.');
+        // The game's origin is opaque, so the modules and decoders it loads are CORS requests.
+        if (addon || name === 'three.module.js' || name === 'game-sdk.js') response.setHeader('access-control-allow-origin', '*');
+        sendImmutable(request, response, typeFor(name), entry);
         return;
       }
       throw new ZirbelError(404, 'Player route does not exist.');

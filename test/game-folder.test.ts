@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { importGameFolder } from '../packages/core/game-files.ts';
 import { head } from '../packages/core/projects.ts';
+import { GAME_FILE_TYPES, gameFilePath } from '../packages/sdk/game.ts';
 import { gamePage } from '../packages/server/game-page.ts';
-import { install, rights } from './helpers.ts';
+import { importMap, install, rights, sandboxPolicy } from './helpers.ts';
 
 const base64 = (text: string | Uint8Array) => Buffer.from(text).toString('base64');
 const folder = {
@@ -56,15 +58,31 @@ test('a built game cannot be rewritten by a proposal, and travels with its files
   assert.equal(other.readAsset(files[0]!).length > 0, true);
 });
 
-test('only a built game may load files, and only from beside its document', (t) => {
+test('every game gets the same sandbox: its own files, WebAssembly, workers and three.js addons, and no network', (t) => {
   const { projects, releases } = install(t);
   const built = releases.package(importGameFolder(projects, { files: folder }).id, 'main', rights, false);
-  const policy = gamePage(built, 'http://h/runtime/r/', "'self'", 'http://h/game/r/key/').policy;
-  assert.match(policy, /^sandbox allow-scripts;/);
-  assert.match(policy, /connect-src http:\/\/h\/game\/r\/key\/ data: blob:; worker-src http:\/\/h\/game\/r\/key\/ blob:;/);
-  assert.match(policy, /script-src 'unsafe-inline' 'wasm-unsafe-eval' http:\/\/h\/game\/r\/key\/ /);
-  const single = projects.createGame('Single', { html: '<canvas></canvas>', maxPlayers: 1 });
-  const plain = gamePage(releases.package(single.id, 'main', rights, false), 'http://h/runtime/r/', "'self'", 'http://h/game/r/key/').policy;
-  assert.match(plain, /connect-src 'none';/);
-  assert.doesNotMatch(plain, /game\/r\/key/);
+  const single = releases.package(projects.createGame('Single', { html: '<canvas></canvas>', maxPlayers: 1 }).id, 'main', rights, false);
+  for (const release of [built, single]) {
+    const page = gamePage(release, 'http://h/runtime/r/', "'self'", 'http://h/game/r/key/');
+    assert.equal(page.policy, sandboxPolicy('http://h/runtime/r/', 'http://h/game/r/key/', "'self'"));
+    assert.ok(page.html.includes(importMap('http://h/runtime/r/')), page.html);
+    // Nothing beyond this host: no wildcard or bare scheme, and every address is the game's own or the runtime's.
+    assert.doesNotMatch(page.policy, /\*|https?:(?:;| )|'unsafe-eval'|allow-same-origin/);
+    for (const address of page.policy.match(/https?:\/\/\S+/g) ?? []) assert.match(address, /^http:\/\/h\/(?:game|runtime)\/r\//);
+  }
+});
+
+test('game files carry their content types, the same in both hosts', () => {
+  const text = 'text/plain; charset=utf-8';
+  for (const [extension, type] of Object.entries({ obj: 'model/obj', mtl: 'model/mtl', fbx: 'application/octet-stream',
+    hdr: 'image/vnd.radiance', exr: 'image/x-exr', glsl: text, vert: text, frag: text, ts: text, tsx: text, jsx: text })) {
+    assert.equal(GAME_FILE_TYPES[extension], type, extension);
+    assert.equal(gameFilePath.safeParse('assets/file.' + extension).success, true, extension);
+  }
+  assert.equal(gameFilePath.safeParse('assets/file.tsv').success, false);
+  // host/gamefiles.go keeps the same table.
+  const go = readFileSync('host/gamefiles.go', 'utf8');
+  const start = go.indexOf('var gameFileTypes = map[string]string{');
+  const table = go.slice(start, go.indexOf('\n}\n', start));
+  assert.deepEqual(Object.fromEntries([...table.matchAll(/"(\w+)": "([^"]+)"/g)].map(([, key, value]) => [key, value])), { ...GAME_FILE_TYPES });
 });

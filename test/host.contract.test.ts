@@ -3,7 +3,8 @@
 // the same for players, so every check below runs against each.
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import WebSocket from 'ws';
@@ -11,15 +12,17 @@ import { importGameFolder } from '../packages/core/game-files.ts';
 import { Projects } from '../packages/core/projects.ts';
 import { Releases } from '../packages/core/releases.ts';
 import type { Release } from '../packages/sdk/contracts.ts';
-import { hostsUnderTest, launch, legacyProject, rights, statusForHost, stopHost, tempDir } from './helpers.ts';
+import { hostsUnderTest, importMap, launch, legacyProject, rights, sandboxPolicy, statusForHost, stopHost, tempDir } from './helpers.ts';
 
 const hosts = hostsUnderTest();
 
-// A built game: a document, a module script and a binary model beside it.
+// A built game: a document, a module script, models beside it, and its TypeScript source.
 const builtFiles = {
   'index.html': '<!doctype html><script type="module" src="./assets/main.js"></script>',
   'assets/main.js': 'fetch("./models/hero.glb")',
   'models/hero.glb': Buffer.from([103, 108, 84, 70, 2, 0, 0, 0]),
+  'models/hero.obj': 'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n',
+  'src/main.ts': 'export const speed: number = 2;',
 };
 
 function fixtures(t: TestContext) {
@@ -130,9 +133,11 @@ for (const host of hosts) {
 
     const game = await fetch(player + info.gameUrl, { headers: { 'accept-encoding': 'gzip' } });
     assert.equal(game.status, 200);
-    assert.match(game.headers.get('content-security-policy') ?? '', /^sandbox allow-scripts; default-src 'none'/);
+    const runtimeBase = player + '/runtime/' + roomId + '/';
+    assert.equal(game.headers.get('content-security-policy'), sandboxPolicy(runtimeBase, player + info.gameUrl, "'self'"));
     const html = await game.text();
     assert.match(html, /^<!doctype html><meta charset="utf-8">/);
+    assert.ok(html.includes(importMap(runtimeBase)), html);
     assert.match(html, /game-sdk\.js"><\/script><canvas><\/canvas>$/);
     assert.equal((await fetch(player + '/game/' + roomId + '/wrong-key')).status, 404);
     // The page is built once per room and origin, gzipped or not.
@@ -153,6 +158,32 @@ for (const host of hosts) {
     assert.equal((await fetch(runtime, { headers: { 'if-none-match': etag } })).status, 304);
     assert.equal((await fetch(player + '/runtime/' + roomId + '/game-sdk.js')).headers.get('access-control-allow-origin'), '*');
     assert.equal((await fetch(player + '/runtime/' + roomId + '/missing.js')).status, 404);
+
+    // three.js's addons and the decoders they load, beside three.module.js and cached like it.
+    for (const [name, type] of [['loaders/GLTFLoader.js', 'application/javascript; charset=utf-8'],
+      ['libs/draco/draco_decoder.wasm', 'application/wasm'], ['libs/basis/basis_transcoder.wasm', 'application/wasm']]) {
+      const url = runtimeBase + 'three/addons/' + name;
+      const bytes = readFileSync('dist/web/three/examples/jsm/' + name);
+      let addon = await fetch(url, { headers: { 'accept-encoding': 'gzip' } });
+      for (let tries = 0; addon.headers.get('content-encoding') !== 'gzip' && tries < 100; tries++) {
+        await new Promise((done) => setTimeout(done, 20));
+        addon = await fetch(url, { headers: { 'accept-encoding': 'gzip' } });
+      }
+      assert.equal(addon.status, 200, name);
+      assert.equal(addon.headers.get('content-type'), type);
+      assert.equal(addon.headers.get('content-encoding'), 'gzip');
+      assert.match(addon.headers.get('cache-control') ?? '', /immutable/);
+      assert.equal(addon.headers.get('x-content-type-options'), 'nosniff');
+      assert.equal(addon.headers.get('access-control-allow-origin'), '*');
+      assert.equal(addon.headers.get('etag'), '"' + createHash('sha256').update(bytes).digest('base64url') + '"');
+      assert.deepEqual(Buffer.from(await addon.arrayBuffer()), bytes);
+      const plain = await fetch(url, { headers: { 'accept-encoding': 'identity' } });
+      assert.equal(plain.headers.get('content-encoding'), null);
+      assert.deepEqual(Buffer.from(await plain.arrayBuffer()), bytes);
+      assert.equal((await fetch(url, { headers: { 'if-none-match': addon.headers.get('etag')! } })).status, 304);
+    }
+    for (const name of ['', 'loaders', 'loaders/', 'libs/draco/README.md', 'loaders/GLTFLoader.js.gz', 'missing.js', '%2e%2e/three.module.js'])
+      assert.equal((await fetch(runtimeBase + 'three/addons/' + name)).status, 404, name);
   });
 
   test(host.name + ' host serves a built game\'s files beside its document, in its sandbox', async (t) => {
@@ -165,13 +196,16 @@ for (const host of hosts) {
     assert.match(info.gameUrl, /^\/game\/[a-f0-9]{12}\/[\w-]+\/$/);
     const page = await fetch(player + info.gameUrl);
     const policy = page.headers.get('content-security-policy') ?? '';
-    assert.match(policy, /^sandbox allow-scripts; /);
-    assert.ok(policy.includes('connect-src ' + player + info.gameUrl + ' data: blob:; worker-src ' + player + info.gameUrl + ' blob:;'), policy);
+    // The same policy as a single-document game's.
+    assert.equal(policy, sandboxPolicy(player + '/runtime/' + roomId + '/', player + info.gameUrl, "'self'"));
     assert.match(await page.text(), /src="\.\/assets\/main\.js"/);
-    for (const [path, type] of [['assets/main.js', 'text/javascript; charset=utf-8'], ['models/hero.glb', 'model/gltf-binary']] as const) {
+    // Its source is text: nosniff keeps a browser from running it.
+    for (const [path, type] of [['assets/main.js', 'text/javascript; charset=utf-8'], ['models/hero.glb', 'model/gltf-binary'],
+      ['models/hero.obj', 'model/obj'], ['src/main.ts', 'text/plain; charset=utf-8']] as const) {
       const file = await fetch(player + info.gameUrl + path);
       assert.equal(file.status, 200, path);
       assert.equal(file.headers.get('content-type'), type);
+      assert.equal(file.headers.get('x-content-type-options'), 'nosniff');
       assert.equal(file.headers.get('access-control-allow-origin'), '*');
       assert.equal(file.headers.get('content-security-policy'), policy, 'a file opened on its own stays sandboxed');
       assert.deepEqual(Buffer.from(await file.arrayBuffer()), Buffer.from(builtFiles[path]));

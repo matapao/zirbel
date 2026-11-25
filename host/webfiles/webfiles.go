@@ -10,8 +10,10 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"io"
 	"io/fs"
 	"path"
+	"sync"
 	"sync/atomic"
 )
 
@@ -67,6 +69,60 @@ func (f *File) Gzip() []byte {
 	return nil
 }
 
+// newFile mirrors runtimeEntry in packages/server/runtime-files.ts.
+func newFile(data []byte) *File {
+	sum := sha256.Sum256(data)
+	return &File{Bytes: data, Hash: hex.EncodeToString(sum[:]), ETag: `"` + base64.RawURLEncoding.EncodeToString(sum[:]) + `"`}
+}
+
+// compressible mirrors runtime-files.ts: text and WebAssembly over 1 KB are sent gzipped.
+func compressible(name string, size int) bool {
+	switch path.Ext(name) {
+	case ".js", ".css", ".html", ".txt", ".wasm":
+		return size > 1024
+	}
+	return false
+}
+
+// addons holds the three.js addon files read so far, by name.
+var addons sync.Map
+
+// Addon returns three.js's addon file at name (three/examples/jsm/<name>),
+// or nil. It mirrors threeAddons in runtime-files.ts. The build embeds each
+// gzipped, and a game uses a few of the hundreds there, so each is unpacked
+// on its first request and kept.
+func Addon(name string) *File {
+	if cached, ok := addons.Load(name); ok {
+		if file, ok := cached.(*File); ok {
+			return file
+		}
+	}
+	if !fs.ValidPath(name) {
+		return nil
+	}
+	packed, err := fs.ReadFile(embedded, "web/three/addons/"+name+".gz")
+	if err != nil {
+		return nil
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(packed))
+	if err != nil {
+		return nil
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil
+	}
+	file := newFile(data)
+	if compressible(name, len(data)) {
+		file.gzip.Store(&packed)
+	}
+	stored, _ := addons.LoadOrStore(name, file)
+	if kept, ok := stored.(*File); ok {
+		return kept
+	}
+	return file
+}
+
 // Load reads the embedded runtime and starts compressing it in the background.
 func Load() (map[string]*File, error) {
 	root, err := fs.Sub(embedded, "web")
@@ -78,6 +134,9 @@ func Load() (map[string]*File, error) {
 	if err != nil {
 		return nil, errors.New("the player runtime is missing; run `pnpm build:host`")
 	}
+	if _, err := fs.Stat(root, "three/addons/loaders/GLTFLoader.js.gz"); err != nil {
+		return nil, errors.New("the player runtime is missing three/addons; run `pnpm build:host`")
+	}
 	for _, chunk := range chunks {
 		names = append(names, "chunks/"+chunk.Name())
 	}
@@ -87,18 +146,11 @@ func Load() (map[string]*File, error) {
 		if err != nil {
 			return nil, errors.New("the player runtime is missing " + name + "; run `pnpm build:host`")
 		}
-		sum := sha256.Sum256(data)
-		files[name] = &File{Bytes: data, Hash: hex.EncodeToString(sum[:]),
-			ETag: `"` + base64.RawURLEncoding.EncodeToString(sum[:]) + `"`}
+		files[name] = newFile(data)
 	}
 	go func() {
 		for name, file := range files {
-			switch path.Ext(name) {
-			case ".js", ".css", ".html", ".txt":
-			default:
-				continue
-			}
-			if len(file.Bytes) <= 1024 {
+			if !compressible(name, len(file.Bytes)) {
 				continue
 			}
 			var out bytes.Buffer

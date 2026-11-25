@@ -118,8 +118,9 @@ test('game documents carry an HTTP sandbox and only the room-scoped game SDK', a
   const p = projects.createGame('Independent game', game);
   const page = gamePage(releases.package(p.id, 'main', rights, false), 'http://localhost:4000/runtime/test/', "'self'", 'http://localhost:4000/game/test/key/');
   assert.match(page.policy, /sandbox allow-scripts;/);
-  assert.doesNotMatch(page.policy, /allow-same-origin|unsafe-eval/);
-  assert.match(page.policy, /connect-src 'none'/);
+  // WebAssembly compiles ('wasm-unsafe-eval'); strings never run as code.
+  assert.doesNotMatch(page.policy, /allow-same-origin|'unsafe-eval'/);
+  assert.match(page.policy, /connect-src http:\/\/localhost:4000\/game\/test\/key\/ http:\/\/localhost:4000\/runtime\/test\/three\/addons\/ data: blob:;/);
   assert.match(page.html, /runtime\/test\/three\.module\.js/);
   assert.ok(page.html.endsWith(game.html));
 });
@@ -182,6 +183,20 @@ test('the player gzips and caches runtime files, and the headless host starts wi
   assert.equal((await response.arrayBuffer()).byteLength > 0, true);
   const etag = response.headers.get('etag')!;
   assert.equal((await fetch(url, { headers: { 'if-none-match': etag } })).status, 304);
+  // three.js's addons come from the same build, each read on its first request, and only the files there.
+  const addon = url.replace('three.module.js', 'three/addons/libs/draco/draco_decoder.wasm');
+  response = await fetch(addon, { headers: { 'accept-encoding': 'gzip' } });
+  for (let tries = 0; response.headers.get('content-encoding') !== 'gzip' && tries < 50; tries++) {
+    await new Promise((done) => setTimeout(done, 20));
+    response = await fetch(addon, { headers: { 'accept-encoding': 'gzip' } });
+  }
+  assert.equal(response.headers.get('content-type'), 'application/wasm');
+  assert.equal(response.headers.get('access-control-allow-origin'), '*');
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), readFileSync('dist/web/three/examples/jsm/libs/draco/draco_decoder.wasm'));
+  for (const name of ['libs/draco/README.md', 'libs', 'nothing.js'])
+    assert.equal((await fetch(url.replace('three.module.js', 'three/addons/' + name))).status, 404, name);
+  const { threeAddons } = await import('../packages/server/runtime-files.ts');
+  assert.throws(() => threeAddons(root), /missing three/);
 
   const host = spawn(process.execPath, ['dist/server.mjs', '--host-only', '--data', join(root, 'host'), '--player-port', '0'],
     { stdio: ['ignore', 'pipe', 'inherit'] });

@@ -11,6 +11,10 @@ export const GAME_FILE_TYPES: Readonly<Record<string, string>> = {
   css: 'text/css; charset=utf-8', json: 'application/json; charset=utf-8', map: 'application/json; charset=utf-8',
   txt: 'text/plain; charset=utf-8', csv: 'text/csv; charset=utf-8', wasm: 'application/wasm',
   glb: 'model/gltf-binary', gltf: 'model/gltf+json', bin: 'application/octet-stream', ktx2: 'image/ktx2',
+  obj: 'model/obj', mtl: 'model/mtl', fbx: 'application/octet-stream', hdr: 'image/vnd.radiance', exr: 'image/x-exr',
+  // Shaders, and a game's own source: plain text, which a browser never runs.
+  glsl: 'text/plain; charset=utf-8', vert: 'text/plain; charset=utf-8', frag: 'text/plain; charset=utf-8',
+  ts: 'text/plain; charset=utf-8', tsx: 'text/plain; charset=utf-8', jsx: 'text/plain; charset=utf-8',
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', avif: 'image/avif',
   svg: 'image/svg+xml', ico: 'image/x-icon',
   woff2: 'font/woff2', woff: 'font/woff', ttf: 'font/ttf', otf: 'font/otf',

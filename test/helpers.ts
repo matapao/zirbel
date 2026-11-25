@@ -87,6 +87,44 @@ export function launch<T>(t: TestContext, command: string[], args: string[], pic
   return { child, ready };
 }
 
+// The policy and import map every game gets, a single document or a built folder, written out in full: the unit
+// tests hold game-page.ts to them and the contract tests hold both hosts.
+export function sandboxPolicy(runtime: string, base: string, ancestors: string) {
+  const addons = runtime + 'three/addons/';
+  return "sandbox allow-scripts; default-src 'none'; " +
+    "script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + ' ' + runtime + 'game-sdk.js ' + runtime + 'three.module.js ' + addons + '; ' +
+    "style-src 'unsafe-inline' " + base + '; img-src data: blob: ' + base + '; media-src data: blob: ' + base + '; font-src data: ' + base + '; ' +
+    'connect-src ' + base + ' ' + addons + ' data: blob:; worker-src ' + base + " blob:; frame-src 'none'; form-action 'none'; base-uri 'none'; " +
+    'frame-ancestors ' + ancestors;
+}
+export const importMap = (runtime: string) => '<script type="importmap">{"imports":{"three":"' + runtime + 'three.module.js",' +
+  '"three/addons/":"' + runtime + 'three/addons/"}}</script>';
+
+// A glTF binary (GLB) holding one triangle, a mesh named Tri, for the loader tests.
+export function triangleGlb() {
+  const positions = Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer);
+  const json = Buffer.from(JSON.stringify({
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0, name: 'Tri' }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] }],
+    bufferViews: [{ buffer: 0, byteLength: positions.length }], buffers: [{ byteLength: positions.length }],
+  }));
+  const chunk = (type: number, data: Buffer) => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32LE(data.length, 0);
+    head.writeUInt32LE(type, 4);
+    return Buffer.concat([head, data]);
+  };
+  // The JSON chunk is padded with spaces to four bytes; the 36 bytes of positions need none.
+  const body = Buffer.concat([chunk(0x4e4f534a, Buffer.concat([json, Buffer.alloc((4 - json.length % 4) % 4, 0x20)])),
+    chunk(0x004e4942, positions)]);
+  const header = Buffer.alloc(12);
+  header.writeUInt32LE(0x46546c67, 0); // glTF
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(12 + body.length, 8);
+  return Buffer.concat([header, body]);
+}
+
 // The status a host answers for another Host header (the DNS-rebinding check).
 // fetch cannot override Host, so this goes through node:http.
 export function statusForHost(url: string, host: string) {

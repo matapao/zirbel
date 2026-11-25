@@ -8,7 +8,7 @@ import { ZirbelError } from '../core/projects.ts';
 
 export const contentType: Record<string, string> = {
   html: 'text/html; charset=utf-8', js: 'application/javascript; charset=utf-8',
-  css: 'text/css; charset=utf-8', svg: 'image/svg+xml', txt: 'text/plain; charset=utf-8',
+  css: 'text/css; charset=utf-8', svg: 'image/svg+xml', txt: 'text/plain; charset=utf-8', wasm: 'application/wasm',
 };
 export const typeFor = (name: string) => contentType[name.split('.').at(-1) ?? ''] ?? 'application/octet-stream';
 const editorFiles = /^(?:editor-chunks\/[a-zA-Z0-9_.-]+|workspace\.js|workspace\.css|favicon\.svg)$/;

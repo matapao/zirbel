@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { cp, mkdir, rm } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 
 await rm('dist', { recursive: true, force: true });
 await mkdir('dist/web', { recursive: true });
@@ -7,7 +7,34 @@ await cp('public', 'dist/web', { recursive: true });
 await Promise.all([
   cp('node_modules/three/LICENSE', 'dist/web/three-license.txt'),
   cp('node_modules/zod/LICENSE', 'dist/web/zod-license.txt'),
+  threePackage('node_modules/three', 'dist/web/three'),
 ]);
+
+// three.js as one package, from the pinned node_modules/three: its module build, and its addons with the decoders
+// they load at runtime. Games load the addons from <runtime>three/addons/ (examples/jsm here); a harness turn links
+// its node_modules/three to this folder, so Node and bundlers resolve `three` and `three/addons/...` to it. The
+// upstream package's docs and example assets stay out.
+async function threePackage(from, to) {
+  const upstream = JSON.parse(await readFile(from + '/package.json', 'utf8'));
+  const exports = { '.': upstream.exports['.'], './addons/*': upstream.exports['./addons/*'] };
+  if (!exports['.']?.import || exports['./addons/*'] !== './examples/jsm/*')
+    throw new Error('node_modules/three no longer declares the exports this package keeps.');
+  const { name, version, license, type, main, module } = upstream;
+  await mkdir(to + '/build', { recursive: true });
+  await writeFile(to + '/package.json', JSON.stringify({ name, version, license, type, main, module, exports }, null, 2) + '\n');
+  await cp(from + '/LICENSE', to + '/LICENSE');
+  // The entry points, and the files beside them that they import or require (three.core.js).
+  const copied = new Set();
+  const copy = async (file) => {
+    if (copied.has(file)) return;
+    copied.add(file);
+    await cp(from + '/build/' + file, to + '/build/' + file);
+    const source = await readFile(from + '/build/' + file, 'utf8');
+    for (const [, next] of source.matchAll(/(?:\bfrom|\brequire\(|\bimport\()\s*['"]\.\/([\w.-]+\.c?js)['"]/g)) await copy(next);
+  };
+  for (const entry of Object.values(exports['.'])) await copy(entry.replace(/^\.\/build\//, ''));
+  await cp(from + '/examples/jsm', to + '/examples/jsm', { recursive: true, filter: (path) => !path.endsWith('.md') });
+}
 
 await Promise.all([
   build({
