@@ -3,14 +3,25 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 )
 
-func (s *EditorServer) solo(w http.ResponseWriter, release *Release) error {
+// playerHost is the name the player is reached by: on a box, the one the
+// device reached the editor by; loopback otherwise.
+func (s *EditorServer) playerHost(r *http.Request) string {
+	if s.box == nil {
+		return "127.0.0.1"
+	}
+	return hostnameOf(r.Host)
+}
+
+func (s *EditorServer) solo(w http.ResponseWriter, r *http.Request, release *Release) error {
 	room, err := s.rooms.Open(release, true, "local", false)
 	if err != nil {
 		return err
 	}
-	reply(w, http.StatusCreated, map[string]string{"link": roomLink(loopback(s.players.local.port), room), "id": room.ID})
+	link := roomLink("http://"+s.playerHost(r)+":"+strconv.Itoa(s.players.local.port), room)
+	reply(w, http.StatusCreated, map[string]string{"link": link, "id": room.ID})
 	return nil
 }
 func (s *EditorServer) developmentRoom(w http.ResponseWriter, r *http.Request, projectID string) error {
@@ -49,7 +60,7 @@ func (s *EditorServer) developmentRoom(w http.ResponseWriter, r *http.Request, p
 	if err != nil {
 		return err
 	}
-	described, err := s.players.Describe(r.Context(), room)
+	described, err := s.players.Describe(r.Context(), room, s.playerHost(r))
 	return send(w, http.StatusCreated, described, err)
 }
 func (s *EditorServer) serveGrants(w http.ResponseWriter, r *http.Request, projectID, tail string) error {
@@ -104,7 +115,7 @@ func (s *EditorServer) serveReleases(w http.ResponseWriter, r *http.Request, pat
 		if !release.Manifest.Permissions.Play {
 			return fail(http.StatusForbidden, "The creator has disabled play for this release.")
 		}
-		return s.solo(w, release)
+		return s.solo(w, r, release)
 	case get && pathID != "" && action == "download":
 		release, err := s.releases.Read(pathID)
 		if err != nil {
@@ -157,14 +168,14 @@ func (s *EditorServer) serveRooms(w http.ResponseWriter, r *http.Request, pathID
 		if err != nil {
 			return err
 		}
-		described, err := s.players.Describe(r.Context(), room)
+		described, err := s.players.Describe(r.Context(), room, s.playerHost(r))
 		return send(w, http.StatusCreated, described, err)
 	case get && pathID != "" && action == "link":
 		room, err := s.rooms.Get(pathID)
 		if err != nil {
 			return err
 		}
-		described, err := s.players.Describe(r.Context(), room)
+		described, err := s.players.Describe(r.Context(), room, s.playerHost(r))
 		return send(w, http.StatusOK, described, err)
 	case post && pathID != "" && action == "close":
 		s.rooms.Close(pathID)

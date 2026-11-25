@@ -29,10 +29,40 @@ type listenerConfig struct {
 	lan           bool
 	extraHosts    []string
 	editorOrigins []string // may frame the local player (editor playtests)
+	// box, on a box: the player answers the box's network by its names, and
+	// the editor that may frame it is on the host name the device reached.
+	box *playerReach
 }
 
-func (l *Listener) ancestors() string {
-	return strings.Join(append([]string{"'self'"}, l.config.editorOrigins...), " ")
+// playerReach mirrors PlayerReach in packages/server/player-listener.ts.
+type playerReach struct {
+	hosts         func() []string
+	network       func(address string) bool
+	editorOrigins func(host string) []string
+}
+
+// ancestors are the documents that may frame the player reached at host.
+func (l *Listener) ancestors(host string) string {
+	origins := l.config.editorOrigins
+	if l.config.box != nil {
+		origins = l.config.box.editorOrigins(host)
+	}
+	return strings.Join(append([]string{"'self'"}, origins...), " ")
+}
+
+// hostnameOf is a Host header's name as a URL's hostname has it: lowercase,
+// without its port, an IPv6 address in its brackets.
+func hostnameOf(host string) string {
+	host = strings.ToLower(host)
+	if strings.HasPrefix(host, "[") {
+		if end := strings.Index(host, "]"); end > 0 {
+			return host[:end+1]
+		}
+	}
+	if colon := strings.LastIndex(host, ":"); colon >= 0 {
+		return host[:colon]
+	}
+	return host
 }
 
 // Listener serves one player address, like playerListener in packages/server.
@@ -49,6 +79,9 @@ type Listener struct {
 }
 
 func (l *Listener) hosts() []string {
+	if l.config.box != nil {
+		return l.config.box.hosts()
+	}
 	hosts := []string{"localhost", "127.0.0.1"}
 	if l.config.lan {
 		hosts = append(hosts, LANAddresses()...)
@@ -56,6 +89,9 @@ func (l *Listener) hosts() []string {
 	return append(hosts, l.config.extraHosts...)
 }
 func (l *Listener) localNetwork(r *http.Request) bool {
+	if l.config.box != nil {
+		return l.config.box.network(remoteAddress(r))
+	}
 	if !l.config.lan {
 		return true
 	}
@@ -116,7 +152,7 @@ func (l *Listener) serve(w http.ResponseWriter, r *http.Request) error {
 	}
 	frame := "'none'"
 	if !l.config.lan {
-		frame = l.ancestors()
+		frame = l.ancestors(hostnameOf(r.Host))
 	}
 	w.Header().Set("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"+
 		// The LAN player is plain HTTP by design, so its room socket is ws: on this same host.
@@ -217,7 +253,7 @@ func Listen(ctx context.Context, rooms *Rooms, runtime map[string]*webfiles.File
 	if page == nil {
 		return nil, errors.New("the player runtime is missing player.html")
 	}
-	socket, port, err := listenTCP4(ctx, bind, port)
+	socket, port, err := listenOn(ctx, bind, port)
 	if err != nil {
 		return nil, err
 	}

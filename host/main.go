@@ -1,8 +1,9 @@
 // Command zirbel-host is the native Zirbel host. With --host-only it serves
 // verified releases to players (HTML, CSS, JS and WebSocket rooms); otherwise
 // it also serves the editor, its project API and the optional project MCP
-// endpoint on loopback. Flags and the data directory match
-// `node dist/server.mjs`, so either can run against the same projects.
+// endpoint on loopback, or with --box on the box's network to paired devices
+// (box_routes.go). Flags and the data directory match `node dist/server.mjs`,
+// so either can run against the same projects.
 package main
 
 import (
@@ -79,7 +80,7 @@ func main() {
 type options struct {
 	root, lanHost       string
 	hostOnly, lan, open bool
-	enableMCP           bool
+	enableMCP, box      bool
 	port, playerPort    int
 	imports, releaseIDs list
 }
@@ -92,6 +93,7 @@ func parseOptions() (*options, error) {
 	flags.BoolVar(&o.lan, "lan", false, "also serve invited players on the local network")
 	flags.BoolVar(&o.open, "open", false, "open the editor in a browser")
 	flags.BoolVar(&o.enableMCP, "enable-mcp", os.Getenv("ZIRBEL_ENABLE_MCP") == "1", "serve the project MCP endpoint at /mcp")
+	flags.BoolVar(&o.box, "box", os.Getenv("ZIRBEL_BOX") == "1", "serve the editor on this box's network, to paired devices only")
 	port := flags.String("port", "", "editor port (default 4173 or ZIRBEL_PORT)")
 	playerPort := flags.String("player-port", "", "player port (default 4174 or ZIRBEL_PLAYER_PORT)")
 	playerHost := flags.String("player-host", "", "host name for LAN links (or ZIRBEL_LAN_HOST)")
@@ -127,6 +129,7 @@ func parseOptions() (*options, error) {
 		return nil, errors.New("the player host must be an IPv4 address or hostname")
 	}
 	o.enableMCP = o.enableMCP && !o.hostOnly
+	o.box = o.box && !o.hostOnly
 	return o, nil
 }
 
@@ -240,33 +243,62 @@ func run() error {
 
 	editorPort := 0
 	var editorSocket net.Listener
+	editorBind := "127.0.0.1"
+	if o.box {
+		editorBind = everyInterface
+	}
 	if !o.hostOnly {
-		if editorSocket, editorPort, err = listenTCP4(ctx, "127.0.0.1", o.port); err != nil {
+		if editorSocket, editorPort, err = listenOn(ctx, editorBind, o.port); err != nil {
 			return err
 		}
 	}
-	localPort, origins := o.playerPort, []string{}
+	var box *Box
+	if o.box {
+		account, err := accountDirectory()
+		if err != nil {
+			return err
+		}
+		if box, err = NewBox(account, func() int { return editorPort }); err != nil {
+			return err
+		}
+	}
+	localPort, config := o.playerPort, listenerConfig{}
 	if o.lan || !o.hostOnly {
 		localPort = 0
 	}
 	if !o.hostOnly {
-		origins = []string{loopback(editorPort), "http://localhost:" + strconv.Itoa(editorPort)}
+		config.editorOrigins = []string{loopback(editorPort), "http://localhost:" + strconv.Itoa(editorPort)}
 	}
-	local, err := Listen(ctx, rooms, runtimeFiles, "127.0.0.1", localPort, listenerConfig{editorOrigins: origins})
+	playerBind := "127.0.0.1"
+	if box != nil {
+		// On a box, the player for the editor's playtests answers its network
+		// too, framed by the editor on the host name the device reached.
+		playerBind = everyInterface
+		config.box = &playerReach{hosts: boxHosts, network: onBoxNetwork, editorOrigins: func(host string) []string {
+			port := ":" + strconv.Itoa(editorPort)
+			if editorPort == 80 {
+				port = ""
+			}
+			return []string{"http://" + host + port, loopback(editorPort), "http://localhost:" + strconv.Itoa(editorPort)}
+		}}
+	}
+	local, err := Listen(ctx, rooms, runtimeFiles, playerBind, localPort, config)
 	if err != nil {
 		return err
 	}
 	players = &Players{rooms: rooms, runtime: runtimeFiles, local: local, lanHost: o.lanHost, lanPort: o.playerPort}
 
+	var handler *EditorServer
 	if !o.hostOnly {
 		var mcp *MCP
-		if o.enableMCP {
+		// A box builds its MCP endpoint for the switch that turns it on.
+		if o.enableMCP || o.box {
 			if mcp, err = NewMCP(projects); err != nil {
 				return err
 			}
 		}
-		handler := &EditorServer{Editor: &Editor{projects: projects, releases: releases}, rooms: rooms, players: players,
-			mcp: mcp, files: editorFiles, port: editorPort, boot: self.Boot}
+		handler = &EditorServer{Editor: &Editor{projects: projects, releases: releases}, rooms: rooms, players: players,
+			mcp: mcp, enableMCP: o.enableMCP, box: box, files: editorFiles, port: editorPort, boot: self.Boot}
 		editorServer = &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 25 * time.Second, IdleTimeout: 5 * time.Second}
 		go func() { _ = editorServer.Serve(editorSocket) }()
 	}
@@ -289,7 +321,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		described, err := players.Describe(ctx, room)
+		described, err := players.Describe(ctx, room, "127.0.0.1")
 		if err != nil {
 			return err
 		}
@@ -307,8 +339,12 @@ func run() error {
 		editorAddress = loopback(editorPort)
 		editorURL = editorAddress
 	}
-	_ = out.Encode(map[string]any{"pid": os.Getpid(), "data": o.root, "editor": editorURL,
-		"player": loopback(local.port), "mcp": o.enableMCP, "host": "go"})
+	started := map[string]any{"pid": os.Getpid(), "data": o.root, "editor": editorURL,
+		"player": loopback(local.port), "mcp": handler != nil && handler.mcpOn(), "host": "go"}
+	if box != nil {
+		started["box"] = true
+	}
+	_ = out.Encode(started)
 	if !o.hostOnly && o.open {
 		browser(editorAddress + "/")
 	}

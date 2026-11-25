@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -13,12 +14,27 @@ import (
 // packages/server/main.ts. Harness chat stays with the Node editor for now.
 type EditorServer struct {
 	*Editor
-	rooms   *Rooms
-	players *Players
-	mcp     *MCP // nil unless --enable-mcp
-	files   map[string][]byte
-	port    int
-	boot    string
+	rooms     *Rooms
+	players   *Players
+	mcp       *MCP // nil unless --enable-mcp or --box
+	enableMCP bool // --enable-mcp: on a box, /mcp also answers while external MCP access is off, from the box itself
+	box       *Box // nil unless --box
+	files     map[string][]byte
+	port      int
+	boot      string
+}
+
+// mcpOn: the MCP endpoint answers with --enable-mcp, and on a box while its
+// external MCP access is on.
+func (s *EditorServer) mcpOn() bool {
+	if s.mcp == nil {
+		return false
+	}
+	if s.enableMCP || s.box == nil {
+		return s.enableMCP
+	}
+	switches, err := s.box.settings.Read()
+	return err == nil && switches.ExternalMCP
 }
 
 func (s *EditorServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -28,11 +44,23 @@ func (s *EditorServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (s *EditorServer) serve(w http.ResponseWriter, r *http.Request) error {
-	if err := checkHost(r, s.port, []string{"127.0.0.1", "localhost"}); err != nil {
+	hosts := []string{"127.0.0.1", "localhost"}
+	if s.box != nil {
+		hosts = boxHosts()
+	}
+	if err := checkHost(r, s.port, hosts); err != nil {
 		return err
 	}
+	access := boxAccess{local: true}
+	if s.box != nil {
+		opened, handled, err := s.box.door(w, r)
+		if err != nil || handled {
+			return err
+		}
+		access = opened
+	}
 	pathname := r.URL.EscapedPath()
-	mcpRequest := s.mcp != nil && pathname == "/mcp"
+	mcpRequest := s.mcpOn() && pathname == "/mcp"
 	// MCP authenticates each request by grant. Browsers supplying Origin must
 	// still match; like Node, an empty Origin header counts as supplied.
 	_, hasOrigin := r.Header["Origin"]
@@ -55,8 +83,9 @@ func (s *EditorServer) serve(w http.ResponseWriter, r *http.Request) error {
 		if r.Method != http.MethodGet {
 			return fail(http.StatusNotFound, "Route does not exist.")
 		}
+		player := "http://" + s.playerHost(r) + ":" + strconv.Itoa(s.players.local.port)
 		w.Header().Set("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src "+
-			loopback(s.players.local.port)+"; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+			player+"; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 		name := strings.TrimPrefix(pathname, "/")
 		if name == "" {
 			name = "index.html"
@@ -75,8 +104,22 @@ func (s *EditorServer) serve(w http.ResponseWriter, r *http.Request) error {
 	switch resource {
 	case "health":
 		if r.Method == http.MethodGet {
-			reply(w, http.StatusOK, map[string]any{"status": "ok", "pid": os.Getpid(), "boot": s.boot, "editor": loopback(s.port), "mcp": s.mcp != nil, "host": "go"})
+			health := map[string]any{"status": "ok", "pid": os.Getpid(), "boot": s.boot, "editor": loopback(s.port), "mcp": s.mcpOn(), "host": "go"}
+			if s.box != nil {
+				box, err := s.box.health()
+				if err != nil {
+					return err
+				}
+				health["box"] = box
+			}
+			reply(w, http.StatusOK, health)
 			return nil
+		}
+	case "pairing", "box":
+		if s.box != nil {
+			if handled, err := s.box.serve(w, r, access, resource, pathID, action, tail); handled || err != nil {
+				return err
+			}
 		}
 	case "processors":
 		// No harness in the Go editor yet; the workspace shows that none is signed in.
