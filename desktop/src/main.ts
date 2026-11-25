@@ -14,7 +14,7 @@ import {
   type BrowserWindowConstructorOptions,
   type WebContents,
 } from 'electron';
-import { runningTurns, startEditor, type Editor } from './editor.js';
+import { mayQuit, startEditor, type Editor } from './editor.js';
 import { mayNavigate, mayOpen, place } from './routes.js';
 import { answerView } from './view-game.js';
 
@@ -146,7 +146,7 @@ else {
     confirming = true;
     void starting
       .then(
-        async (editor) => signalled || !editor.owned || (await runningTurns(editor.url)) === 0 || (await confirmQuit()),
+        (editor) => mayQuit(editor, signalled, confirmQuit),
         () => true,
       )
       .then((quit) => {

@@ -120,6 +120,12 @@ export function startEditor(options: EditorOptions): Promise<Editor> {
   });
 }
 
+/** Whether the app may quit now: at once on a signal, or for an editor it didn't start or that runs no turn; else as
+ *  the person answers when asked. */
+export async function mayQuit(editor: Pick<Editor, 'owned' | 'url'>, signalled: boolean, ask: () => Promise<boolean>) {
+  return signalled || !editor.owned || (await runningTurns(editor.url)) === 0 || ask();
+}
+
 /** How many harness turns the editor at url is running, by its health; 0 when it can't tell. */
 export async function runningTurns(url: string, timeoutMs = 2000): Promise<number> {
   try {

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
-import { runningTurns, startEditor } from '../src/editor.js';
+import { mayQuit, runningTurns, startEditor } from '../src/editor.js';
 import { alive, claim, until } from './support.js';
 
 const folder = mkdtempSync(path.join(tmpdir(), 'zirbel-desktop-editor-'));
@@ -159,6 +159,17 @@ test('the app asks the editor how many turns are running before it quits', async
   const url = 'http://127.0.0.1:' + (address && typeof address === 'object' ? address.port : 0);
   try {
     assert.equal(await runningTurns(url), 2);
+    // A running turn: the person is asked, and their answer decides. A signal, or an editor the app didn't start, isn't.
+    let asked = 0;
+    const answer = (yes: boolean) => async () => { asked++; return yes; };
+    assert.equal(await mayQuit({ owned: true, url }, false, answer(false)), false);
+    assert.equal(await mayQuit({ owned: true, url }, false, answer(true)), true);
+    assert.equal(await mayQuit({ owned: true, url }, true, answer(false)), true);
+    assert.equal(await mayQuit({ owned: false, url }, false, answer(false)), true);
+    assert.equal(asked, 2);
+    turns = 0;
+    assert.equal(await mayQuit({ owned: true, url }, false, answer(false)), true, 'no turn: no question');
+    assert.equal(asked, 2);
     turns = 'many';
     assert.equal(await runningTurns(url), 0, 'an answer it cannot read is no turn');
   } finally {
