@@ -27,7 +27,7 @@ pnpm typecheck && pnpm lint && pnpm test                # Playwright drives the 
 pnpm pack:app && pnpm test:packed                       # a local macOS bundle in desktop/out/, signed ad hoc
 ```
 
-Its windows are sandboxed, with context isolation and no Node or preload. The editor's window stays on the editor's origin, playtests open in windows of their own on loopback player origins, other web links open in the system browser, and pages get no permission but fullscreen. The packed app runs your own Codex through the Codex SDK. Claude Code's SDK is under Anthropic's terms and is not bundled, so use Claude Code from a checkout (`pnpm start` in `desktop/`) or the web editor. Quitting while a turn runs asks first, and the editor the app started always ends with it. A distributable build (`node scripts/pack.mjs` without `--dir`) needs a Developer ID and notarization credentials.
+Its windows are sandboxed, with context isolation and no Node or preload. The editor's window stays on the editor's origin, playtests open in windows of their own on loopback player origins, other web links open in the system browser, and pages get no permission but fullscreen. The packed app runs your own Codex and Claude Code through their SDKs. Claude Code's SDK is under Anthropic's terms and is not bundled: the first Claude Code turn fetches the version the app was built with from the npm registry, keeps it only if it matches the lockfile's hash, and stores it in your account folder. An editor that already has it, installed or fetched before, fetches nothing. Quitting while a turn runs asks first, and the editor the app started always ends with it. A distributable build (`node scripts/pack.mjs` without `--dir`) needs a Developer ID and notarization credentials.
 
 ## Use
 

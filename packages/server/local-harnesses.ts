@@ -10,6 +10,7 @@ import { isAbsolute, join, sep } from 'node:path';
 import { newId, ZirbelError } from '../core/projects.ts';
 import { modelChoices, type ModelSettings } from '../sdk/model-settings.ts';
 import { accountDirectory, privateDirectory } from './account.ts';
+import { ClaudeSdk } from './claude-sdk.ts';
 import { harnessActivity } from './harness-activity.ts';
 import { TurnEndedError, type Processor, type ProcessorRun, type Processors, type SignInStatus } from './processors.ts';
 
@@ -38,11 +39,6 @@ function modelSettings(kind: string): ModelSettings {
   };
 }
 
-/** Whether Anthropic's Agent SDK is installed with this editor: the packed desktop app goes without it. */
-function hasClaudeSdk() {
-  try { import.meta.resolve('@anthropic-ai/claude-agent-sdk'); return true; } catch { return false; }
-}
-
 function reuseCodexSignIn(codexHome: string) {
   // The old default installation and the CLI can both have an existing sign-in.
   // Only the well-known legacy location is eligible for migration.
@@ -62,7 +58,11 @@ function reuseCodexSignIn(codexHome: string) {
   }
 }
 
-type LocalProcessor = Pick<Processor, 'id' | 'name'> & { runtime: Runtime & Pick<AgentRuntime, 'login'>; unavailable?: string };
+type LocalProcessor = Pick<Processor, 'id' | 'name'> & {
+  runtime: Runtime & Pick<AgentRuntime, 'login'>; unavailable?: string;
+  /** What a turn needs first: says what it did, when it did something. */
+  prepare?: (signal?: AbortSignal) => Promise<{ title: string; detail: string } | undefined>;
+};
 type ActiveSignIn = { login: AgentLogin; state: SignInStatus };
 
 export function localHarnesses(projectDirectory: string, root = accountDirectory()) {
@@ -77,13 +77,14 @@ export function localHarnesses(projectDirectory: string, root = accountDirectory
   for (const directory of [data, codexHome, turns]) privateDirectory(directory);
   reuseCodexSignIn(codexHome);
   const host: Host = { client: { name: 'zirbel', version: '0.1.0' }, mark: (env) => env };
+  const claudeSdk = new ClaudeSdk(join(root, 'claude-agent-sdk'));
   return new LocalHarnesses(turns, [
     { id: 'codex', name: 'Codex', runtime: new AgentRuntime(codexAgent({
       codex: () => findProgram('codex'), home: codexHome,
       words: { install: 'Install Codex to use it here.', login: 'Sign in to Codex to continue.', signedOut: 'Sign-in required.' },
     }), host) },
-    { id: 'claude', name: 'Claude Code', unavailable: hasClaudeSdk() ? undefined : 'Unavailable in this editor',
-      runtime: new AgentRuntime(claudeAgent({
+    { id: 'claude', name: 'Claude Code', unavailable: claudeSdk.available ? undefined : 'Unavailable in this editor',
+      prepare: (signal) => claudeSdk.ready(signal), runtime: new AgentRuntime(claudeAgent({
         claude: () => findProgram('claude'),
         words: { noClaude: 'Claude Code is unavailable.', login: 'Sign in to Claude Code to continue.' },
       }), host) },
@@ -137,6 +138,8 @@ export class LocalHarnesses implements Processors {
     const status = (await this.list()).find((choice) => choice.id === id);
     signal?.throwIfAborted();
     if (!status?.ready) throw new ZirbelError(409, status?.signIn ? 'Sign in to ' + processor.name + ' to continue.' : processor.name + ' is unavailable.');
+    const prepared = await processor.prepare?.(signal);
+    if (prepared) update?.({ type: 'activity', entry: { id: 'prepared', kind: 'notice', ...prepared } });
     const cwd = place?.cwd ?? await mkdtemp(join(this.cwd, 'turn-'));
     try {
       signal?.throwIfAborted();

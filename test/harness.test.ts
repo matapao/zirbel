@@ -331,6 +331,29 @@ test('the model picker offers the tiers and each agent’s efforts, and a turn t
   assert.equal(calls[0]?.effort, 'max');
 });
 
+test('what a harness needs before a turn is shown as a step, and a turn waits for it', async (t) => {
+  const { LocalHarnesses } = await import('../packages/server/local-harnesses.ts');
+  const { root } = install(t);
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 };
+  let runs = 0;
+  let prepared: { title: string; detail: string } | Error | undefined = { title: "Fetched Claude Code's SDK", detail: 'From npm.' };
+  const harnesses = new LocalHarnesses(root, [{ id: 'claude', name: 'Claude Code', runtime: {
+    kind: 'claude-code', async health() { return { ok: true, checkedAt: Date.now(), detail: '' }; },
+    login() { throw new Error('Already signed in'); },
+    run() { runs++; return { done: Promise.resolve({ ok: true, text: 'Reply', usage, costUsd: null, permissionDenials: [] }), cancel() {} }; },
+  }, prepare: async () => { if (prepared instanceof Error) throw prepared; return prepared; } }]);
+  const updates: ChatUpdate[] = [];
+  await harnesses.start('claude', 'Build it.', { update: (event) => updates.push(event) });
+  assert.deepEqual(updates[0], { type: 'activity', entry: { id: 'prepared', kind: 'notice', title: "Fetched Claude Code's SDK", detail: 'From npm.' } });
+  prepared = undefined;
+  updates.length = 0;
+  await harnesses.start('claude', 'Build it.', { update: (event) => updates.push(event) });
+  assert.equal(updates.length, 0);
+  prepared = new Error("Claude Code's SDK could not be fetched from the npm registry.");
+  await assert.rejects(harnesses.start('claude', 'Build it.'), /could not be fetched/);
+  assert.equal(runs, 2);
+});
+
 test('a harness older than its SDK is made with says so, and one not found is unavailable', async (t) => {
   const { LocalHarnesses } = await import('../packages/server/local-harnesses.ts');
   const { root } = install(t);

@@ -34,7 +34,7 @@ const LICENCES = ['MIT', 'ISC', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', '0
 // A package the owner chose under other terms, by name, with why: { 'name': 'reason' }.
 const CLAUDE_CODE = "Anthropic's Agent SDK and its Claude Code binaries, under Anthropic's terms (SEE LICENSE IN README.md): " +
   'the Claude harness runs the person\'s own Claude Code through the SDK, installed with the editor and kept out of dist/, ' +
-  'never in an image or release; its binaries are not installed (pnpm-workspace.yaml)';
+  'never in an image or release, and fetched on first use by an editor without it; its binaries are not installed (pnpm-workspace.yaml)';
 const LICENCE_EXCEPTIONS = Object.fromEntries(['', '-darwin-arm64', '-darwin-x64', '-linux-arm64', '-linux-arm64-musl', '-linux-x64',
   '-linux-x64-musl', '-win32-arm64', '-win32-x64'].map((platform) => ['@anthropic-ai/claude-agent-sdk' + platform, CLAUDE_CODE]));
 // ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────

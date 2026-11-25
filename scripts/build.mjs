@@ -3,7 +3,8 @@ import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 
 // The agent SDKs the harness library runs its agents through stay out of dist/, installed with the editor and loaded
 // from node_modules: Anthropic's is under Anthropic's terms and goes in no image or release. An editor installed
-// without it (the packed desktop app) still starts, and its Claude Code harness is unavailable (local-harnesses.ts).
+// without it (the packed desktop app) still starts, and fetches it the first time a Claude Code turn starts
+// (packages/server/claude-sdk.ts): the version and hash the lockfile holds, which the build writes into dist/.
 const CLAUDE_SDK = '@anthropic-ai/claude-agent-sdk';
 const agentSdks = {
   name: 'agent-sdks',
@@ -13,9 +14,25 @@ const agentSdks = {
       namespace === 'optional-sdk' ? { path, external: true } : { path, namespace: 'optional-sdk' });
     sdks.onLoad({ filter: /.*/, namespace: 'optional-sdk' }, () => ({ loader: 'js', contents:
       `const sdk = await import(${JSON.stringify(CLAUDE_SDK)}).catch(() => undefined);
-      export const query = sdk?.query ?? (() => { throw new Error('Claude Code is unavailable in this editor.'); });` }));
+      export function query(options) {
+        const loaded = sdk ?? globalThis[Symbol.for('zirbel.claude-agent-sdk')];
+        if (!loaded) throw new Error('Claude Code is unavailable in this editor.');
+        return loaded.query(options);
+      }` }));
   },
 };
+
+/** The Claude Agent SDK's version in package.json, with the hash the lockfile holds for its tarball. */
+async function claudeSdkPin() {
+  const version = JSON.parse(await readFile('package.json', 'utf8')).dependencies[CLAUDE_SDK];
+  const lockfile = await readFile('pnpm-lock.yaml', 'utf8');
+  const entry = `\n  '${CLAUDE_SDK}@${version}':\n    resolution: {integrity: `;
+  const at = lockfile.indexOf(entry);
+  const integrity = at < 0 ? undefined : /^sha512-[A-Za-z0-9+/]{86}==(?=})/.exec(lockfile.slice(at + entry.length))?.[0];
+  if (!/^\d+\.\d+\.\d+$/.test(version ?? '') || !integrity)
+    throw new Error(`pnpm-lock.yaml holds no sha512 hash for ${CLAUDE_SDK} ${version}.`);
+  return { version, integrity };
+}
 
 await rm('dist', { recursive: true, force: true });
 await mkdir('dist/web', { recursive: true });
@@ -68,6 +85,7 @@ await Promise.all([
     entryPoints: { server: 'packages/server/cli.ts' },
     bundle: true, splitting: true, platform: 'node', target: 'node24', format: 'esm',
     outdir: 'dist', outExtension: { '.js': '.mjs' }, chunkNames: 'server-[name]-[hash]', plugins: [agentSdks],
+    define: { ZIRBEL_CLAUDE_SDK: JSON.stringify(await claudeSdkPin()) },
     banner: { js: "import { createRequire as __zirbelCreateRequire } from 'node:module'; const require = __zirbelCreateRequire(import.meta.url);" },
   }),
   // The player runtime ships inside every release and on the LAN listener, so
