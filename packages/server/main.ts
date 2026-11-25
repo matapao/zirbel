@@ -17,6 +17,7 @@ import { chatRequest, projectChat, type ChatContext } from './chat-routes.ts';
 import { accountDirectory } from './account.ts';
 import { exitWithParent } from './parent.ts';
 import { Threads } from './threads.ts';
+import { turnTools } from './turn-tools.ts';
 import { ActivityStore } from './activity-log.ts';
 import { Rooms } from '../core/rooms.ts';
 import { importReleases, Players, readLanHost, readPort, stopOnSignal } from './hosting.ts';
@@ -112,7 +113,9 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
     const activity = new ActivityStore(root);
     const threads = new Threads(join(account, 'turns'), root);
     threads.interruptStale();
-    const chatContext: ChatContext = { projects, harnesses, chat, activity, threads, tools: {} };
+    // What a turn's folder links to and may read: three.js from this build, TypeScript and esbuild as installed.
+    const { links, readable } = turnTools(webRoot);
+    const chatContext: ChatContext = { projects, harnesses, chat, activity, threads, tools: { readable }, links };
     const mcp = new Mcp(projects);
     importReleases(releases, values.import ?? []);
 

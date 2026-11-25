@@ -33,14 +33,22 @@ test('a built folder imports as a game whose files are stored by hash', (t) => {
   refuses({ 'index.html': base64(new Uint8Array([0xff, 0xfe])) }, 422); // not UTF-8
 });
 
-test('a built game cannot be rewritten by a proposal, and travels with its files', (t) => {
+test('a built game cannot be rewritten by a proposal that would drop its files, and travels with them', (t) => {
   const { projects, releases } = install(t);
   const project = importGameFolder(projects, { files: folder });
   const revision = head(project, 'main');
   assert.throws(() => projects.submit(project.id, { baseRevision: revision.id, branch: 'main', label: 'Edit',
-    operations: [{ op: 'writeGame', game: { html: '<p>new</p>' } }] }), /built folder/);
+    operations: [{ op: 'writeGame', game: { html: '<p>new</p>' } }] }), /folder of files, which this change would drop/);
+  // Files only come from the editor's own harness turns: a proposal from outside can't name any.
   assert.throws(() => projects.submit(project.id, { baseRevision: revision.id, branch: 'main', label: 'Files',
     operations: [{ op: 'writeGame', game: { html: '<p>new</p>', files: {} } }] }));
+  // A turn's folder game replaces it with its own files, and stays a folder game.
+  const turnFiles = { 'main.js': projects.storeAsset(Buffer.from('console.log(2)')) };
+  const staged = projects.submit(project.id, { baseRevision: revision.id, branch: 'main', label: 'Turn',
+    operations: [{ op: 'writeGame', game: { html: '<script src="main.js"></script>', maxPlayers: 1, files: turnFiles } }] }, true);
+  assert.deepEqual(staged.preview.game?.files, turnFiles);
+  assert.deepEqual(projects.preview(project.id, staged.proposal.id).preview.game?.files, turnFiles);
+  projects.discard(project.id, staged.proposal.id);
 
   const release = releases.package(project.id, 'main', rights, true);
   const files = Object.values(revision.game!.files!);

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import {
-  attachment, id, note, PORTABLE_FILE_LIMIT, project, proposalInput, scene, sceneReference, type Asset, type Attachment,
+  attachment, id, note, PORTABLE_FILE_LIMIT, project, proposalInput, scene, sceneReference, storedProposalInput, type Asset, type Attachment,
   type Note, type Operation, type Project, type Reference, type Revision, type Template,
 } from '../sdk/contracts.ts';
 import type { GameDocument } from '../sdk/game.ts';
@@ -19,7 +19,7 @@ const now = () => new Date().toISOString();
 export const newId = () => randomUUID();
 export const safeId = (input: unknown) => id.parse(input);
 
-export const savedProposal = proposalInput.extend({ id, projectId: id, date: z.iso.datetime() });
+export const savedProposal = storedProposalInput.extend({ id, projectId: id, date: z.iso.datetime() });
 export type Proposal = z.infer<typeof savedProposal>;
 
 export function atomicWrite(path: string, contents: string | Buffer) {
@@ -61,7 +61,9 @@ function applyOperations(base: Pick<Revision, 'scene' | 'assets' | 'game'>, oper
   for (const operation of operations) {
     switch (operation.op) {
       case 'writeGame':
-        if (game?.files) throw new ZirbelError(422, 'This game was imported as a built folder. Import a new build to change it.');
+        // Only a game with its files replaces a folder game: one document alone would drop them.
+        if (game?.files && !operation.game.files)
+          throw new ZirbelError(422, 'This game is a folder of files, which this change would drop. Change it in a harness turn, or import a new build.');
         game = operation.game;
         break;
       case 'background':
@@ -210,8 +212,9 @@ export class Projects {
     return this.save({ ...current, title: titleSchema.parse(title) });
   }
 
-  submit(projectId: string, input: unknown) {
-    const request = proposalInput.parse(input);
+  /** Stages a proposal. Only the editor's own harness turns stage a game with its files (withFiles). */
+  submit(projectId: string, input: unknown, withFiles = false) {
+    const request = (withFiles ? storedProposalInput : proposalInput).parse(input);
     const project = this.read(projectId);
     const base = assertCurrent(project, request.branch, request.baseRevision);
     if (!project.template && request.operations.some(({ op }) => !['writeGame', 'addAsset', 'removeAsset'].includes(op)))

@@ -29,8 +29,13 @@ export function counterSource(step) {
 export const wordGame = (word) =>
   `<p id="word" style="font:40px sans-serif;margin:40vh auto;text-align:center">${word}</p>`;
 
+/** Answers a run as a harness does: the game, given as { html, maxPlayers }, goes into the folder's game/ (with any
+ *  other files the answer names), and the reply names no HTML. */
 export function answer(res, result, extra = {}) {
-  res.end(JSON.stringify({ task: 'fixture-turn', stopReason: 'end_turn', text: JSON.stringify(result), ...extra }));
+  const { game, ...reply } = result;
+  const files = game ? { ...extra.files, 'index.html': game.html } : extra.files;
+  const text = JSON.stringify({ ...reply, ...(game?.maxPlayers ? { maxPlayers: game.maxPlayers } : {}) });
+  res.end(JSON.stringify({ task: 'fixture-turn', stopReason: 'end_turn', ...extra, text, ...(files ? { files } : {}) }));
 }
 
 export async function openEditor(t, run) {

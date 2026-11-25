@@ -51,6 +51,10 @@ test('the bundle is signed, and holds the built dist/ and the Codex SDK, linked 
   assert.deepEqual(different, [], "the checkout's dist/, as built");
   const modules = path.join(EDITOR, 'node_modules');
   assert.ok(fs.existsSync(path.join(modules, '@openai', 'codex-sdk', 'package.json')), 'the Codex SDK');
+  // What a harness turn's node_modules links to: three.js in the built dist/, TypeScript and esbuild with their binaries.
+  assert.ok(fs.existsSync(path.join(EDITOR, 'web', 'three', 'package.json')), 'three.js as a package');
+  for (const name of ['typescript', `@typescript/typescript-darwin-${process.arch}`, 'esbuild', `@esbuild/darwin-${process.arch}`])
+    assert.ok(fs.existsSync(path.join(modules, name, 'package.json')), name);
   assert.ok(!fs.existsSync(path.join(modules, '@openai', `codex-darwin-${process.arch}`)), 'no copy of Codex: the person’s own runs');
   const scopes = fs.readdirSync(modules).filter((name) => name.startsWith('@'));
   const packages = scopes.flatMap((scope) =>

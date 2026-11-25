@@ -7,10 +7,11 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-/** The packages the server resolves at runtime that go in the app. Anthropic's Agent SDK does not: it is under
- *  Anthropic's terms and goes in no image or release (scripts/check-security.mjs). The packed app shows the Claude Code
- *  harness as unavailable; the app run from a checkout has it. */
-const RUNTIME = ['@openai/codex-sdk'];
+/** The packages the server resolves at runtime that go in the app: the Codex SDK, and TypeScript and esbuild with
+ *  their platform binaries, which a harness turn's node_modules links to (turn-tools.ts). Anthropic's Agent SDK does
+ *  not: it is under Anthropic's terms and goes in no image or release (scripts/check-security.mjs). The packed app
+ *  shows the Claude Code harness as unavailable; the app run from a checkout has it. */
+const RUNTIME = ['@openai/codex-sdk', 'typescript', 'esbuild'];
 
 /** The folder of a package as Node finds it from `from`: in node_modules beside `from`, then in each folder above, up
  *  to the install's own node_modules. */

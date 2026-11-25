@@ -5,7 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import type { ThreadView } from '../sdk/chat-stream.ts';
 import { id, workspaceHistory } from '../sdk/contracts.ts';
-import { objectRegistry } from '../sdk/game.ts';
+import { objectRegistry, type GameDocument } from '../sdk/game.ts';
 import { head, newId, safeId, ZirbelError, type Projects } from '../core/projects.ts';
 import type { ActivityStore } from './activity-log.ts';
 import { streamTurn, type ChatRuns } from './chat-runs.ts';
@@ -13,11 +13,19 @@ import { runHarnessChat, runWorkspaceChat } from './harness-chat.ts';
 import { body, checkOrigin, reply } from './http.ts';
 import { modelSelection, processorId, type Processors } from './processors.ts';
 import { inThread, type TurnTools } from './thread-turns.ts';
+import { prepareFolder, type ToolLink } from './turn-folder.ts';
 import { projectThread, workspaceThread, type Threads } from './threads.ts';
 
 export type ChatContext = {
-  projects: Projects; harnesses: Processors; chat: ChatRuns; activity: ActivityStore; threads: Threads; tools: TurnTools;
+  projects: Projects; harnesses: Processors; chat: ChatRuns; activity: ActivityStore; threads: Threads;
+  /** What every turn gets: its MCP server and the places it may read; and node_modules' links in its folder. */
+  tools: TurnTools; links: ToolLink[];
 };
+
+/** A turn's tools, its folder readied with the game it starts from: game/ from that revision, node_modules linked. */
+function toolsFor({ tools, links, projects }: ChatContext, game: GameDocument | undefined): TurnTools {
+  return { ...tools, prepare: (folder) => prepareFolder(folder, game, (hash) => projects.readAsset(hash), links) };
+}
 
 const text = z.string().trim().min(1).max(3000);
 const workspaceInput = z.strictObject({ text, provider: processorId, conversation: workspaceHistory.default([]),
@@ -52,7 +60,7 @@ function threadView({ chat, threads }: ChatContext, key: string): ThreadView {
 /** /api/chat/…: the chat before a project, a turn's stream, Stop and answers. */
 export async function chatRequest(ctx: ChatContext, request: IncomingMessage, response: ServerResponse,
   pathID: string | undefined, action: string | undefined, tail: string | undefined) {
-  const { chat, harnesses, projects, threads, tools, activity } = ctx;
+  const { chat, harnesses, projects, threads, activity } = ctx;
   const method = request.method;
   if (!pathID && method === 'POST') {
     const input = workspaceInput.parse(await body(request));
@@ -61,9 +69,9 @@ export async function chatRequest(ctx: ChatContext, request: IncomingMessage, re
     if (chat.running(key)) throw new ZirbelError(409, 'A turn is already running in this thread. Stop it, or wait for it to end.');
     if (response.destroyed) return true;
     const turn = chat.start(key, { name: await harnessName(harnesses, input.provider), text: input.text }, async (run, turn) => {
-      const result = await inThread(threads, harnesses, key, { id: turn.id, harness: input.provider, text: input.text }, tools,
-        run.signal, (harness) => runWorkspaceChat(harness, input.provider, projects, input.text, input.conversation,
-          { ...run, selection: input.modelSettings }, input.registerObjects));
+      const result = await inThread(threads, harnesses, key, { id: turn.id, harness: input.provider, text: input.text },
+        toolsFor(ctx, undefined), run.signal, (harness, folder) => runWorkspaceChat(harness, input.provider, projects, input.text,
+          input.conversation, { ...run, selection: input.modelSettings }, input.registerObjects, folder));
       if ('projectId' in result) {
         threads.moveToProject(key, result.projectId);
         // A turn that created a game keeps its activity under the message that started it, in the new project.
@@ -103,7 +111,7 @@ export async function chatRequest(ctx: ChatContext, request: IncomingMessage, re
 /** /api/projects/<id>/…: a turn in one of the project's threads, what a thread has, and a turn's kept steps. */
 export async function projectChat(ctx: ChatContext, request: IncomingMessage, response: ServerResponse, url: URL,
   projectId: string, action: string | undefined, tail: string | undefined) {
-  const { chat, harnesses, projects, threads, tools, activity } = ctx;
+  const { chat, harnesses, projects, threads, activity } = ctx;
   const method = request.method;
   if (action === 'prompt' && method === 'POST' && !tail) {
     const input = promptInput.parse(await body(request));
@@ -120,8 +128,8 @@ export async function projectChat(ctx: ChatContext, request: IncomingMessage, re
       const kept = activity.keep(projectId, note.id, turn.log, () => projects.has(projectId));
       try {
         return await inThread(threads, harnesses, key, { id: turn.id, harness: input.provider, text: input.text, noteId: note.id },
-          tools, run.signal, (harness) => runHarnessChat(harness, input.provider, projects, project, base, input, references,
-            { ...run, selection: input.modelSettings }));
+          toolsFor(ctx, base.game), run.signal, (harness, folder) => runHarnessChat(harness, input.provider, projects, project,
+            base, { ...input, folder }, references, { ...run, selection: input.modelSettings }));
       } finally { kept.close(); }
     });
     await streamTurn(request, response, turn, 201);

@@ -1,8 +1,8 @@
 // The editor for the browser tests, with a harness that relays each run to the test's HTTP fixture at
 // FIXTURE_HARNESS_URL: GET /access lists its processors, and POST /runs answers one run. The fixture is told the
 // run's thread folder and session; an answer may list steps to show (activity) and requests to put to the person
-// (asks) before its reply, each waiting for the person's answer, and files to write into the folder's game/ (files)
-// and commands to run in the folder (commands), as a real turn's harness would.
+// (asks) before its reply, each waiting for the person's answer, files to write into the folder's game/ (files) or the
+// folder itself (sources), and commands to run in the folder (commands), as a real turn's harness would.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -19,7 +19,7 @@ const FIXTURE_FOLDER = '/work/zirbel/turn-fixture';
 
 type FixtureReply = {
   task: string; stopReason: string; text?: string; activity?: ActivityEntry[]; asks?: AgentAsk[];
-  files?: Record<string, string>; commands?: string[][];
+  files?: Record<string, string>; sources?: Record<string, string>; commands?: string[][];
 };
 
 await main({
@@ -43,10 +43,12 @@ await main({
     signal?.throwIfAborted();
     const folder = place?.cwd;
     if (folder) {
-      for (const [path, content] of Object.entries(reply.files ?? {})) {
-        const file = join(folder, 'game', path);
+      const written = [...Object.entries(reply.files ?? {}).map(([path, content]) => [join('game', path), content]),
+        ...Object.entries(reply.sources ?? {})];
+      for (const [path, content] of written) {
+        const file = join(folder, path!);
         mkdirSync(dirname(file), { recursive: true });
-        writeFileSync(file, content);
+        writeFileSync(file, content!);
       }
       for (const [command, ...args] of reply.commands ?? [])
         execFileSync(command === 'node' ? process.execPath : command!, args, { cwd: folder, stdio: 'pipe' });

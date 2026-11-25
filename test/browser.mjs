@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { answer, controls, counterSource, openEditor } from './browser-editor.mjs';
@@ -15,8 +16,9 @@ test('chat creates and edits an original executable game with a live inspector',
     allowBuild.resolve();
     allowEdit.resolve();
   });
-  const { page, editor, data, errors, browser, restart } = await openEditor(t, async (context, res) => {
-    calls.push(context);
+  const { page, editor, data, errors, browser, restart } = await openEditor(t, async (context, res, run) => {
+    // What the turn's game/ held as it started: the revision it works on.
+    calls.push({ ...context, started: readFileSync(join(run.cwd, 'game', 'index.html'), { encoding: 'utf8', flag: 'a+' }) });
     if (context.message === 'Make the harness fail.') {
       res.writeHead(502);
       res.end(JSON.stringify({ error: 'Fixture failure' }));
@@ -64,6 +66,7 @@ test('chat creates and edits an original executable game with a live inspector',
   await status.waitFor({ state: 'hidden' });
   assert.equal(await feed.getByText(build, { exact: true }).count(), 1);
   assert.equal(calls[0].game, null);
+  assert.equal(calls[0].started, '', 'a new game starts with an empty game/');
   await game.locator('#counter[data-seat="player"]').waitFor();
   // The game runs in the middle, with the thread beside it.
   const [stage, thread] = await Promise.all(['game', 'thread'].map((view) =>
@@ -103,7 +106,8 @@ test('chat creates and edits an original executable game with a live inspector',
   assert.deepEqual(calls[1].game.markedIds, ['prism.01']);
   assert.equal(calls[1].registerObjects, false);
   assert.equal(calls[1].game.registeredObjects[0].properties.facets, 15);
-  assert.equal(calls[1].game.source.html, counterSource(1));
+  assert.equal(calls[1].game.source, undefined, 'the game is in the folder, not the prompt');
+  assert.equal(calls[1].started, counterSource(1));
   await page.getByText('Object registration is off for this revision.').waitFor();
   // A click into the game leaves Edit, and the person plays.
   await page.locator('#playframe').click({ position: { x: 600, y: 500 } });

@@ -31,8 +31,9 @@ func applyOperations(base *Revision, operations []Operation) (*Preview, error) {
 	for _, operation := range operations {
 		switch operation.Op {
 		case "writeGame":
-			if game != nil && game.Files != nil {
-				return nil, fail(http.StatusUnprocessableEntity, "This game was imported as a built folder. Import a new build to change it.")
+			// Only a game with its files replaces a folder game: one document alone would drop them.
+			if game != nil && game.Files != nil && operation.Game.Files == nil {
+				return nil, fail(http.StatusUnprocessableEntity, "This game is a folder of files, which this change would drop. Change it in a harness turn, or import a new build.")
 			}
 			game = operation.Game
 		case "background":

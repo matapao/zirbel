@@ -46,19 +46,25 @@ export const sceneReference = z.discriminatedUnion('type', [
 const change = sceneObject.omit({ id: true, kind: true }).partial().refine(
   (changes) => Object.keys(changes).length > 0, 'Provide at least one property.',
 );
-const operation = z.discriminatedUnion('op', [
-  z.strictObject({ op: z.literal('writeGame'), game: editableGame }),
+const sceneOperations = [
   z.strictObject({ op: z.literal('add'), object: sceneObject }),
   z.strictObject({ op: z.literal('update'), id, changes: change }),
   z.strictObject({ op: z.literal('remove'), id }),
   z.strictObject({ op: z.literal('background'), color }),
   z.strictObject({ op: z.literal('addAsset'), asset }),
   z.strictObject({ op: z.literal('removeAsset'), id }),
-]);
+] as const;
+// What a proposal may do: writeGame replaces the game with one document, never with files, which only arrive with
+// their bytes (an import, or a harness turn's own folder).
+const operation = z.discriminatedUnion('op', [z.strictObject({ op: z.literal('writeGame'), game: editableGame }), ...sceneOperations]);
 export const proposalInput = z.strictObject({
   baseRevision: id, branch: id, label: z.string().trim().min(1).max(120),
   operations: z.array(operation).min(1).max(160),
 });
+// What the editor stages and stores: the same, but a harness turn's writeGame carries the files of its game/, which
+// the editor itself stored by their hashes.
+const storedOperation = z.discriminatedUnion('op', [z.strictObject({ op: z.literal('writeGame'), game: gameDocument }), ...sceneOperations]);
+export const storedProposalInput = proposalInput.extend({ operations: z.array(storedOperation).min(1).max(160) });
 const revision = z.strictObject({
   id, parent: id.nullable(), restoredFrom: id.optional(),
   label: z.string().min(1).max(120), date: z.iso.datetime(),
@@ -170,7 +176,7 @@ export type Reference = z.infer<typeof sceneReference>;
 export type ChatUsage = z.infer<typeof chatUsage>;
 export type Note = z.infer<typeof note>;
 export type ActivityEntry = z.infer<typeof activityEntry>;
-export type Operation = z.infer<typeof operation>;
+export type Operation = z.infer<typeof storedOperation>;
 export type Revision = z.infer<typeof revision>;
 export type Project = z.infer<typeof project>;
 export type Manifest = z.infer<typeof manifest>;
