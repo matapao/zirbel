@@ -43,7 +43,7 @@
     "@types/qrcode": "1.5.6",
     "@types/three": "0.187.0",
     "@types/ws": "8.18.2",
-    "knip": "6.45.1",
+    "knip": "6.46.0",
     "oxlint": "1.94.0",
     "oxlint-tsgolint": "7.0.2007",
     "playwright": "1.65.1",
