@@ -1,10 +1,15 @@
-// Builds a Zirbel box's image for the Raspberry Pis that run 64-bit Raspberry Pi OS: Pi 3, 4, 400, 5 and Zero 2 W
-// (the editor turns harnesses on by default where there is memory for them). Raspberry Pi OS Lite (64-bit) as
-// Raspberry Pi publishes it, checked against its published hashes, gets what the box runs (chroot-base.sh), then the
-// editor and its setup service (chroot-app.sh). It runs on an arm64 computer with Docker, where the image's own
-// programs run natively in a container; nothing is emulated. Build the repository first (pnpm build).
-//   node pi/image/build.mjs --out DIR --country XX --ssh-key FILE [--base IMAGE] [--rebuild-base] [--base-only]
-// DIR keeps the downloaded OS, zirbel-base.img (the slow stage, reused) and zirbel.img, the image to write to a card.
+// Builds a Zirbel box's image from Raspberry Pi OS Lite as Raspberry Pi publishes it, checked against its published
+// hashes: what the box runs (chroot-base.sh), then the editor and its setup service (chroot-app.sh). Two targets:
+// - arm64 (the default), for the Pis that run 64-bit Raspberry Pi OS: Pi 3, 4, 400, 5 and Zero 2 W. The Node editor
+//   and the harnesses; the editor turns harnesses on by default where there is memory for them.
+// - armhf, for the Pi 2 B: the Go host, as an editor and MCP server for people's own agents, since neither Node 24
+//   nor the harnesses are made for 32-bit ARM.
+// It runs on an arm64 computer with Docker, where an arm64 image's programs run natively in a container and an armhf
+// image's through Docker's emulation. Build the repository first (pnpm build).
+//   node pi/image/build.mjs --out DIR --country XX --ssh-key FILE [--target arm64|armhf] [--base IMAGE]
+//                           [--rebuild-base] [--base-only]
+// DIR keeps the downloaded OS, zirbel-base-TARGET.img (the slow stage, reused) and zirbel-TARGET.img, the image to
+// write to a card.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -13,7 +18,11 @@ import { parseArgs } from 'node:util';
 import { stageEditor } from '../../desktop/scripts/stage.mjs';
 
 const OS_LIST = 'https://downloads.raspberrypi.com/os_list_imagingutility_v4.json';
-const OS_NAME = 'Raspberry Pi OS Lite (64-bit)';
+/** Each target's image in Raspberry Pi's list: its name there, and a device it must be listed for. */
+const TARGETS = {
+  arm64: { name: 'Raspberry Pi OS Lite (64-bit)', device: 'pi5-64bit' },
+  armhf: { name: 'Raspberry Pi OS Lite (32-bit)', device: 'pi2-32bit' },
+};
 const SIZE = '8G';
 const HERE = import.meta.dirname;
 const REPO = path.resolve(HERE, '../..');
@@ -21,9 +30,11 @@ const REPO = path.resolve(HERE, '../..');
 const { values } = parseArgs({ options: {
   out: { type: 'string' }, country: { type: 'string' }, 'ssh-key': { type: 'string' }, base: { type: 'string' },
   'rebuild-base': { type: 'boolean', default: false }, 'base-only': { type: 'boolean', default: false },
+  target: { type: 'string', default: 'arm64' },
 } });
-if (!values.out || !/^[A-Z]{2}$/.test(values.country ?? '') || !values['ssh-key'])
-  throw new Error('Usage: build.mjs --out DIR --country XX --ssh-key FILE [--base IMAGE] [--rebuild-base]');
+const target = TARGETS[values.target];
+if (!values.out || !/^[A-Z]{2}$/.test(values.country ?? '') || !values['ssh-key'] || !target)
+  throw new Error('Usage: build.mjs --out DIR --country XX --ssh-key FILE [--target arm64|armhf] [--base IMAGE] [--rebuild-base] [--base-only]');
 const out = path.resolve(values.out);
 const key = path.resolve(values['ssh-key']);
 if (!/^(ssh-ed25519|ecdsa-sha2-\S+|ssh-rsa) \S+/.test(fs.readFileSync(key, 'utf8'))) throw new Error('--ssh-key must be a public key.');
@@ -38,14 +49,14 @@ const sha256 = (file) => {
   return hash.digest('hex');
 };
 
-/** Raspberry Pi OS Lite (64-bit) for a Pi 5, as Raspberry Pi's own list names it, downloaded once and checked twice:
- *  the download against the SHA-256 published beside it, the image against the list's. */
+/** The target's Raspberry Pi OS Lite, as Raspberry Pi's own list names it, downloaded once and checked twice: the
+ *  download against the SHA-256 published beside it, the image against the list's. */
 async function osImage() {
   if (values.base) return path.resolve(values.base);
   const list = await (await fetch(OS_LIST)).json();
   const walk = (items) => items.flatMap((item) => item.subitems ? walk(item.subitems) : [item]);
-  const os = walk(list.os_list).find((item) => item.name === OS_NAME && item.devices?.includes('pi5-64bit'));
-  if (!os || !/^https:\/\/downloads\.raspberrypi\.com\/.+\.img\.xz$/.test(os.url)) throw new Error(`${OS_NAME} is not in Raspberry Pi's list.`);
+  const os = walk(list.os_list).find((item) => item.name === target.name && item.devices?.includes(target.device));
+  if (!os || !/^https:\/\/downloads\.raspberrypi\.com\/.+\.img\.xz$/.test(os.url)) throw new Error(`${target.name} is not in Raspberry Pi's list.`);
   const image = path.join(out, path.basename(os.url, '.xz'));
   if (fs.existsSync(image) && sha256(image) === os.extract_sha256) return image;
   const archive = image + '.xz';
@@ -71,7 +82,7 @@ function stage(from, to, name, args, mounts = {}) {
     'bash', '/build/provision.sh', '/out/' + path.basename(to), SIZE, name, ...args], { stdio: 'inherit' });
 }
 
-const base = path.join(out, 'zirbel-base.img');
+const base = path.join(out, `zirbel-base-${values.target}.img`);
 if (values['rebuild-base'] || !fs.existsSync(base)) {
   const building = base + '.building';
   stage(await osImage(), building, 'base', [values.country, '/tmp/zirbel-build/key.pub']);
@@ -79,11 +90,19 @@ if (values['rebuild-base'] || !fs.existsSync(base)) {
 }
 if (values['base-only']) process.exit(0);
 
-const editor = path.join(out, 'editor');
-fs.rmSync(editor, { recursive: true, force: true });
-stageEditor(editor, REPO, { os: 'linux', cpu: 'arm64' });
+// The box's program: on arm64 the Node editor staged for Linux arm64; on armhf the Go host built for 32-bit ARM.
+const app = {};
+if (values.target === 'arm64') {
+  const editor = path.join(out, 'editor');
+  fs.rmSync(editor, { recursive: true, force: true });
+  stageEditor(editor, REPO, { os: 'linux', cpu: 'arm64' });
+  app[editor] = '/editor';
+} else {
+  execFileSync(process.execPath, ['scripts/build-host.mjs', 'linux/arm/7'], { cwd: REPO, stdio: 'inherit' });
+  app[path.join(REPO, 'host', 'bin', 'zirbel-host-linux-armv7')] = '/zirbel-host';
+}
 const setup = path.join(REPO, 'pi', 'setup');
-stage(base, path.join(out, 'zirbel.img'), 'app', [values.country], {
-  [editor]: '/editor', ...(fs.existsSync(setup) ? { [setup]: '/setup' } : {}),
-});
-console.log(`Ready: ${path.join(out, 'zirbel.img')}`);
+if (fs.existsSync(setup)) app[setup] = '/setup';
+const image = path.join(out, `zirbel-${values.target}.img`);
+stage(base, image, 'app', [values.country], app);
+console.log(`Ready: ${image}`);

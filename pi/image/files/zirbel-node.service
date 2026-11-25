@@ -1,4 +1,4 @@
-# The Zirbel editor on a Zirbel box: on every network address at port 80, for paired devices only (--box), as the
+# The Zirbel editor (Node) on a 64-bit Zirbel box: on every network address at port 80, for paired devices only (--box), as the
 # `zirbel` user, whose home keeps the games, the harness sign-ins and the threads' folders.
 [Unit]
 Description=Zirbel editor

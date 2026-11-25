@@ -1,13 +1,15 @@
 #!/bin/bash
 # The base stage, in the image's own root (provision.sh): what a Zirbel box runs beside Raspberry Pi OS Lite.
 #   chroot-base.sh COUNTRY SSH_KEY_FILE
-# - Bluetooth setup's Python bindings, Claude Code's and Codex's command sandboxes (bubblewrap, socat), and Chromium
-#   for view_game.
-# - Node 24, from nodejs.org, checked against its published SHA-256.
-# - Two users: `zirbel` runs the editor and the harnesses and can't use sudo; `admin` is for maintenance over SSH,
+# Every box gets Bluetooth setup's Python bindings, and:
+# - Two users: `zirbel` runs the editor (and the harnesses) and can't use sudo; `admin` is for maintenance over SSH,
 #   with the given public key only.
-# - Claude Code from Anthropic's installer, which keeps it up to date, and Codex from npm, both as `zirbel`'s.
 # - The Wi-Fi country, which Wi-Fi needs before it turns on, and the host name `zirbel` (zirbel.local).
+# A 64-bit box (arm64) also gets what its harnesses need, none of which is made for 32-bit ARM, where the Go host runs
+# instead (chroot-app.sh):
+# - Node 24, from nodejs.org, checked against its published SHA-256.
+# - Claude Code from Anthropic's installer, which keeps it up to date, and Codex from npm, both as `zirbel`'s.
+# - Their command sandboxes (bubblewrap, socat), and Chromium for view_game.
 set -euo pipefail
 COUNTRY=$1 SSH_KEY_FILE=$2
 NODE_VERSION=24.22.3
@@ -16,16 +18,21 @@ CODEX_VERSION=0.171.0
 export DEBIAN_FRONTEND=noninteractive
 [[ $COUNTRY =~ ^[A-Z]{2}$ ]] || { echo "The Wi-Fi country must be two capital letters." >&2; exit 1; }
 
+ARCH=$(dpkg --print-architecture)
+HARNESSES=()
+[ "$ARCH" = arm64 ] && HARNESSES=(bubblewrap socat chromium xz-utils)
 apt-get update -qq
-apt-get install -y -qq --no-install-recommends python3-dbus python3-gi bubblewrap socat chromium ca-certificates xz-utils
+apt-get install -y -qq --no-install-recommends python3-dbus python3-gi ca-certificates "${HARNESSES[@]}"
 apt-get clean
 
-node=node-v$NODE_VERSION-linux-arm64.tar.xz
-curl -fsSLo "/tmp/$node" "https://nodejs.org/dist/v$NODE_VERSION/$node"
-echo "$NODE_SHA256  /tmp/$node" | sha256sum -c --quiet
-tar -xJf "/tmp/$node" -C /usr/local --strip-components=1 --no-same-owner --exclude='*/CHANGELOG.md' --exclude='*/README.md'
-rm "/tmp/$node"
-node --version
+install_node() {
+  local node=node-v$NODE_VERSION-linux-arm64.tar.xz
+  curl -fsSLo "/tmp/$node" "https://nodejs.org/dist/v$NODE_VERSION/$node"
+  echo "$NODE_SHA256  /tmp/$node" | sha256sum -c --quiet
+  tar -xJf "/tmp/$node" -C /usr/local --strip-components=1 --no-same-owner --exclude='*/CHANGELOG.md' --exclude='*/README.md'
+  rm "/tmp/$node"
+  node --version
+}
 
 id admin >/dev/null 2>&1 || useradd --create-home --shell /bin/bash --groups sudo,adm admin
 passwd --lock admin >/dev/null
@@ -38,11 +45,14 @@ systemctl enable ssh >/dev/null 2>&1
 
 id zirbel >/dev/null 2>&1 || useradd --create-home --home-dir /home/zirbel --shell /bin/bash --groups netdev zirbel
 passwd --lock zirbel >/dev/null
-# Anthropic's installer, as `zirbel`: its own binary for this system, checked against its manifest, in ~/.local.
-runuser -u zirbel -- bash -c 'cd ~ && curl -fsSL https://claude.ai/install.sh | bash' </dev/null
-runuser -u zirbel -- /home/zirbel/.local/bin/claude --version
-npm install --global --no-fund --no-audit "@openai/codex@$CODEX_VERSION"
-codex --version
+if [ "$ARCH" = arm64 ]; then
+  install_node
+  # Anthropic's installer, as `zirbel`: its own binary for this system, checked against its manifest, in ~/.local.
+  runuser -u zirbel -- bash -c 'cd ~ && curl -fsSL https://claude.ai/install.sh | bash' </dev/null
+  runuser -u zirbel -- /home/zirbel/.local/bin/claude --version
+  npm install --global --no-fund --no-audit "@openai/codex@$CODEX_VERSION"
+  codex --version
+fi
 
 # No first-boot wizard asks for a user: the box has its two.
 systemctl disable userconfig.service >/dev/null 2>&1 || true
@@ -54,4 +64,5 @@ grep -q '^127\.0\.1\.1' /etc/hosts || printf '127.0.1.1\tzirbel\n' >> /etc/hosts
 # Wi-Fi stays blocked until a country is set; the kernel takes it at boot, and the saved block is cleared.
 sed -i "s/ cfg80211\.ieee80211_regdom=[A-Z]*//; s/\$/ cfg80211.ieee80211_regdom=$COUNTRY/" /boot/firmware/cmdline.txt
 for state in /var/lib/systemd/rfkill/*:wlan; do [ -e "$state" ] && echo 0 > "$state"; done
-echo "Base ready: $(node --version), $(codex --version 2>/dev/null | head -1), Wi-Fi country $COUNTRY."
+if [ "$ARCH" = arm64 ]; then echo "Base ready ($ARCH): $(node --version), $(codex --version | head -1), Wi-Fi country $COUNTRY."
+else echo "Base ready ($ARCH): Wi-Fi country $COUNTRY."; fi

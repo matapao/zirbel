@@ -51,6 +51,7 @@ rm -rf "$WORK" && mkdir -p "$WORK"
 cp -R "$HERE/." "$WORK/"
 [ -f /key.pub ] && cp /key.pub "$WORK/key.pub"
 [ -d /editor ] && cp -R /editor "$WORK/editor"
+[ -f /zirbel-host ] && cp /zirbel-host "$WORK/zirbel-host"
 [ -d /setup ] && cp -R /setup "$WORK/setup"
 status=0
 chroot "$ROOT" /bin/bash "/tmp/zirbel-build/chroot-$STAGE.sh" "$@" || status=$?
