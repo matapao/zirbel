@@ -1,5 +1,4 @@
 import { claimDirectory } from './service-lock.ts';
-import { objectRegistry } from '../sdk/game.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
@@ -9,17 +8,20 @@ import { parseArgs } from 'node:util';
 import { z } from 'zod';
 import QRCode from 'qrcode';
 import { attachment, asset, distribution, id, PORTABLE_FILE_LIMIT } from '../sdk/contracts.ts';
-import { assertCurrent, atomicWrite, head, mediaMatches, newId, Projects, safeId, ZirbelError } from '../core/projects.ts';
-import { runHarnessChat, runWorkspaceChat, workspaceHistory } from './harness-chat.ts';
+import { assertCurrent, atomicWrite, mediaMatches, newId, Projects, safeId, ZirbelError } from '../core/projects.ts';
 import { Releases } from '../core/releases.ts';
 import { importGameFolder } from '../core/game-files.ts';
 import { body, bytes, checkOrigin, fail, lanAddresses, listen, reply, requestUrl, secure, staticFile } from './http.ts';
 import { ChatRuns } from './chat-runs.ts';
+import { chatRequest, projectChat, type ChatContext } from './chat-routes.ts';
+import { accountDirectory } from './account.ts';
+import { exitWithParent } from './parent.ts';
+import { Threads } from './threads.ts';
 import { ActivityStore } from './activity-log.ts';
 import { Rooms } from '../core/rooms.ts';
 import { importReleases, Players, readLanHost, readPort, stopOnSignal } from './hosting.ts';
 import { localHarnesses } from './local-harnesses.ts';
-import { modelId, modelSelection, processorId, type Processors } from './processors.ts';
+import { modelId, processorId, type Processors } from './processors.ts';
 import { Mcp, stdioMcp } from './mcp.ts';
 
 const { values, positionals } = parseArgs({
@@ -51,10 +53,12 @@ const permissionsInput = branchInput.extend({ baseRevision: id.optional(), permi
 const assetMetadata = asset.omit({ id: true, hash: true });
 const shareDefaults = { play: true, download: true, remix: true };
 
-// What the editor is built from: tests pass their own harnesses and the built web files.
-type EditorOptions = { harnesses?: (root: string) => Processors; webRoot?: string };
+// What the editor is built from: tests pass their own harnesses, the built web files and the account folder, where the
+// threads' working folders are.
+type EditorOptions = { harnesses?: (root: string) => Processors; webRoot?: string; account?: string };
 
-async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileURLToPath(new URL('./web/', import.meta.url)) }: EditorOptions) {
+async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileURLToPath(new URL('./web/', import.meta.url)),
+  account = accountDirectory() }: EditorOptions) {
   const root = resolve(values.data ?? process.env.ZIRBEL_DATA ?? join(homedir(), '.zirbel'));
   // Built before the claim so a missing build fails without holding the directory.
   const projects = new Projects(root);
@@ -82,6 +86,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
   const { file: serviceFile, release: releaseDirectory } = claim;
   let editor: ReturnType<typeof createServer> | undefined;
   let closeHarnesses: (() => Promise<void>) | undefined;
+  let closeTurns: (() => Promise<void>) | undefined;
   const requests = new Set<Promise<void>>();
   let stopping = false;
   async function stop() {
@@ -89,8 +94,9 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
     stopping = true;
     editor?.close();
     editor?.closeAllConnections();
-    // A disconnected chat can still finish and save. Hold the directory claim
-    // until all editor handlers and any LAN startup have settled.
+    // A running turn is interrupted, to be continued after the next start. Hold the directory claim until it and all
+    // editor handlers and any LAN startup have settled.
+    await closeTurns?.();
     await Promise.allSettled(requests);
     await closeHarnesses?.();
     await players.close();
@@ -102,7 +108,11 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
     const harnesses = harnessesFor(root);
     closeHarnesses = async () => { await harnesses.close?.(); };
     const chat = new ChatRuns();
+    closeTurns = () => chat.close();
     const activity = new ActivityStore(root);
+    const threads = new Threads(join(account, 'turns'), root);
+    threads.interruptStale();
+    const chatContext: ChatContext = { projects, harnesses, chat, activity, threads, tools: {} };
     const mcp = new Mcp(projects);
     importReleases(releases, values.import ?? []);
 
@@ -139,8 +149,9 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
         }
         if (extra.length) throw new ZirbelError(404, 'Route does not exist.');
         if (resource === 'health' && method === 'GET') {
-          // chat: this editor runs harness chat and keeps each turn's activity.
-          reply(response, { status: 'ok', pid: process.pid, boot, editor: editorOrigin(), mcp: Boolean(enableMcp), chat: true });
+          // chat: this editor runs harness chat and keeps each turn's activity; turns: how many are running.
+          reply(response, { status: 'ok', pid: process.pid, boot, editor: editorOrigin(), mcp: Boolean(enableMcp), chat: true,
+            turns: chat.count });
           return;
         }
         if (resource === 'processors' && harnesses) {
@@ -167,36 +178,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
             return;
           }
         }
-        if (resource === 'chat' && method === 'POST' && harnesses) {
-          if (!pathID) {
-            const input = z.strictObject({ text: z.string().trim().min(1).max(3000),
-              provider: processorId, conversation: workspaceHistory.default([]), registerObjects: z.boolean().default(true),
-              modelSettings: modelSelection.optional() }).parse(await body(request));
-            await chat.reply(request, response, async (run, log) => {
-              const result = await runWorkspaceChat(harnesses, input.provider, projects, input.text,
-                input.conversation, { ...run, selection: input.modelSettings }, input.registerObjects);
-              // A turn that created a game keeps its activity under the message that started it, in the new project.
-              if ('projectId' in result) {
-                const started = projects.read(result.projectId).notes.findLast(({ role }) => role === 'creator');
-                if (started) activity.save(result.projectId, started.id, log);
-              }
-              return result;
-            });
-            return;
-          }
-          if (action === 'stop' && !tail) {
-            checkOrigin(request, true);
-            chat.stop(safeId(pathID));
-            reply(response, {});
-            return;
-          }
-          if (action === 'actions' && tail) {
-            checkOrigin(request, true);
-            chat.answer(safeId(pathID), safeId(tail), await body(request, 64_000));
-            reply(response, {});
-            return;
-          }
-        }
+        if (resource === 'chat' && await chatRequest(chatContext, request, response, pathID, action, tail)) return;
         if (resource === 'projects') {
           if (!pathID && method === 'GET') { reply(response, projects.summaries()); return; }
           if (!pathID && method === 'POST') {
@@ -212,8 +194,12 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
           const projectId = safeId(pathID);
           if (!action && method === 'GET') { reply(response, projects.read(projectId)); return; }
           if (action === 'remove' && !tail && method === 'POST') {
+            projects.read(projectId);
+            // Its threads go with it: their turns stop, and their folders and sessions are removed.
+            await chat.stopThreads((thread) => thread.startsWith(projectId + '.'));
             projects.remove(projectId);
             rooms.closeProject(projectId);
+            await threads.removeProject(projectId, (harness, session) => harnesses.removeTranscript?.(harness, session) ?? Promise.resolve());
             reply(response, {});
             return;
           }
@@ -235,31 +221,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
             const input = scope.extend({ target: id }).parse(await body(request));
             reply(response, projects.restore(projectId, input.branch, input.baseRevision, input.target)); return;
           }
-          if (action === 'prompt' && method === 'POST' && harnesses) {
-            const input = scope.extend({
-              text: z.string().trim().min(1).max(3000), references: z.array(z.unknown()).max(32).default([]),
-              attachments: z.array(id).max(12).default([]), proposalId: id.optional(),
-              provider: processorId, registerObjects: z.boolean().default(true), modelSettings: modelSelection.optional(),
-              objects: objectRegistry.optional(), markedIds: z.array(z.string().max(120)).max(32).optional(),
-            }).parse(await body(request));
-            if (input.attachments.length) throw new ZirbelError(422, 'Harness chat accepts text and marked references.');
-            const references = projects.select(projectId, input.branch, input.baseRevision, input.references);
-            const project = projects.read(projectId);
-            const base = head(project, input.branch);
-            await chat.reply(request, response, async (run, log) => {
-              const note = projects.addNote(projectId, { text: input.text, branch: input.branch, role: 'creator', references, attachments: [] });
-              run.update?.({ type: 'note', note });
-              try {
-                return await runHarnessChat(harnesses, input.provider, projects, project, base, input, references,
-                  { ...run, selection: input.modelSettings });
-              } finally { if (projects.has(projectId)) activity.save(projectId, note.id, log); }
-            }, 201);
-            return;
-          }
-          if (action === 'activity' && method === 'GET' && tail) {
-            if (!projects.has(projectId)) throw new ZirbelError(404, 'Project does not exist.');
-            reply(response, activity.read(projectId, safeId(tail))); return;
-          }
+          if (await projectChat(chatContext, request, response, url, projectId, action, tail)) return;
           if (action === 'notes' && method === 'POST') { reply(response, projects.addNote(projectId, await body(request)), 201); return; }
           if (action === 'media' && method === 'POST' && !tail) {
             const { data, ...input } = attachment.omit({ id: true }).extend({ data: z.string().max(24_000_000) })
@@ -375,6 +337,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
     if (values.open) browser(editorOrigin() + '/');
     process.once('SIGINT', () => void stopOnSignal(stop));
     process.once('SIGTERM', () => void stopOnSignal(stop));
+    exitWithParent(stop);
   } catch (error) { await stop(); throw error; }
 }
 

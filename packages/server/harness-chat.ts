@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { chatUsage, type Project, type Reference, type Revision } from '../sdk/contracts.ts';
+import { workspaceHistory, type Project, type Reference, type Revision } from '../sdk/contracts.ts';
 import { chatControl } from '../sdk/chat-control.ts';
 import { editableGame, type RegisteredObject } from '../sdk/game.ts';
 import { head, ZirbelError, type Projects } from '../core/projects.ts';
@@ -13,11 +13,6 @@ const plan = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('edit'), message, game: editableGame }),
 ]);
 
-export const workspaceHistory = z.array(z.strictObject({
-  role: z.enum(['creator', 'assistant']),
-  text: z.string().trim().min(1).max(4000),
-  usage: chatUsage.optional(),
-})).max(12);
 type WorkspaceMessage = z.infer<typeof workspaceHistory>[number];
 
 // What every turn tells the harness: the reply format and what the sandbox offers, nothing about the game itself.

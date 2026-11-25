@@ -149,3 +149,29 @@ test('a diff keeps the changed lines and a little context', () => {
     '--- b\n+++ b\n@@ line 24 @@\n line 23\n line 24\n-line 25\n+line twenty-five\n line 26\n line 27',
   );
 });
+
+test('a running turn’s steps are written every two seconds while they change, and once more as it ends', (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const { root } = install(t);
+  const store = new ActivityStore(root);
+  const note = '0f6c8d0e-6b8a-4c55-9a3e-2c7f5a1b9d10';
+  const log = new TurnLog();
+  let exists = true;
+  const kept = store.keep('game-1', note, log, () => exists);
+  log.add(step('tool:1', 'npm test'));
+  assert.throws(() => store.read('game-1', note), /kept no activity/);
+  t.mock.timers.tick(2000);
+  assert.deepEqual(store.read('game-1', note).entries.map(({ id }) => id), ['tool:1']);
+  log.add(step('tool:2', 'npm run build'));
+  t.mock.timers.tick(2000);
+  assert.equal(store.read('game-1', note).entries.length, 2);
+  log.add(step('tool:3'));
+  kept.close();
+  assert.equal(store.read('game-1', note).entries.length, 3);
+  // A project removed while its turn ran keeps nothing more.
+  exists = false;
+  const gone = store.keep('game-1', note, log, () => exists);
+  log.add(step('tool:4'));
+  gone.close();
+  assert.equal(store.read('game-1', note).entries.length, 3);
+});

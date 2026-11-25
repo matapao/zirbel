@@ -3,7 +3,7 @@
 // window stays on the editor's origin; playtests and games open in child windows on loopback player origins; any other
 // web address opens in the system browser, and other schemes are refused (routes.ts). Every window is sandboxed, with
 // context isolation, no Node integration and no preload, and pages get no permission but fullscreen. Quitting stops the
-// editor this app started.
+// editor this app started, after asking when a harness turn is running; an editor never outlives the app (editor.ts).
 import path from 'node:path';
 import {
   app,
@@ -14,7 +14,7 @@ import {
   type BrowserWindowConstructorOptions,
   type WebContents,
 } from 'electron';
-import { startEditor, type Editor } from './editor.js';
+import { runningTurns, startEditor, type Editor } from './editor.js';
 import { mayNavigate, mayOpen, place } from './routes.js';
 
 // Chromium's profile goes apart from the harness account folder, which has the app's name in the same place.
@@ -40,6 +40,9 @@ let origin = '';
 let main: BrowserWindow | undefined;
 let quitting = false;
 let stopped = false;
+/** Quit was asked and is waiting for the person's answer; a signal quits without asking. */
+let confirming = false;
+let signalled = false;
 const editorPages = new WeakSet<WebContents>();
 
 function fail(message: string) {
@@ -87,6 +90,19 @@ function guard(contents: WebContents) {
   contents.on('will-attach-webview', (event) => event.preventDefault());
 }
 
+/** Asks before quitting while a turn runs: the turn is interrupted, and the thread offers to continue it. */
+async function confirmQuit() {
+  const options = {
+    type: 'question' as const,
+    buttons: ['Quit', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    message: 'A turn is running. Quit anyway? You can continue it later.',
+  };
+  const answer = main && !main.isDestroyed() ? await dialog.showMessageBox(main, options) : await dialog.showMessageBox(options);
+  return answer.response === 0;
+}
+
 async function start() {
   session.defaultSession.setPermissionRequestHandler((_contents, permission, answer) =>
     answer(PERMITTED.has(permission)),
@@ -117,23 +133,41 @@ else {
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
   });
-  // Quit stops the editor this app started (gracefully, then killed after a grace period) before the app exits.
+  // Quit stops the editor this app started (gracefully, then killed after a grace period) before the app exits; while
+  // it runs a turn, the person is asked first.
   app.on('before-quit', (event) => {
     if (!starting || stopped) return;
     event.preventDefault();
-    if (quitting) return;
-    quitting = true;
-    for (const window of BrowserWindow.getAllWindows()) window.hide();
+    if (quitting || confirming) return;
+    confirming = true;
     void starting
       .then(
-        (editor) => editor.stop(),
-        () => undefined,
+        async (editor) => signalled || !editor.owned || (await runningTurns(editor.url)) === 0 || (await confirmQuit()),
+        () => true,
       )
-      .finally(() => {
-        stopped = true;
-        app.quit();
+      .then((quit) => {
+        confirming = false;
+        if (!quit) {
+          showEditor();
+          return;
+        }
+        quitting = true;
+        for (const window of BrowserWindow.getAllWindows()) window.hide();
+        void starting!
+          .then(
+            (editor) => editor.stop(),
+            () => undefined,
+          )
+          .finally(() => {
+            stopped = true;
+            app.quit();
+          });
       });
   });
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => app.quit());
+  for (const signal of ['SIGINT', 'SIGTERM'] as const)
+    process.on(signal, () => {
+      signalled = true;
+      app.quit();
+    });
   void app.whenReady().then(start, (error: Error) => fail(error.message));
 }

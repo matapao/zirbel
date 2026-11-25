@@ -1,6 +1,7 @@
 // Each harness turn's steps, kept by the Node editor beside the projects so a thread shows its whole history after a
-// reload: <data>/activity/<projectId>.<noteId>.json, keyed by the creator's message that started the turn, written once
-// when the turn ends and validated on every read. The project file and its contract stay as they are.
+// reload: <data>/activity/<projectId>.<noteId>.json, keyed by the creator's message that started the turn, written as
+// the turn runs (every few seconds while it changes) and once more when it ends, and validated on every read. The
+// project file and its contract stay as they are.
 import { closeSync, fstatSync, mkdirSync, openSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 import { atomicWrite, safeId, ZirbelError } from '../core/projects.ts';
@@ -9,6 +10,8 @@ import { turnActivity } from '../sdk/contracts.ts';
 
 /** A saved turn is JSON text: at most this many bytes for TURN_LIMIT characters and their escapes. */
 const FILE_LIMIT = TURN_LIMIT * 4;
+/** How often a running turn's steps are written while they change. */
+const FLUSH_INTERVAL = 2000;
 
 export class ActivityStore {
   private readonly directory: string;
@@ -34,6 +37,18 @@ export class ActivityStore {
       console.warn('Could not keep the activity of a harness turn: ' + (error as Error).message);
       return false;
     }
+  }
+
+  /** Keeps a running turn's steps as they come: written every FLUSH_INTERVAL while they change, and at close. */
+  keep(projectId: string, noteId: string, log: TurnLog, exists: () => boolean = () => true) {
+    let written = log.revision;
+    const flush = () => {
+      if (written === log.revision || !exists()) return;
+      written = log.revision;
+      this.save(projectId, noteId, log);
+    };
+    const timer = setInterval(flush, FLUSH_INTERVAL).unref();
+    return { flush, close() { clearInterval(timer); flush(); } };
   }
 
   read(projectId: string, noteId: string) {

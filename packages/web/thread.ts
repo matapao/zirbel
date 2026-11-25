@@ -4,11 +4,12 @@
 // each kept turn when it comes into view.
 import type { Note, Reference } from '../sdk/contracts.ts';
 import { TurnLog, type TurnRecord } from '../sdk/activity.ts';
-import { $, api, dialog, el } from './editor-ui.ts';
-import { type ActivityTurn, type WorkspaceMessage, visibleTurn, ws } from './state.ts';
+import { $, action, api, dialog, el } from './editor-ui.ts';
+import { type ActivityTurn, type WorkspaceMessage, activityKey, visibleTurn, ws } from './state.ts';
 import { createSteps, fillSteps, removeSteps, requestRow, upsertStep } from './activity-rows.ts';
 import { actionCard, announce, headlineOf } from './ask-card.ts';
 import { renderProposalCard } from './proposals.ts';
+import { continueTurn } from './turn-runner.ts';
 import type { ActivityEntry } from '../sdk/chat-stream.ts';
 
 type Kept = { element: HTMLElement; state: 'waiting' | 'loading' | 'ready' } | 'none';
@@ -19,8 +20,18 @@ const conversationSteps = new Map<string, HTMLElement>();
 let observer: IntersectionObserver | undefined;
 let shownThread = '';
 
-function bubble(text: string, assistant: boolean, refs: Reference[], usage?: Note['usage']) {
+/** A turn the editor was running when it ended: it waits to be continued in the same session. */
+function interruptedRow() {
+  const row = el('div', undefined, 'interrupted');
+  row.setAttribute('role', 'status');
+  row.append(el('strong', 'Interrupted'), el('span', 'The editor stopped while this turn was running.'),
+    action('Continue', () => continueTurn(), 'primary'));
+  return row;
+}
+
+function bubble(text: string, assistant: boolean, refs: Reference[], usage?: Note['usage'], id?: string) {
   const article = el('article', undefined, assistant ? 'note assistant-note' : 'note');
+  if (id) article.dataset.note = id;
   if (assistant) article.append(el('strong', 'Zirbel'));
   article.append(el('div', text));
   const labels = refs.map((reference) => (reference.type === 'instance' ? reference.object.name : 'Marked region'));
@@ -94,7 +105,8 @@ export function renderMessages() {
   const children: HTMLElement[] = [];
   for (const note of notes) {
     children.push(
-      bubble(note.text, note.role === 'assistant', 'references' in note ? note.references : [], note.usage),
+      bubble(note.text, note.role === 'assistant', 'references' in note ? note.references : [], note.usage,
+        'id' in note ? note.id : undefined),
     );
     if (note.role === 'assistant') continue;
     const steps = !project
@@ -109,6 +121,13 @@ export function renderMessages() {
   }
   if (turn?.showPrompt && !notes.some((note) => 'id' in note && note.id === turn.note?.id)) {
     children.push(bubble(turn.text, false, turn.note?.references ?? turn.references), liveSteps(turn));
+  }
+  const interrupted = ws.interrupted?.key === activityKey() && !turn?.pending ? ws.interrupted : undefined;
+  if (interrupted) {
+    const after = interrupted.noteId ? children.findIndex((child) => child.dataset.note === interrupted.noteId) : -1;
+    const started = after >= 0 ? [] : [bubble(interrupted.text, false, [])];
+    const at = after >= 0 && children[after + 1]?.classList.contains('steps') ? after + 2 : after >= 0 ? after + 1 : children.length;
+    children.splice(at, 0, ...started, interruptedRow());
   }
   node.replaceChildren(...children);
   if (turn) renderTurnActions(turn, false);

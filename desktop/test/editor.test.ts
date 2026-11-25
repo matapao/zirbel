@@ -1,12 +1,15 @@
 // The editor process as editor.ts runs it, with small stand-ins for dist/server.mjs on plain Node: each one prints
-// what the real command prints, and records how it was started.
+// what the real command prints, and records how it was started. And the real editor, which ends with a killed app.
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createInterface } from 'node:readline';
 import test from 'node:test';
-import { startEditor } from '../src/editor.js';
-import { alive, until } from './support.js';
+import { runningTurns, startEditor } from '../src/editor.js';
+import { alive, claim, until } from './support.js';
 
 const folder = mkdtempSync(path.join(tmpdir(), 'zirbel-desktop-editor-'));
 test.after(() => rmSync(folder, { recursive: true, force: true }));
@@ -20,12 +23,14 @@ function standIn(name: string, code: string) {
   writeFileSync(
     file,
     `import { writeFileSync } from 'node:fs';
-writeFileSync(${JSON.stringify(RECORD)}, JSON.stringify({ args: process.argv.slice(2), asNode: process.env.ELECTRON_RUN_AS_NODE, pid: process.pid }));
+writeFileSync(${JSON.stringify(RECORD)}, JSON.stringify({ args: process.argv.slice(2), asNode: process.env.ELECTRON_RUN_AS_NODE, pid: process.pid,
+  channel: typeof process.send === 'function', views: process.env.ZIRBEL_VIEW_GAME }));
 ${code}\n`,
   );
   return file;
 }
-const started = () => JSON.parse(readFileSync(RECORD, 'utf8')) as { args: string[]; asNode?: string; pid: number };
+const started = () =>
+  JSON.parse(readFileSync(RECORD, 'utf8')) as { args: string[]; asNode?: string; pid: number; channel: boolean; views?: string };
 const announce = (fields: object) => `console.log(JSON.stringify(${JSON.stringify({ editor: ADDRESS, ...fields })}));`;
 const KEEP_RUNNING = 'setInterval(() => {}, 1000);';
 
@@ -39,9 +44,11 @@ ${KEEP_RUNNING}`,
   );
   const editor = await startEditor({ runtime: process.execPath, server });
   assert.deepEqual({ url: editor.url, owned: editor.owned }, { url: ADDRESS, owned: true });
-  const { args, asNode, pid } = started();
+  const { args, asNode, pid, channel, views } = started();
   assert.deepEqual(args, ['--port', '0']);
   assert.equal(asNode, '1');
+  assert.equal(channel, true, 'with an IPC channel, which ends it with the app');
+  assert.equal(views, 'app', 'and the app renders its games');
   assert.ok(alive(pid));
   await editor.stop();
   assert.ok(!alive(pid), 'the editor ended');
@@ -108,4 +115,54 @@ test('an editor that names no address in time is stopped', async () => {
   const server = standIn('silent', KEEP_RUNNING);
   await assert.rejects(startEditor({ runtime: process.execPath, server, startTimeoutMs: 300 }), /did not start within/);
   await until(() => !alive(started().pid), 'the editor to be stopped');
+});
+
+const REPO = path.join(import.meta.dirname, '..', '..', '..');
+const SERVER = path.join(REPO, 'dist', 'server.mjs');
+
+test('the real editor ends with the app that started it, even when the app is killed', { skip: !existsSync(SERVER) && 'pnpm build in the repository first' }, async (t) => {
+  const data = path.join(folder, 'data');
+  const editorModule = path.join(import.meta.dirname, '..', 'src', 'editor.js');
+  const app = spawn(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `import { startEditor } from ${JSON.stringify(editorModule)};
+const editor = await startEditor({ runtime: process.execPath, server: ${JSON.stringify(SERVER)} });
+console.log(editor.url);
+setInterval(() => {}, 1000);`,
+    ],
+    {
+      env: { ...process.env, ZIRBEL_DATA: data, ZIRBEL_ACCOUNT_DIR: path.join(folder, 'account') },
+      stdio: ['ignore', 'pipe', 'inherit'],
+    },
+  );
+  t.after(() => app.kill('SIGKILL'));
+  const first = await createInterface({ input: app.stdout })[Symbol.asyncIterator]().next();
+  assert.match(String(first.value), /^http:\/\/127\.0\.0\.1:\d+$/);
+  const owner = await until(() => claim(data), "the editor's claim on the data folder");
+  assert.ok(alive(owner.pid));
+  app.kill('SIGKILL');
+  await until(() => !alive(owner.pid), 'the editor to end with its app');
+  assert.equal(claim(data), undefined, 'it released the data folder as it ended');
+});
+
+test('the app asks the editor how many turns are running before it quits', async () => {
+  let turns: unknown = 2;
+  const health = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ status: 'ok', turns }));
+  });
+  await new Promise<void>((resolve) => health.listen(0, '127.0.0.1', resolve));
+  const address = health.address();
+  const url = 'http://127.0.0.1:' + (address && typeof address === 'object' ? address.port : 0);
+  try {
+    assert.equal(await runningTurns(url), 2);
+    turns = 'many';
+    assert.equal(await runningTurns(url), 0, 'an answer it cannot read is no turn');
+  } finally {
+    await new Promise((resolve) => health.close(resolve));
+  }
+  assert.equal(await runningTurns(url, 500), 0, 'an editor that is gone runs no turn');
 });

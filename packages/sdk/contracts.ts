@@ -72,12 +72,18 @@ export const attachment = z.strictObject({
   transcript: z.string().max(4000),
   original: id.optional(),
 });
-export const chatUsage = z.strictObject({
+const chatUsage = z.strictObject({
   source: z.string().min(1).max(100),
   input: z.number().int().nonnegative().optional(),
   output: z.number().int().nonnegative().optional(),
   total: z.number().int().nonnegative().optional(),
 });
+// The chat before a project exists, as the editor sends it with each message: its last messages.
+export const workspaceHistory = z.array(z.strictObject({
+  role: z.enum(['creator', 'assistant']),
+  text: z.string().trim().min(1).max(4000),
+  usage: chatUsage.optional(),
+})).max(12);
 export const note = z.strictObject({
   id, text: z.string().trim().min(1).max(4000), date: z.iso.datetime(), branch: id,
   references: z.array(sceneReference).max(32), attachments: z.array(id).max(12),

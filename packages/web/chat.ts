@@ -1,18 +1,18 @@
 // Split from workspace.ts; shares state through ws in state.ts.
-// The composer and each turn: sending, the harness's events as they stream, the live status line with the current
-// step and elapsed time, and Stop while a turn runs.
-import { $, action, api, attempt, chatApi, dialog, option } from './editor-ui.ts';
-import { TurnLog } from '../sdk/activity.ts';
-import { ActivityTurn, ChatReply, activityKey, activityTurns, chatBusy, markedObjects, promptDrafts, threadKey, visibleTurn, ws } from './state.ts';
-import { authored, hasContent, library, listProjects, loadProject, recentCards, refreshProject, render, route, scope, showProposal } from './workspace.ts';
+// The composer and the status line of a turn: sending, the live status line with the current step and elapsed time,
+// and Stop while a turn runs. The turns themselves are turn-runner.ts's.
+import { $, action, api, attempt, option } from './editor-ui.ts';
+import { ActivityTurn, chatBusy, markedObjects, visibleTurn, ws } from './state.ts';
+import { authored, hasContent, library, loadProject, recentCards, render } from './workspace.ts';
 import { references, renderObjects } from './inspector.ts';
 import { scheduleDraw } from './viewport.ts';
 import { type Processor } from '../server/processors.ts';
 import { modelPicker } from './model-picker.ts';
 import { showHarnessAccounts } from './harness-accounts.ts';
 import { renderSuggestions } from './chat-settings.ts';
-import { keepTurn, renderMessages, renderTurnActions, setupThread, showStep } from './thread.ts';
+import { renderMessages, setupThread } from './thread.ts';
 import { setThreadOpen } from './desk.ts';
+import { runTurn, stopTurn } from './turn-runner.ts';
 
 // Chat's own state. What the workspace modules share is in ws.
 let providers: Processor[] = [];
@@ -22,6 +22,7 @@ let refreshingProcessors: Promise<void> | undefined;
 let clock: ReturnType<typeof setInterval> | undefined;
 
 export const harnessReady = () => providers.some(({ ready }) => ready !== false);
+export const providerName = (id: string) => providers.find((choice) => choice.id === id)?.name ?? 'the harness';
 
 function elapsed(since: number) {
   const seconds = Math.max(0, Math.floor((Date.now() - since) / 1000));
@@ -39,7 +40,7 @@ function currentStep(turn: ActivityTurn) {
   return title ? turn.name + ' · ' + title.split('\n', 1)[0] : turn.status;
 }
 
-function renderChatStatus() {
+export function renderChatStatus() {
   const turn = visibleTurn();
   const status = $('chat-run');
   if (!status) return;
@@ -156,122 +157,6 @@ export const openHarnesses = () => showHarnessAccounts(async () => {
   await refreshProcessors();
   return { providers, notice: processorNotice };
 });
-
-// Send marked objects first; keep automatic context small enough for a chat turn.
-function chatObjects() {
-  const sorted = ws.registered.toSorted((a, b) => Number(markedObjects.has(b.id)) - Number(markedObjects.has(a.id)));
-  let size = 0;
-  return sorted.filter((item) => {
-    const length = JSON.stringify(item).length;
-    if (size + length > 24000) return false;
-    size += length;
-    return true;
-  });
-}
-
-async function stopTurn() {
-  const turn = visibleTurn();
-  if (!turn?.connection || turn.stopping) return;
-  turn.stopping = true;
-  renderChatStatus();
-  if (!turn.id) {
-    turn.connection.abort();
-    return;
-  }
-  try { await api('chat/' + turn.id + '/stop', {}); }
-  catch (error) {
-    turn.stopping = false;
-    if (!turn.pending || visibleTurn() !== turn) return;
-    renderChatStatus();
-    throw error;
-  }
-}
-
-async function runTurn(text: string, selectedProvider: string) {
-  const input = $<HTMLTextAreaElement>('prompt');
-  const key = activityKey();
-  const startedAt = ws.navigation;
-  const projectId = ws.project?.id;
-  const name = providers.find((choice) => choice.id === selectedProvider)?.name ?? 'the harness';
-  const refs = ws.project ? references() : [];
-  const path = ws.project ? route('prompt') : 'chat';
-  const modelSettings = ws.modelControl?.selection();
-  const payload = ws.project ? {
-    ...scope(), text, references: refs, provider: selectedProvider, registerObjects: ws.registerObjects, modelSettings,
-    ...(authored() ? { objects: chatObjects(), markedIds: [...markedObjects] } : {}),
-    proposalId: ws.proposalChoice,
-  } : { text, provider: selectedProvider, conversation: ws.conversation, registerObjects: ws.registerObjects, modelSettings };
-  const connection = new AbortController();
-  const turn: ActivityTurn = { name, text, references: refs, status: 'Waiting for ' + name + '…', pending: true,
-    showPrompt: true, connection, startedAt: Date.now(), log: new TurnLog(), actions: new Map() };
-  const phases = { running: name + ' is working…', responding: name + ' is preparing a response…', validating: 'Checking the harness response…' };
-  input.value = '';
-  const previous = activityTurns.get(key);
-  if (previous) keepTurn(previous, projectId);
-  activityTurns.set(key, turn);
-  renderMessages();
-  renderProcessors();
-  try {
-    const response = await chatApi<ChatReply>(path, payload, (event) => {
-      if (activityTurns.get(key) !== turn || event.type === 'heartbeat') return;
-      if (event.type === 'note') {
-        turn.note = event.note;
-        if (ws.project && ws.project.id === projectId && !ws.project.notes.some(({ id }) => id === event.note.id)) ws.project.notes.push(event.note);
-        if (key === activityKey()) renderMessages();
-        return;
-      }
-      if (event.type === 'run') turn.id = event.id;
-      if (event.type === 'progress') turn.status = phases[event.phase];
-      if (event.type === 'activity') showStep(turn, event.entry, turn.log.add(event.entry));
-      if (event.type === 'action') turn.actions.set(event.action.id, event.action);
-      if (event.type === 'action-closed') turn.actions.delete(event.id);
-      if (event.type === 'action' || event.type === 'action-closed') renderTurnActions(turn);
-      if (visibleTurn() === turn) renderChatStatus();
-    }, connection.signal);
-    if (activityTurns.get(key) !== turn) return;
-    Object.assign(turn, { connection: undefined, stopping: false, showPrompt: false, status: '', id: undefined });
-    turn.actions.clear();
-    renderTurnActions(turn, false);
-    if (visibleTurn() === turn) renderChatStatus();
-    if (response.conversation) ws.conversation = response.conversation;
-    let visit = ws.navigation;
-    if (response.projectId && response.projectId !== projectId) {
-      const openResult = key === activityKey() && visit === startedAt && !dialog.open;
-      if (!projectId) {
-        activityTurns.delete(key);
-        activityTurns.set(threadKey(response.projectId, response.branch ?? 'main'), turn);
-        ws.conversation = [];
-      }
-      await listProjects();
-      if (!openResult || visit !== ws.navigation || dialog.open) return;
-      const loading = loadProject(response.projectId, response.branch);
-      visit = ws.navigation;
-      await loading;
-    } else if (response.projectId && response.projectId === ws.project?.id) {
-      await refreshProject();
-    }
-    const replyThread = threadKey(response.projectId, response.branch ?? 'main');
-    if (visit !== ws.navigation || replyThread !== activityKey()) return;
-    if (response.proposalId) await showProposal(response.proposalId);
-  } catch (error) {
-    if (activityTurns.get(key) !== turn) return;
-    turn.status = connection.signal.aborted ? 'Turn stopped.' : (error as Error).message;
-    turn.failed = turn.status !== 'Turn stopped.';
-    if (key === activityKey()) {
-      if (!input.value.trim()) input.value = text;
-      if (turn.failed) void refreshProcessors();
-    } else if (!promptDrafts.get(key)?.trim()) {
-      promptDrafts.set(key, text);
-    }
-  } finally {
-    Object.assign(turn, { connection: undefined, stopping: false, pending: false });
-    turn.actions.clear();
-    if (key === activityKey() || visibleTurn() === turn) {
-      renderMessages();
-      renderProcessors();
-    }
-  }
-}
 
 export function setupActivity() {
   setupThread();

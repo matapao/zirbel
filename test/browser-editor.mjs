@@ -35,6 +35,8 @@ export function answer(res, result, extra = {}) {
 
 export async function openEditor(t, run) {
   const data = await mkdtemp(join(tmpdir(), 'zirbel-browser-'));
+  // The threads' working folders, apart from the projects as the account folder is.
+  const account = await mkdtemp(join(tmpdir(), 'zirbel-browser-account-'));
   const harnessHost = createServer(async (req, res) => {
     res.setHeader('content-type', 'application/json');
     if (req.url === '/access') {
@@ -43,15 +45,16 @@ export async function openEditor(t, run) {
     }
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
-    const { prompt } = JSON.parse(Buffer.concat(chunks));
-    const context = JSON.parse(prompt.slice(prompt.lastIndexOf('\n') + 1));
-    await run(context, res);
+    const body = JSON.parse(Buffer.concat(chunks));
+    const context = JSON.parse(body.prompt.slice(body.prompt.lastIndexOf('\n') + 1));
+    // The run as the harness gets it: its thread folder (cwd), and the session it resumes, if it does.
+    await run(context, res, body);
   });
   let host, browser;
-  async function stopHost() {
+  async function stopHost(signal = 'SIGTERM') {
     if (!host || host.exitCode !== null || host.signalCode !== null) return;
     const closed = once(host, 'exit');
-    host.kill();
+    host.kill(signal);
     await closed;
   }
   async function startHost(port) {
@@ -67,7 +70,7 @@ export async function openEditor(t, run) {
         data,
       ],
       {
-        env: { ...process.env, FIXTURE_HARNESS_URL: 'http://127.0.0.1:' + harnessHost.address().port },
+        env: { ...process.env, FIXTURE_HARNESS_URL: 'http://127.0.0.1:' + harnessHost.address().port, ZIRBEL_ACCOUNT_DIR: account },
         stdio: ['ignore', 'pipe', 'inherit'],
       },
     );
@@ -82,12 +85,14 @@ export async function openEditor(t, run) {
     harnessHost.closeAllConnections();
     if (harnessHost.listening) await new Promise((resolve) => harnessHost.close(resolve));
     await rm(data, { recursive: true, force: true });
+    await rm(account, { recursive: true, force: true });
   });
   harnessHost.listen(0, '127.0.0.1');
   await once(harnessHost, 'listening');
   const editor = await startHost('0');
-  const restart = async () => {
-    await stopHost();
+  /** Stops the editor and starts it again on the same port: gracefully, or killed as in a crash (SIGKILL). */
+  const restart = async (signal = 'SIGTERM') => {
+    await stopHost(signal);
     assert.equal(await startHost(new URL(editor).port), editor);
   };
   browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -96,7 +101,7 @@ export async function openEditor(t, run) {
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(editor);
   await page.getByRole('textbox', { name: 'Describe a game' }).waitFor();
-  return { page, editor, data, errors, browser, restart };
+  return { page, editor, data, account, errors, browser, restart };
 }
 
 /** The editor's controls, by their names. */

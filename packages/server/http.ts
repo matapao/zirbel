@@ -3,7 +3,6 @@ import { networkInterfaces } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { chatStreamType, type ChatEvent, type ChatUpdate } from '../sdk/chat-stream.ts';
 import { ZirbelError } from '../core/projects.ts';
 
 export const contentType: Record<string, string> = {
@@ -23,7 +22,7 @@ export function bytes(response: ServerResponse, file: Buffer | string, type: str
   response.end(file);
 }
 
-function failure(error: unknown) {
+export function failure(error: unknown) {
   if (error instanceof ZirbelError) return { status: error.status, message: error.message };
   if (error instanceof z.ZodError) return { status: 400, message: error.issues.slice(0, 3)
     .map((issue) => (issue.path.length ? issue.path.join('.') + ' · ' : '') + issue.message).join(' · ') };
@@ -34,36 +33,6 @@ function failure(error: unknown) {
 export function fail(response: ServerResponse, error: unknown) {
   const { status, message } = failure(error);
   reply(response, { error: message }, status);
-}
-
-export async function chatReply(request: IncomingMessage, response: ServerResponse,
-  run: (update: ((event: ChatUpdate) => void) | undefined, signal: AbortSignal) => Promise<unknown>, status = 200) {
-  if (response.destroyed) return;
-  const disconnected = new AbortController();
-  const close = () => disconnected.abort(new ZirbelError(409, 'The chat connection closed.'));
-  response.once('close', close);
-  let heartbeat: ReturnType<typeof setInterval> | undefined;
-  const send = (event: ChatEvent<unknown>) => {
-    if (response.destroyed) return;
-    if (response.writableLength > 2_000_000) { response.destroy(); return; }
-    response.write(JSON.stringify(event) + '\n');
-  };
-  try {
-    if (request.headers.accept !== chatStreamType) {
-      const result = await run(undefined, disconnected.signal);
-      if (!response.destroyed) reply(response, result, status);
-      return;
-    }
-    response.writeHead(status, { 'content-type': chatStreamType + '; charset=utf-8', 'cache-control': 'no-store' });
-    response.flushHeaders();
-    heartbeat = setInterval(() => send({ type: 'heartbeat' }), 15_000).unref();
-    try { send({ type: 'result', result: await run(send, disconnected.signal) }); }
-    catch (error) { send({ type: 'error', error: failure(error).message }); }
-    finally { response.end(); }
-  } finally {
-    clearInterval(heartbeat);
-    response.removeListener('close', close);
-  }
 }
 
 export async function body(request: IncomingMessage, max = 512_000): Promise<unknown> {

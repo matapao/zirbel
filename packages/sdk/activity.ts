@@ -43,11 +43,14 @@ export class TurnLog {
   readonly entries = new Map<string, ActivityEntry>();
   /** Steps let go, oldest first, to stay within TURN_LIMIT and TURN_STEPS. */
   dropped = 0;
+  /** Counts every change, so a copy kept elsewhere can tell it is behind. */
+  revision = 0;
   private weight = 0;
 
   /** Adds a step or updates it in place, and returns the ids of older steps let go to make room for it. */
   add(raw: ActivityEntry): string[] {
     const entry = boundEntry(raw);
+    this.revision++;
     const prior = this.entries.get(entry.id);
     if (prior) this.weight -= entryWeight(prior);
     this.entries.set(entry.id, entry);

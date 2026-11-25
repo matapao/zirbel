@@ -14,6 +14,8 @@ export type ProjectCard = Pick<Project, 'id' | 'title' | 'template'>;
 export type ActivityTurn = {
   name: string; text: string; references: Reference[]; status: string; pending: boolean; showPrompt: boolean;
   connection?: AbortController; id?: string; note?: Note; failed?: boolean; stopping?: boolean;
+  /** Stop was pressed before the turn's id arrived: it is sent once the id does. */
+  stopRequested?: boolean;
   startedAt: number; log: TurnLog; actions: Map<string, HarnessAction>;
   /** The turn's steps as the thread draws them, kept while the turn is shown. */
   steps?: HTMLElement;
@@ -24,6 +26,10 @@ export const ws = {
   project: undefined as Project | undefined,
   /** The conversation before a project exists; the harness's first game takes it into the new project. */
   conversation: [] as WorkspaceMessage[],
+  /** That conversation's own thread, kept in browser storage so a page that comes back finds its running turn. */
+  workspaceThread: '',
+  /** A turn of the open thread that was interrupted when its editor ended, which Continue resumes. */
+  interrupted: undefined as { key: string; text: string; harness: string; noteId?: string } | undefined,
   branch: 'main',
   /** Edit shows the editing affordances on the running game; otherwise the person plays it. */
   editing: false,
@@ -56,6 +62,7 @@ export const activityKey = () => threadKey(ws.project?.id, ws.branch);
 export const visibleTurn = () => activityTurns.get(activityKey());
 export const chatBusy = () => visibleTurn()?.pending === true;
 export const lastProjectKey = 'zirbel-last-project-v1';
+export const workspaceThreadKey = 'zirbel-workspace-thread-v1';
 export const recentProjectsKey = 'zirbel-recent-projects-v1';
 export const threadOpenKey = 'zirbel-thread-open-v1';
 export const chatSettingsKey = 'zirbel-chat-settings-v1';

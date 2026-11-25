@@ -12,6 +12,7 @@ import { renderMessages } from './thread.ts';
 import { renderEditing, setupEditing } from './edit-mode.ts';
 import { renderTopbar, setupTopbar } from './topbar.ts';
 import { createLibrary } from './library.ts';
+import { syncThread } from './turn-runner.ts';
 
 // This module's own state. What the workspace modules share is in ws.
 let playRequest = 0;
@@ -105,7 +106,10 @@ export async function loadProject(id: string, nextBranch = 'main') {
   resetView(sameProject);
   renderProcessors();
   await refreshProposals();
-  if (visit === ws.navigation) render();
+  if (visit !== ws.navigation) return;
+  render();
+  // A turn running in this thread, or one interrupted, shows in it.
+  await syncThread();
 }
 
 function resetView(sameProject = false) {
@@ -274,9 +278,11 @@ export async function leaveProject() {
   $('chat-suggestions').replaceChildren();
   render();
   renderProcessors();
+  await syncThread();
 }
 
 async function projectRemoved(id: string) {
+  if (ws.interrupted?.key.startsWith(id + '/')) ws.interrupted = undefined;
   for (const [key, turn] of activityTurns) {
     if (!key.startsWith(id + '/')) continue;
     turn.connection?.abort();
@@ -303,6 +309,7 @@ try {
   $('host-status-text').textContent = 'Local workspace';
   await restoreProject().catch((error: Error) => inform(error.message, true));
   render();
+  if (!ws.project) await syncThread().catch((error: Error) => inform(error.message, true));
   await refreshProcessors();
   window.addEventListener('focus', () => { if (!chatBusy()) void refreshProcessors(); });
 } catch (error) {

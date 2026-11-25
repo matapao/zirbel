@@ -1,12 +1,20 @@
+// Harness turns, owned by the editor rather than by the request that started them: a turn runs until it ends or Stop
+// ends it, and any number of requests stream it, from its first steps or from where it is when they attach. A turn
+// that ended stays here for a while, so a page that comes back just after it ended still gets its result. What the
+// harness asks during a turn waits here for one answer.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AgentAsk, AskAnswer } from '@matapao/celler/harness';
 import { z } from 'zod';
 import { newId, ZirbelError } from '../core/projects.ts';
 import { boundEntry, TurnLog } from '../sdk/activity.ts';
-import type { ActionValue, ActivityEntry, ChatUpdate, HarnessAction } from '../sdk/chat-stream.ts';
+import { chatStreamType, type ActionValue, type ActivityEntry, type ChatEvent, type ChatUpdate, type HarnessAction } from '../sdk/chat-stream.ts';
+import type { Note } from '../sdk/contracts.ts';
 import { describeAsk, type AskPlace } from './ask-summary.ts';
-import { chatReply } from './http.ts';
+import { fail, failure, reply } from './http.ts';
 import type { ProcessorRun } from './processors.ts';
+
+/** How long an ended turn can still be attached to. */
+const KEEP_ENDED = 10 * 60 * 1000;
 
 const replySchema = z.discriminatedUnion('choice', [
   z.strictObject({ choice: z.literal('dismiss') }),
@@ -73,71 +81,141 @@ function formValue(field: Extract<HarnessAction, { kind: 'form' }>['fields'][num
   return typeof value === type && (!choices || choices.some((choice) => choice.value === value));
 }
 
+/** Why a turn's signal aborts when the editor stops: the turn is interrupted, not stopped by the person. */
+export class EditorStopping extends ZirbelError {
+  constructor() { super(503, 'The editor stopped while the turn was running.'); }
+}
+
 type PendingAction = { action: HarnessAction; answer: (answer: AskAnswer | null) => void };
-type ActiveRun = { controller: AbortController; actions: Map<string, PendingAction> };
+type Outcome = { result: unknown } | { error: unknown };
+type Listener = (event: ChatEvent<unknown>) => void;
 
-export class ChatRuns {
-  private active = new Map<string, ActiveRun>();
+/** One turn: what it has shown so far, what it waits on, and once it ends, its outcome. */
+export class ActiveTurn {
+  readonly id = newId();
+  readonly startedAt = new Date().toISOString();
+  readonly log = new TurnLog();
+  readonly actions = new Map<string, PendingAction>();
+  readonly controller = new AbortController();
+  readonly listeners = new Set<Listener>();
+  phase?: Extract<ChatUpdate, { type: 'progress' }>['phase'];
+  outcome?: Outcome;
+  finished!: Promise<Outcome>;
 
-  /** Streams one turn. The handler gets the turn's log, which holds every step the turn showed, for keeping. */
-  reply(request: IncomingMessage, response: ServerResponse, handler: (run: ProcessorRun, log: TurnLog) => Promise<unknown>, status = 200) {
-    return chatReply(request, response, async (stream, disconnected) => {
-      const log = new TurnLog();
-      if (!stream) return handler({ signal: disconnected }, log);
-      const update = (event: ChatUpdate) => {
-        if (event.type !== 'activity') { stream(event); return; }
-        const entry = boundEntry(event.entry);
-        log.add(entry);
-        stream({ type: 'activity', entry });
-      };
-      const id = newId();
-      const controller = new AbortController();
-      const signal = AbortSignal.any([disconnected, controller.signal]);
-      const actions = new Map<string, PendingAction>();
-      this.active.set(id, { controller, actions });
-      update({ type: 'run', id });
-      try {
-        return await handler({ signal, update, ask: async (question, withdrawn, place) => {
-          const waiting = AbortSignal.any([signal, withdrawn]);
-          if (waiting.aborted) return null;
-          let action: HarnessAction;
-          try { action = actionOf(question, place); }
-          catch (error) {
-            update({ type: 'activity', entry: { id: newId(), kind: 'notice', title: (error as Error).message } });
-            return null;
-          }
-          const pending = Promise.withResolvers<AskAnswer | null>();
-          const cancel = () => pending.resolve(null);
-          waiting.addEventListener('abort', cancel, { once: true });
-          actions.set(action.id, { action, answer: pending.resolve });
-          update({ type: 'activity', entry: requestEntry(action) });
-          update({ type: 'action', action });
-          let answer: AskAnswer | null = null;
-          try { answer = await pending.promise; return answer; }
-          finally {
-            waiting.removeEventListener('abort', cancel);
-            actions.delete(action.id);
-            update({ type: 'activity', entry: requestEntry(action, answerText(action, answer)) });
-            update({ type: 'action-closed', id: action.id });
-          }
-        } }, log);
-      } finally {
-        controller.abort();
-        this.active.delete(id);
-      }
-    }, status);
+  constructor(readonly thread: string, readonly name: string, readonly text: string, public note?: Note) {}
+
+  /** What a request that attaches now is sent first: the turn as it stands. */
+  snapshot(): ChatEvent<unknown>[] {
+    return [
+      { type: 'run', id: this.id },
+      ...(this.note ? [{ type: 'note' as const, note: this.note }] : []),
+      ...(this.phase ? [{ type: 'progress' as const, phase: this.phase }] : []),
+      ...[...this.log.entries.values()].map((entry) => ({ type: 'activity' as const, entry })),
+      ...[...this.actions.values()].map(({ action }) => ({ type: 'action' as const, action })),
+    ];
   }
 
+  get running() { return !this.outcome; }
+}
+
+export class ChatRuns {
+  /** Turns by id, running or ended a little while ago; and the running one of each thread. */
+  private turns = new Map<string, ActiveTurn>();
+  private threads = new Map<string, ActiveTurn>();
+
+  /** Starts a turn in a thread that has none running. The handler runs it to its end, whoever streams it. */
+  start(thread: string, meta: { name: string; text: string; note?: Note },
+    handler: (run: ProcessorRun, turn: ActiveTurn) => Promise<unknown>) {
+    if (this.threads.has(thread)) throw new ZirbelError(409, 'A turn is already running in this thread. Stop it, or wait for it to end.');
+    const turn = new ActiveTurn(thread, meta.name, meta.text, meta.note);
+    this.turns.set(turn.id, turn);
+    this.threads.set(thread, turn);
+    const { signal } = turn.controller;
+    const send = (event: ChatEvent<unknown>) => { for (const listener of turn.listeners) listener(event); };
+    const update = (event: ChatUpdate) => {
+      if (event.type === 'activity') {
+        const entry = boundEntry(event.entry);
+        turn.log.add(entry);
+        send({ type: 'activity', entry });
+        return;
+      }
+      if (event.type === 'progress') turn.phase = event.phase;
+      if (event.type === 'note') turn.note = event.note;
+      send(event);
+    };
+    const ask = async (question: AgentAsk, withdrawn: AbortSignal, place?: AskPlace) => {
+      const waiting = AbortSignal.any([signal, withdrawn]);
+      if (waiting.aborted) return null;
+      let action: HarnessAction;
+      try { action = actionOf(question, place); }
+      catch (error) {
+        update({ type: 'activity', entry: { id: newId(), kind: 'notice', title: (error as Error).message } });
+        return null;
+      }
+      const pending = Promise.withResolvers<AskAnswer | null>();
+      const cancel = () => pending.resolve(null);
+      waiting.addEventListener('abort', cancel, { once: true });
+      turn.actions.set(action.id, { action, answer: pending.resolve });
+      update({ type: 'activity', entry: requestEntry(action) });
+      update({ type: 'action', action });
+      let answer: AskAnswer | null = null;
+      try { answer = await pending.promise; return answer; }
+      finally {
+        waiting.removeEventListener('abort', cancel);
+        turn.actions.delete(action.id);
+        update({ type: 'activity', entry: requestEntry(action, answerText(action, answer)) });
+        update({ type: 'action-closed', id: action.id });
+      }
+    };
+    turn.finished = Promise.resolve()
+      .then(() => handler({ signal, update, ask }, turn))
+      .then((result) => ({ result }), (error: unknown) => ({ error }))
+      .then((outcome: Outcome) => {
+        turn.outcome = outcome;
+        turn.controller.abort(new ZirbelError(409, 'This turn has already ended.'));
+        this.threads.delete(thread);
+        setTimeout(() => this.turns.delete(turn.id), KEEP_ENDED).unref();
+        return outcome;
+      });
+    return turn;
+  }
+
+  /** The turn running in a thread, if one is. */
+  running(thread: string) { return this.threads.get(thread); }
+
+  get(id: string) {
+    const turn = this.turns.get(id);
+    if (!turn) throw new ZirbelError(404, 'This turn has already ended.');
+    return turn;
+  }
+
+  /** How many turns are running. */
+  get count() { return this.threads.size; }
+
   stop(id: string) {
-    const run = this.active.get(id);
-    if (!run) throw new ZirbelError(404, 'This turn has already ended.');
-    run.controller.abort(new ZirbelError(409, 'Turn stopped.'));
+    const turn = this.turns.get(id);
+    if (!turn?.running) throw new ZirbelError(404, 'This turn has already ended.');
+    turn.controller.abort(new ZirbelError(409, 'Turn stopped.'));
+  }
+
+  /** Stops the turns running in the threads that match, and waits for them to end. */
+  async stopThreads(matches: (thread: string) => boolean) {
+    const stopping = [...this.threads.values()].filter(({ thread }) => matches(thread));
+    for (const turn of stopping) turn.controller.abort(new ZirbelError(409, 'Turn stopped.'));
+    await Promise.all(stopping.map(({ finished }) => finished));
+  }
+
+  /** As the editor stops: every running turn is interrupted, to be continued later. */
+  async close() {
+    const running = [...this.threads.values()];
+    for (const turn of running) turn.controller.abort(new EditorStopping());
+    await Promise.all(running.map(({ finished }) => finished));
   }
 
   answer(id: string, actionId: string, input: unknown) {
-    const run = this.active.get(id);
-    const pending = run?.actions.get(actionId);
-    if (!pending || run?.controller.signal.aborted) throw new ZirbelError(404, 'This request is no longer open.');
+    const turn = this.turns.get(id);
+    const pending = turn?.actions.get(actionId);
+    if (!pending || !turn?.running) throw new ZirbelError(404, 'This request is no longer open.');
     const { action } = pending;
     const reply = replySchema.parse(input);
     let answer: AskAnswer | null = null;
@@ -158,7 +236,46 @@ export class ChatRuns {
       answer = { accept: true, content: Object.fromEntries(fields.flatMap(({ name }) =>
         Object.hasOwn(reply.values, name) ? [[name, reply.values[name]]] : [])) };
     }
-    run?.actions.delete(actionId);
+    turn.actions.delete(actionId);
     pending.answer(answer);
+  }
+}
+
+const outcomeEvent = (outcome: Outcome): ChatEvent<unknown> =>
+  'error' in outcome ? { type: 'error', error: failure(outcome.error).message } : { type: 'result', result: outcome.result };
+
+/** Streams a turn to one request: as it stands, then each step as it comes, then its outcome. The request closing
+ *  only stops the stream. A request that doesn't ask for the stream gets the outcome as JSON, once the turn ends. */
+export async function streamTurn(request: IncomingMessage, response: ServerResponse, turn: ActiveTurn, status = 200) {
+  if (response.destroyed) return;
+  if (request.headers.accept !== chatStreamType) {
+    const outcome = await turn.finished;
+    if (response.destroyed) return;
+    if ('error' in outcome) fail(response, outcome.error);
+    else reply(response, outcome.result, status);
+    return;
+  }
+  response.writeHead(status, { 'content-type': chatStreamType + '; charset=utf-8', 'cache-control': 'no-store' });
+  response.flushHeaders();
+  const write = (event: ChatEvent<unknown>) => {
+    if (response.destroyed) return;
+    if (response.writableLength > 2_000_000) { response.destroy(); return; }
+    response.write(JSON.stringify(event) + '\n');
+  };
+  for (const event of turn.snapshot()) write(event);
+  if (turn.outcome) { write(outcomeEvent(turn.outcome)); response.end(); return; }
+  const closed = Promise.withResolvers<undefined>();
+  const close = () => closed.resolve(undefined);
+  response.once('close', close);
+  turn.listeners.add(write);
+  const heartbeat = setInterval(() => write({ type: 'heartbeat' }), 15_000).unref();
+  try {
+    const outcome = await Promise.race([turn.finished, closed.promise]);
+    if (outcome) write(outcomeEvent(outcome));
+  } finally {
+    clearInterval(heartbeat);
+    turn.listeners.delete(write);
+    response.removeListener('close', close);
+    response.end();
   }
 }

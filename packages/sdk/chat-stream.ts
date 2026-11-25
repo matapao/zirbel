@@ -2,6 +2,16 @@ import type { ActivityEntry, Note } from './contracts.ts';
 
 export type { ActivityEntry } from './contracts.ts';
 export const chatStreamType = 'application/x-ndjson';
+/** The message a continued turn sends, once its editor ended while it ran. */
+export const CONTINUE_TEXT = 'The previous turn was interrupted. Continue where you left off.';
+/** What a thread has, as the editor reports it: the turn running in it, or the one interrupted when its editor ended;
+ *  before a project, its messages so far and the project its first game became. */
+export type ThreadView = {
+  turn?: { id: string; name: string; text: string; noteId?: string; startedAt: string };
+  interrupted?: { text: string; harness: string; noteId?: string };
+  conversation?: { role: 'creator' | 'assistant'; text: string; usage?: Note['usage'] }[];
+  project?: string;
+};
 type ChatPhase = 'running' | 'responding' | 'validating';
 export type ActionField = {
   name: string;
