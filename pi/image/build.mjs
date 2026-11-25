@@ -62,9 +62,9 @@ async function osImage() {
   const archive = image + '.xz';
   const published = (await (await fetch(os.url + '.sha256')).text()).split(/\s/)[0];
   console.log(`Downloading ${path.basename(os.url)} (${os.release_date})`);
-  const response = await fetch(os.url);
-  if (!response.ok) throw new Error(`The download failed: HTTP ${response.status}.`);
-  await fs.promises.writeFile(archive, response.body);
+  // Over HTTPS only, redirects included, and kept only once it matches its published hash.
+  execFileSync('curl', ['--fail', '--location', '--proto', '=https', '--silent', '--show-error', '--output', archive, os.url],
+    { stdio: 'inherit' });
   if (sha256(archive) !== published) throw new Error('The download does not match its published SHA-256.');
   execFileSync('xz', ['--decompress', '--keep', '--force', archive], { stdio: 'inherit' });
   if (sha256(image) !== os.extract_sha256) throw new Error("The image does not match Raspberry Pi's list.");
