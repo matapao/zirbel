@@ -5,6 +5,12 @@ import { type HarnessAction } from '../sdk/chat-stream.ts';
 import { TurnLog } from '../sdk/activity.ts';
 import type { modelPicker } from './model-picker.ts';
 
+/** What /api/health says of a box (box mode): its switches, whether harnesses can run on it, and its memory. */
+export type BoxHealth = {
+  harnesses: boolean; externalMcp: boolean; onboarded: boolean; setupRequested: boolean;
+  canRunHarnesses: boolean; harnessesUnavailable?: string; memoryMB: number; name: string;
+};
+
 export type Proposal = { id: string; label: string; baseRevision: string };
 export type Preview = { proposal: Proposal; preview: { scene?: Scene; game?: GameDocument; assets: Asset[] } };
 export type Box = { x: number; y: number; width: number; height: number };
@@ -46,7 +52,7 @@ export const ws = {
   projectCards: [] as ProjectCard[],
   modelControl: undefined as ReturnType<typeof modelPicker> | undefined,
   registerObjects: true,
-  health: { mcp: false } as { mcp: boolean; chat?: boolean },
+  health: { mcp: false } as { mcp: boolean; chat?: boolean; box?: BoxHealth },
   view: { x: 0, y: 0, zoom: 1, grid: false, tool: 'select' as 'select' | 'pan' },
   playtest: undefined as { id: string; link: string } | undefined,
   playtestKey: undefined as string | undefined,

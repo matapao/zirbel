@@ -6,7 +6,8 @@ import { $, api, attempt, inform } from './editor-ui.ts';
 import { arrangeDesk, mountDesk } from './desk.ts';
 import { renderViewport, scheduleDraw, setupScene } from './viewport.ts';
 import { renderObjects, renderRegisteredInspector, setupObjects } from './inspector.ts';
-import { refreshProcessors, renderChips, renderProcessors, setupActivity } from './chat.ts';
+import { openHarnesses, refreshProcessors, renderChips, renderProcessors, setupActivity } from './chat.ts';
+import { openOnboarding, setBoxHooks } from './box.ts';
 import { renderSuggestions } from './chat-settings.ts';
 import { renderMessages } from './thread.ts';
 import { renderEditing, setupEditing } from './edit-mode.ts';
@@ -312,6 +313,9 @@ try {
   if (!ws.project) await syncThread().catch((error: Error) => inform(error.message, true));
   await refreshProcessors();
   window.addEventListener('focus', () => { if (!chatBusy()) void refreshProcessors(); });
+  setBoxHooks({ openHarnesses, refreshProcessors });
+  // A box opened before its first-run choice was made asks how to use it.
+  if (ws.health.box && !ws.health.box.onboarded) openOnboarding();
 } catch (error) {
   $('host-status-text').textContent = 'Workspace unavailable';
   $('host-status').classList.add('failed');
