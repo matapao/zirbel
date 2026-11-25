@@ -4,7 +4,7 @@
 // external MCP access. What the hosts differ in by design is compared by its form only: harnesses run in the Node
 // editor alone, and only it draws a pairing link's QR code.
 import assert from 'node:assert/strict';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -16,13 +16,16 @@ const lan = Object.values(networkInterfaces()).flat().find((item) => item && !it
   /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(item.address))?.address;
 if (!lan) console.log('# No private network address: the box contract runs from loopback only.');
 
+/** A box on loopback, with the file a setup request leaves for the box's setup service. */
 async function startBox(t: TestContext, command: string[]) {
   const root = tempDir(t, 'zirbel-box-');
   const account = join(root, 'account');
   mkdirSync(account, { mode: 0o700 });
+  mkdirSync(join(root, 'run'));
+  const wake = join(root, 'run', 'request');
   const { ready } = launch(t, command, ['--data', join(root, 'data'), '--port', '0', '--box'],
-    (line) => typeof line.editor === 'string' ? line.editor : undefined, { ZIRBEL_ACCOUNT_DIR: account });
-  return ready;
+    (line) => typeof line.editor === 'string' ? line.editor : undefined, { ZIRBEL_ACCOUNT_DIR: account, ZIRBEL_SETUP_REQUEST: wake });
+  return { editor: await ready, wake };
 }
 
 type Step = { status: number; body: unknown; location?: string | null; cookie?: string; headers?: Record<string, string | null> };
@@ -80,7 +83,7 @@ function normalizer() {
     headers: step.headers ?? null, ...(step.status >= 300 ? {} : { body: walk(step.body) }) });
 }
 
-async function session(base: string) {
+async function session(base: string, wake: string) {
   const steps: Step[] = [];
   const box = client(base);
   const record = async (step: Promise<Step>) => { const result = await step; steps.push(result); return result; };
@@ -98,6 +101,9 @@ async function session(base: string) {
   await record(box('PUT', '/api/box/settings', { json: { externalMcp: 'yes' } }));
   await record(box('PUT', '/api/box/settings', { raw: '{"onboarded":null}' }));
   await record(box('POST', '/api/box/setup', { json: { requested: true }, origin: true }));
+  // The request wakes the box's setup service through its file.
+  assert.ok(existsSync(wake), 'a setup request leaves the file that wakes the setup service');
+  rmSync(wake);
   await record(box('POST', '/api/box/setup', { json: {}, origin: true }));
   await record(box('POST', '/api/pairing', { json: {}, origin: true }));
   await record(box('GET', '/pair'));
@@ -134,6 +140,7 @@ async function session(base: string) {
   await record(device('DELETE', '/api/pairing/devices/NOT_AN_ID', { session: first, origin: true }));
   await record(device('POST', '/api/box/setup', { json: { requested: false }, session: first, origin: true }));
   await record(device('POST', '/api/box/setup', { json: { requested: true }, session: first, origin: true }));
+  assert.ok(existsSync(wake), 'a paired device’s setup request wakes the setup service too');
   await record(device('POST', '/turn-mcp', { json: ping, session: first, origin: true }));
 
   // External MCP access: off, the network gets no MCP; on, a project grant opens it.
@@ -158,8 +165,8 @@ const results = new Map<string, Step[]>();
 
 for (const host of hosts) {
   test(host.name + ' box runs the scripted session', async (t) => {
-    const editor = await startBox(t, host.command);
-    const steps = await session(editor);
+    const { editor, wake } = await startBox(t, host.command);
+    const steps = await session(editor, wake);
     for (const [index, step] of steps.entries()) assert.ok(step.status < 500, 'step ' + index + ': ' + step.status + ' ' + JSON.stringify(step.body));
     results.set(host.name, steps);
   });
@@ -176,7 +183,7 @@ if (hosts.length > 1) {
 }
 
 test('the Go box runs no harnesses and says why', { skip: !hosts.some((host) => host.name === 'go') }, async (t) => {
-  const editor = await startBox(t, hosts.find((host) => host.name === 'go')!.command);
+  const { editor } = await startBox(t, hosts.find((host) => host.name === 'go')!.command);
   const box = client(editor);
   const status = (await box('GET', '/api/box/status')).body as { capabilities: { harnesses: boolean }; settings: { harnesses: boolean } };
   assert.equal(status.capabilities.harnesses, false);
