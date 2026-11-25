@@ -1,7 +1,7 @@
 // A Zirbel box (box mode): pairing with one-time codes, claiming a box no device has paired with, the paired devices'
 // sessions, the box's switches and what is off not running, the network it answers, and its door.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { request, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -139,7 +139,9 @@ function outgoing() {
 function boxFor(t: Parameters<typeof tempDir>[0], capabilities = roomy, turns = 0): BoxContext {
   const folder = tempDir(t, 'zirbel-box-');
   const settings = new BoxSettings(folder, capabilities);
+  mkdirSync(join(folder, 'run'));
   return { pairing: new Pairing(folder), settings, capabilities, port: () => 80, turns: () => turns, qr: async () => 'data:image/png;base64,',
+    setupRequest: join(folder, 'run', 'request'),
     harnesses: new BoxHarnesses(() => { throw new Error('No harness in this test'); }, () => settings.read().harnesses) };
 }
 const at = (path: string) => new URL(path, 'http://zirbel.local');
@@ -193,7 +195,7 @@ test('the door lets the box itself in, sends an unpaired device to pairing, and 
   assert.equal(box.pairing.count, 2);
 });
 
-test('the box API: codes, devices, switches and setup, each from whom it may come', async (t) => {
+test('the box API: codes, devices, switches and setup (which wakes the setup service), each from whom it may come', async (t) => {
   const box = boxFor(t, { arch: 'arm', memoryMB: 924, harnesses: false });
   const local = { local: true };
   const paired = { local: false, device: 'device' };
@@ -215,6 +217,8 @@ test('the box API: codes, devices, switches and setup, each from whom it may com
   assert.equal((await call(paired, 'PUT', { resource: 'box', pathID: 'settings' }, { externalMcp: true, onboarded: true })).json.externalMcp, true);
   await assert.rejects(call(paired, 'PUT', { resource: 'box', pathID: 'settings' }, { setupRequested: false }), /Unrecognized key/);
   assert.equal((await call(paired, 'POST', { resource: 'box', pathID: 'setup' }, { requested: true })).json.setupRequested, true);
+  // The request wakes the setup service through its file, which the service removes when it is done.
+  assert.ok(existsSync(box.setupRequest));
   await assert.rejects(call(paired, 'POST', { resource: 'box', pathID: 'setup' }, { requested: false }), /Only the box itself/);
   assert.equal((await call(local, 'POST', { resource: 'box', pathID: 'setup' }, { requested: false })).json.setupRequested, false);
 

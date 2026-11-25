@@ -2,6 +2,7 @@
 // box itself behaves as without box mode. A request from elsewhere must come from the box's own network, and then
 // needs a paired device's session for everything but /pair, where a device pairs with a one-time code (or claims a
 // box no device has paired with yet), and /mcp while external MCP access is on, which checks its own project grant.
+import { writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BlockList } from 'node:net';
 import { hostname, networkInterfaces } from 'node:os';
@@ -15,6 +16,8 @@ export type BoxContext = {
   pairing: Pairing; settings: BoxSettings; harnesses: BoxHarnesses; capabilities: Capabilities;
   /** The editor's port, the turns running now, and a pairing link as a QR code. */
   port: () => number; turns: () => number; qr: (link: string) => Promise<string>;
+  /** The file that wakes the box's setup service (pi/setup): a systemd path unit starts the service when it appears. */
+  setupRequest: string;
 };
 /** Who sent a request: the box itself, or a paired device by its id (none for a project grant's /mcp request). */
 export type Access = { local: boolean; device?: string };
@@ -22,6 +25,13 @@ export type Access = { local: boolean; device?: string };
 /** The box's name on its network: its host name, in mDNS's .local. */
 export function boxName() {
   return (hostname().split('.')[0] || 'zirbel').toLowerCase() + '.local';
+}
+
+/** Wakes the setup service, which removes the file when it is done. A box without the service has no folder for it,
+ *  and the request stays in the settings only. */
+function wakeSetup(file: string) {
+  try { writeFileSync(file, '', { mode: 0o660 }); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
 }
 
 const interfaces = () => Object.values(networkInterfaces()).flatMap((items) => items ?? []).filter((item) => !item.internal);
@@ -199,6 +209,7 @@ export async function boxRequest(box: BoxContext, request: IncomingMessage, resp
     const { requested } = setupInput.parse(await body(request, 1024));
     if (!requested && !access.local) throw new ZirbelError(403, 'Only the box itself ends its setup.');
     box.settings.update({ setupRequested: requested });
+    if (requested) wakeSetup(box.setupRequest);
     reply(response, { setupRequested: requested });
     return true;
   }

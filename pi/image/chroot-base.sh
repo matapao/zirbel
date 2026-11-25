@@ -59,6 +59,8 @@ systemctl disable userconfig.service >/dev/null 2>&1 || true
 rm -f /etc/ssh/sshd_config.d/rename_user.conf
 
 echo zirbel > /etc/hostname
+# cloud-init would set the host name again on first boot; it keeps this one.
+printf '# A Zirbel box keeps its host name, zirbel (zirbel.local).\npreserve_hostname: true\n' > /etc/cloud/cloud.cfg.d/90-zirbel.cfg
 sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tzirbel/' /etc/hosts
 grep -q '^127\.0\.1\.1' /etc/hosts || printf '127.0.1.1\tzirbel\n' >> /etc/hosts
 # Wi-Fi stays blocked until a country is set; the kernel takes it at boot, and the saved block is cleared.
