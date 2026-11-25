@@ -8,6 +8,7 @@ import { agentAccessDialog, assetDialog, historyDialog, sharingDialog } from './
 import { openGame } from './library.ts';
 import { openChatSettings } from './chat-settings.ts';
 import { openHarnesses } from './chat.ts';
+import { boxSetupDialog } from './box-setup.ts';
 
 let assets: { readonly open: boolean } | undefined;
 
@@ -53,7 +54,7 @@ function moreMenu(): MenuItem[] {
       items.push({ label: 'Agent access…', run: () => attempt(() => agentAccessDialog(project.id, project.title)) });
   }
   if (ws.health.chat) items.push({ label: 'Harnesses', run: () => attempt(openHarnesses) });
-  items.push({ label: 'Settings', run: openChatSettings });
+  items.push({ label: 'Set up a Zirbel box…', run: boxSetupDialog }, { label: 'Settings', run: openChatSettings });
   return items;
 }
 

@@ -1,0 +1,11 @@
+#!/bin/sh
+# NetworkManager's dispatcher runs this on each network event; installed as /etc/NetworkManager/dispatcher.d/90-zirbel-setup,
+# owned by root, mode 0755. When the box loses its network, the setup service decides whether it needs setting up
+# again: it waits a minute for a network, and exits if one comes back.
+[ "$CONNECTION_ID" = zirbel-setup ] && exit 0
+case "$2" in
+  down) ;;
+  connectivity-change) [ "$CONNECTIVITY_STATE" = NONE ] || exit 0 ;;
+  *) exit 0 ;;
+esac
+exec systemctl start --no-block zirbel-setup.service

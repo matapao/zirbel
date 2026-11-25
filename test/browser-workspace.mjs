@@ -133,14 +133,20 @@ test('the game switcher and the ⋯ menu work from the keyboard', { timeout: 30_
   await menu.waitFor();
   assert.equal(await focused(), 'History');
   const items = await menu.getByRole('menuitem').allTextContents();
-  assert.deepEqual(items, ['History', 'Export project', 'Open game in a new window', 'Harnesses', 'Settings']);
+  assert.deepEqual(items, ['History', 'Export project', 'Open game in a new window', 'Harnesses', 'Set up a Zirbel box…', 'Settings']);
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('ArrowUp');
-  assert.equal(await focused(), 'Harnesses');
+  assert.equal(await focused(), 'Set up a Zirbel box…');
   await page.keyboard.press('Home');
   await page.keyboard.press('Enter');
   await page.getByRole('heading', { name: 'History' }).waitFor();
   await page.getByText('Current branch').waitFor();
+  await page.keyboard.press('Escape');
+  // Setting up a box: over Bluetooth where the browser has it, else by the box's setup hotspot.
+  await more.click();
+  await menu.getByRole('menuitem', { name: 'Set up a Zirbel box…' }).click();
+  await page.getByRole('heading', { name: 'Set up a Zirbel box' }).waitFor();
+  assert.match(await page.locator('#dialog-body').innerText(), /Find the box|can’t use Bluetooth/);
   await page.keyboard.press('Escape');
 
   await switcher.focus();

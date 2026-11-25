@@ -16,6 +16,7 @@ archived-preview-projects/
 removed-projects/
 test-results/
 playwright-report/
+__pycache__/
 host/bin/
 host/webfiles/web/*
 !host/webfiles/web/.gitkeep
