@@ -1,23 +1,20 @@
 import type { Processor, SignInStatus } from '../server/processors.ts';
 import { action, api, attempt, dialog, el, link, openDialog } from './editor-ui.ts';
 
-/** notes: a plain word for a harness's card, by its id. */
-type AccountChoices = { providers: Processor[]; notice: string; notes?: Record<string, string> };
+type AccountChoices = { providers: Processor[]; notice: string };
 
 export function showHarnessAccounts(refresh: () => Promise<AccountChoices>) {
   const body = openDialog('Harnesses');
   const reload = async () => {
-    const { providers, notice, notes = {} } = await refresh();
-    if (dialog.open && body.isConnected) render(providers, notice, notes);
+    const { providers, notice } = await refresh();
+    if (dialog.open && body.isConnected) render(providers, notice);
   };
-  function render(providers: Processor[], notice: string, notes: Record<string, string>) {
+  function render(providers: Processor[], notice: string) {
     body.replaceChildren();
     for (const processor of providers) {
       const item = el('section', undefined, 'item');
       const detail = processor.ready !== false ? 'Ready' : processor.signIn ? 'Signed out' : processor.detail ?? 'Unavailable';
       item.append(el('strong', processor.name), el('small', detail));
-      const note = Object.hasOwn(notes, processor.id) ? notes[processor.id] : undefined;
-      if (note && processor.signIn) item.append(el('p', note));
       if (processor.signIn) item.append(action('Sign in to ' + processor.name, () => signInHarness(item, processor, reload), 'primary'));
       body.append(item);
     }
@@ -61,6 +58,8 @@ async function signInHarness(item: HTMLElement, processor: Processor, reload: ()
       status.textContent = 'Open this page and enter this code:';
       userCode = el('strong', state.userCode, 'sign-in-code');
       controls.insertBefore(userCode, form);
+      // Nothing comes back to paste: the sign-in finishes on that page.
+      form.hidden = true;
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
     if (!dialog.open || !item.isConnected) return;
@@ -68,5 +67,6 @@ async function signInHarness(item: HTMLElement, processor: Processor, reload: ()
   }
   if (!dialog.open || !item.isConnected) return;
   if (state.status === 'complete') await reload();
-  else controls.replaceChildren(el('p', 'Sign-in did not complete.'), action('Try again', () => signInHarness(item, processor, reload)));
+  else controls.replaceChildren(el('p', state.error ? 'Sign-in did not complete: ' + state.error : 'Sign-in did not complete.'),
+    action('Try again', () => signInHarness(item, processor, reload)));
 }

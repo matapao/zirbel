@@ -196,7 +196,9 @@ export class LocalHarnesses implements Processors {
     await Promise.allSettled(runs.map((run) => run.cleaned ?? run.done));
   }
 
-  async beginSignIn(id: string) {
+  /** elsewhere: the person's browser is on another device, as on a box's paired device, so a harness that would wait on
+   *  this computer's own browser signs in with a page and a one-time code instead. */
+  async beginSignIn(id: string, { elsewhere = false }: { elsewhere?: boolean } = {}) {
     const { name, runtime } = this.get(id);
     const current = this.signIns.get(id);
     if (current?.state.status === 'pending') return current.state;
@@ -205,17 +207,24 @@ export class LocalHarnesses implements Processors {
     if (!processor?.signIn) throw new ZirbelError(409, name + ' is unavailable.');
     const pending = this.signIns.get(id);
     if (pending?.state.status === 'pending') return pending.state;
-    const login = runtime.login();
+    const login = runtime.login({ elsewhere });
     if ('error' in login) throw new ZirbelError(502, 'Could not start sign-in for ' + name + '.');
     const session: ActiveSignIn = { login, state: { status: 'pending' } };
     this.signIns.set(id, session);
     void login.url.then((address) => {
       const url = address && URL.parse(address);
       if (session.state.status === 'pending' && url && url.protocol === 'https:' && !url.username && !url.password)
-        session.state = { status: 'pending', url: url.href };
+        session.state = { ...session.state, url: url.href };
     }).catch(() => { /* The harness may use a code-only sign-in. */ });
-    void login.done.then(({ ok }) => {
-      session.state = { status: ok ? 'complete' : 'failed' };
+    // The one-time code to enter on that page, for a sign-in from another device that shows one.
+    void login.userCode?.then((code) => {
+      if (session.state.status === 'pending' && code && /^[A-Z0-9-]{4,32}$/i.test(code))
+        session.state = { ...session.state, userCode: code };
+    }).catch(() => { /* It ended without one; done says how. */ });
+    void login.done.then(({ ok, error }) => {
+      // Why it didn't complete, as the sign-in says it: the harness's words, or the library's when it ended it.
+      const reason = !ok && error ? error.replace(/[\p{Cc}\p{Cf}]+/gu, ' ').trim().slice(0, 300) : '';
+      session.state = ok ? { status: 'complete' } : { status: 'failed', ...(reason ? { error: reason } : {}) };
       this.checked = undefined;
     }, () => { session.state = { status: 'failed' }; this.checked = undefined; });
     return session.state;

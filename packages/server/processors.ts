@@ -34,7 +34,8 @@ export class TurnEndedError extends ZirbelError {
 }
 
 /** A sign-in as it goes: the page to open, and for one finished on another device, the code to enter there. */
-export type SignInStatus = { status: 'pending' | 'complete' | 'failed'; url?: string; userCode?: string };
+/** A sign-in's state: its page and, from another device, the code to enter there; why it failed, when it says. */
+export type SignInStatus = { status: 'pending' | 'complete' | 'failed'; url?: string; userCode?: string; error?: string };
 /** Where a turn works: its thread's folder, the session it continues, its MCP servers and what else it may read. */
 type TurnPlace = { cwd: string; sessionId?: string; resume: boolean; mcpServers?: McpServerSpec[]; readable?: string[] };
 export type ProcessorRun = {

@@ -9,12 +9,6 @@ export function setBoxHooks(given: typeof hooks) { Object.assign(hooks, given); 
 
 /** Under this much memory a harness turn may run the box out of it (a 2 GB board reports a little less). */
 const ROOMY_MB = 1536;
-/** Sign-ins a harness can't finish from another device yet, by harness id. */
-export const REMOTE_SIGN_IN: Record<string, string> = {
-  codex: 'Codex can’t finish signing in from another device yet. Sign in to Codex in a terminal on the box, or use Claude Code.',
-};
-/** Whether this page is open on the box itself rather than on a paired device. */
-export const onTheBox = () => ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
 
 type Settings = Pick<BoxHealth, 'harnesses' | 'externalMcp' | 'onboarded' | 'setupRequested'>;
 type Device = { id: string; label: string; createdAt: string; lastSeen: string; current: boolean };

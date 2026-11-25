@@ -9,7 +9,7 @@ import { scheduleDraw } from './viewport.ts';
 import { type Processor } from '../server/processors.ts';
 import { modelPicker } from './model-picker.ts';
 import { showHarnessAccounts } from './harness-accounts.ts';
-import { onTheBox, openBoxSettings, REMOTE_SIGN_IN } from './box.ts';
+import { openBoxSettings } from './box.ts';
 import { renderSuggestions } from './chat-settings.ts';
 import { renderMessages, setupThread } from './thread.ts';
 import { setThreadOpen } from './desk.ts';
@@ -161,7 +161,7 @@ export async function refreshProcessors() {
 
 export const openHarnesses = () => showHarnessAccounts(async () => {
   await refreshProcessors();
-  return { providers, notice: processorNotice, notes: ws.health.box && !onTheBox() ? REMOTE_SIGN_IN : {} };
+  return { providers, notice: processorNotice };
 });
 
 export function setupActivity() {

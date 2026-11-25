@@ -205,6 +205,33 @@ test('standalone harnesses use existing sign-in and enable chat after provider s
   assert.equal((await harnesses.list()).find(({ id }) => id === 'claude')?.ready, true);
 });
 
+test('a sign-in from another device shows its page and one-time code, and says why when it fails', async (t) => {
+  const { LocalHarnesses } = await import('../packages/server/local-harnesses.ts');
+  const { root } = install(t);
+  const asked: unknown[] = [];
+  let finish!: (result: { ok: boolean; error?: string }) => void;
+  const harnesses = new LocalHarnesses(root, [{ id: 'codex', name: 'Codex', runtime: {
+    kind: 'codex', async health() { return { ok: false, checkedAt: Date.now(), detail: 'Signed out', fix: 'login' as const }; },
+    run() { throw new Error('Unexpected run'); },
+    login(options) {
+      asked.push(options);
+      return { url: Promise.resolve('https://auth.openai.com/codex/device'), userCode: Promise.resolve('9AAA-AA999'),
+        done: new Promise((resolve) => { finish = resolve; }), cancel() {}, sendCode() { throw new Error('No code to paste'); } };
+    },
+  } }]);
+  await harnesses.beginSignIn('codex', { elsewhere: true });
+  assert.deepEqual(asked, [{ elsewhere: true }]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(harnesses.signInStatus('codex'),
+    { status: 'pending', url: 'https://auth.openai.com/codex/device', userCode: '9AAA-AA999' });
+  // The reason as the sign-in gives it, in one line, whoever ended it.
+  finish({ ok: false, error: 'Device code sign-in is not enabled\nfor this workspace' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(harnesses.signInStatus('codex'), { status: 'failed', error: 'Device code sign-in is not enabled for this workspace' });
+  await harnesses.beginSignIn('codex');
+  assert.deepEqual(asked, [{ elsewhere: true }, { elsewhere: false }]);
+});
+
 /** A streaming request and its response, with every frame the response is sent. */
 function streamed(t: TestContext) {
   const request = new IncomingMessage(new Socket());
