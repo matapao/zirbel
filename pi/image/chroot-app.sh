@@ -19,6 +19,9 @@ chown -R root:root /opt/zirbel
 chmod -R u=rwX,go=rX /opt/zirbel
 install -m 644 "$B/files/zirbel.avahi.xml" /etc/avahi/services/zirbel.service
 install -m 644 "$B/files/wifi-awake.conf" /etc/NetworkManager/conf.d/90-zirbel-wifi-awake.conf
+install -m 755 "$B/files/zirbel-report.sh" /usr/local/sbin/zirbel-report
+install -m 644 "$B/files/zirbel-report.service" "$B/files/zirbel-report.timer" /etc/systemd/system/
+systemctl enable zirbel-report.timer >/dev/null 2>&1
 systemctl enable zirbel.service >/dev/null 2>&1
 [ ! -d "$B/setup" ] || bash "$B/setup-install.sh" "$B/setup" "$1"
 # The installed program starts in box mode, as `zirbel`, with throwaway folders, and answers its health check on

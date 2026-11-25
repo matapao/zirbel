@@ -1,0 +1,10 @@
+# The box's report: half a minute after boot, then every two minutes.
+[Unit]
+Description=Zirbel box report on the boot partition, every two minutes
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target

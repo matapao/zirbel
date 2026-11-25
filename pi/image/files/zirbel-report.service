@@ -1,0 +1,7 @@
+# Writes the box's report to its boot partition (/usr/local/sbin/zirbel-report), for a box that can't be reached.
+[Unit]
+Description=Zirbel box report on the boot partition
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/zirbel-report
