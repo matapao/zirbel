@@ -29,6 +29,9 @@ type Box struct {
 	settings     *BoxSettings
 	capabilities boxCapabilities
 	port         func() int
+	// setupRequest is the file that wakes the box's setup service (pi/setup):
+	// a systemd path unit starts the service when it appears.
+	setupRequest string
 }
 
 func NewBox(account string, port func() int) (*Box, error) {
@@ -41,7 +44,20 @@ func NewBox(account string, port func() int) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Box{pairing: pairing, settings: settings, capabilities: detectCapabilities(), port: port}, nil
+	return &Box{pairing: pairing, settings: settings, capabilities: detectCapabilities(), port: port,
+		setupRequest: env("ZIRBEL_SETUP_REQUEST", "/run/zirbel-setup/request")}, nil
+}
+
+// wakeSetup wakes the setup service, which removes the file when it is done. A
+// box without the service has no folder for it, and the request stays in the
+// settings only.
+func wakeSetup(file string) error {
+	// The service's group reads the file; its path is the box's own configuration.
+	err := os.WriteFile(file, nil, 0o660) // #nosec G304 G306 G703 -- a fixed path from the box's environment, empty
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 // boxAccess is who sent a request: the box itself, or a paired device by its
@@ -169,11 +185,11 @@ func (b *Box) door(w http.ResponseWriter, r *http.Request) (access boxAccess, ha
 		}
 		return access, false, nil
 	}
-	device, err := b.pairing.Session(r.Header.Get("cookie"))
+	device, paired, err := b.pairing.Session(r.Header.Get("cookie"))
 	if err != nil {
 		return access, false, err
 	}
-	if device != nil {
+	if paired {
 		return boxAccess{device: device.ID}, false, nil
 	}
 	if r.Method == http.MethodGet && !strings.HasPrefix(pathname, "/api/") {
@@ -192,11 +208,11 @@ func redirect(w http.ResponseWriter, location string) {
 // pairRoute is the pairing page: a code, or while no device has ever paired, a one-click claim.
 func (b *Box) pairRoute(w http.ResponseWriter, r *http.Request, address string) error {
 	if r.Method == http.MethodGet {
-		device, err := b.pairing.Session(r.Header.Get("cookie"))
+		_, paired, err := b.pairing.Session(r.Header.Get("cookie"))
 		if err != nil {
 			return err
 		}
-		if device != nil {
+		if paired {
 			redirect(w, "/")
 			return nil
 		}
@@ -307,7 +323,7 @@ input{width:100%;box-sizing:border-box;letter-spacing:.15em;text-transform:upper
 	w.WriteHeader(status)
 	// Not XSS: every value in the page is escaped, and the page has its own CSP.
 	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
-	_, _ = w.Write([]byte(html))
+	_, _ = w.Write([]byte(html)) // #nosec G705 -- every value in the page is escaped, and the page has its own CSP
 }
 
 // boxSettingsView is what a paired device or the box itself sees of the switches.
@@ -437,6 +453,11 @@ func (b *Box) setup(w http.ResponseWriter, r *http.Request, access boxAccess) er
 	}
 	if _, err := b.settings.Update(func(next *boxSwitches) { next.SetupRequested = *input.Requested }); err != nil {
 		return err
+	}
+	if *input.Requested {
+		if err := wakeSetup(b.setupRequest); err != nil {
+			return err
+		}
 	}
 	reply(w, http.StatusOK, map[string]bool{"setupRequested": *input.Requested})
 	return nil

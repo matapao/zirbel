@@ -30,10 +30,10 @@ func testPairing(t *testing.T) (*Pairing, *time.Time) {
 }
 
 func TestCodesReadAsTypedAndDevicesAsTheirBrowsers(t *testing.T) {
-	for input, want := range map[string]string{"abcd-efgh": "ABCD-EFGH", " abcd efgh ": "ABCD-EFGH", "ABCDEFGH": "ABCD-EFGH",
-		"OIL0-0110": "0110-0110", "ABCD-EFG": "", "ABCD-EFGU": "", "": ""} {
-		if got := normalizeCode(input); got != want {
-			t.Errorf("normalizeCode(%q) = %q, want %q", input, got, want)
+	for _, typed := range [][2]string{{"abcd-efgh", "ABCD-EFGH"}, {" abcd efgh ", "ABCD-EFGH"}, {"ABCDEFGH", "ABCD-EFGH"},
+		{"OIL0-0110", "0110-0110"}, {"ABCD-EFG", ""}, {"ABCD-EFGU", ""}, {"", ""}} {
+		if got := normalizeCode(typed[0]); got != typed[1] {
+			t.Errorf("normalizeCode(%q) = %q, want %q", typed[0], got, typed[1])
 		}
 	}
 	for agent, want := range map[string]string{
@@ -70,13 +70,16 @@ func TestACodePairsOneDeviceOnceWithinTenMinutes(t *testing.T) {
 	if _, err := pairing.Redeem(late, "192.168.1.9", "node"); statusOf(err) != http.StatusForbidden {
 		t.Fatalf("an expired code pairs: %v", err)
 	}
-	device, err := pairing.Session("zirbel_session=" + token)
-	if err != nil || device == nil || device.Label != "A browser" {
+	device, paired, err := pairing.Session("zirbel_session=" + token)
+	if err != nil || !paired || device.Label != "A browser" {
 		t.Fatalf("the paired session: %+v %v", device, err)
+	}
+	if _, paired, _ := pairing.Session("zirbel_session=" + strings.Repeat("b", 43)); paired {
+		t.Fatal("an unknown session is paired")
 	}
 	// Its last use is written down at most once a minute.
 	*at = at.Add(2 * time.Minute)
-	if seen, _ := pairing.Session("zirbel_session=" + token); seen.LastSeen != isoTime(*at) {
+	if seen, _, _ := pairing.Session("zirbel_session=" + token); seen.LastSeen != isoTime(*at) {
 		t.Fatalf("last seen %s, want %s", seen.LastSeen, isoTime(*at))
 	}
 	info, err := os.Stat(pairing.file)
@@ -170,7 +173,7 @@ func TestTheDoorLetsInTheBoxAndItsNetworkOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	open := func(method, path, from string) (*httptest.ResponseRecorder, boxAccess, bool, error) {
-		r := httptest.NewRequest(method, path, http.NoBody)
+		r := httptest.NewRequestWithContext(t.Context(), method, path, http.NoBody)
 		r.RemoteAddr = from
 		w := httptest.NewRecorder()
 		access, handled, err := box.door(w, r)
@@ -203,9 +206,33 @@ func TestTheDoorLetsInTheBoxAndItsNetworkOnly(t *testing.T) {
 	}
 }
 
+func TestASetupRequestWakesTheSetupServiceWhereThereIsOne(t *testing.T) {
+	folder := t.TempDir()
+	if err := wakeSetup(filepath.Join(folder, "no-service", "request")); err != nil {
+		t.Fatalf("a box without the setup service fails the request: %v", err)
+	}
+	box, err := NewBox(folder, func() int { return 80 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	box.setupRequest = filepath.Join(folder, "request")
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/box/setup", strings.NewReader(`{"requested":true}`))
+	r.Header.Set("content-type", "application/json")
+	w := httptest.NewRecorder()
+	if err := box.setup(w, r, boxAccess{local: true}); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("setup: %d %v", w.Code, err)
+	}
+	if _, err := os.Stat(box.setupRequest); err != nil {
+		t.Fatalf("the request wakes no service: %v", err)
+	}
+	if switches, _ := box.settings.Read(); !switches.SetupRequested {
+		t.Fatal("the request is not kept in the settings")
+	}
+}
+
 func TestThePairingFormTakesOnlyItsFields(t *testing.T) {
 	read := func(contentType, body string) error {
-		r := httptest.NewRequest("POST", "/pair", strings.NewReader(body))
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/pair", strings.NewReader(body))
 		r.Header.Set("content-type", contentType)
 		_, err := pairForm(r)
 		return err

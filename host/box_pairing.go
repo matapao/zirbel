@@ -236,18 +236,18 @@ func (p *Pairing) pair(agent string) (string, error) {
 	return token, p.write(store.Devices, true)
 }
 
-// Session is the paired device a Cookie header's session belongs to, if any;
-// its last use is noted.
-func (p *Pairing) Session(cookie string) (*pairedDevice, error) {
+// Session is the paired device a Cookie header's session belongs to, and
+// whether there is one; its last use is noted.
+func (p *Pairing) Session(cookie string) (device pairedDevice, paired bool, err error) {
 	token := sessionToken(cookie)
 	if token == "" {
-		return nil, nil
+		return device, false, nil
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	store, err := p.read()
 	if err != nil {
-		return nil, err
+		return device, false, err
 	}
 	hash := sha256.Sum256([]byte(token))
 	found := -1
@@ -258,16 +258,15 @@ func (p *Pairing) Session(cookie string) (*pairedDevice, error) {
 		}
 	}
 	if found < 0 {
-		return nil, nil
+		return device, false, nil
 	}
 	if seen, err := time.Parse(time.RFC3339Nano, store.Devices[found].LastSeen); err != nil || p.now().Sub(seen) > seenEvery {
 		store.Devices[found].LastSeen = isoTime(p.now())
 		if err := p.write(store.Devices, true); err != nil {
-			return nil, err
+			return device, false, err
 		}
 	}
-	device := store.Devices[found]
-	return &device, nil
+	return store.Devices[found], true, nil
 }
 
 // pairedView is a device as the API shows it: no token hash.
