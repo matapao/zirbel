@@ -301,6 +301,8 @@ input{width:100%;box-sizing:border-box;letter-spacing:.15em;text-transform:upper
 	header := w.Header()
 	header.Set("content-type", "text/html; charset=utf-8")
 	header.Set("cache-control", "no-store")
+	// A form posted under no-referrer carries the origin "null": this page's own forms carry its origin.
+	header.Set("referrer-policy", "same-origin")
 	header.Set("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 	w.WriteHeader(status)
 	// Not XSS: every value in the page is escaped, and the page has its own CSP.

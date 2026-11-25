@@ -25,7 +25,9 @@ async function startBox(t: TestContext, command: string[]) {
   return ready;
 }
 
-type Step = { status: number; body: unknown; location?: string | null; cookie?: string };
+type Step = { status: number; body: unknown; location?: string | null; cookie?: string; headers?: Record<string, string | null> };
+/** The pairing page's headers, which a browser's form and its Origin depend on. */
+const PAGE_HEADERS = ['content-type', 'cache-control', 'referrer-policy', 'content-security-policy', 'x-content-type-options'];
 type Call = { json?: unknown; form?: Record<string, string>; origin?: boolean; session?: string; raw?: string };
 
 function client(base: string) {
@@ -39,7 +41,10 @@ function client(base: string) {
     const text = await response.text();
     let parsed: unknown = text;
     try { parsed = JSON.parse(text); } catch { /* the pairing page */ }
-    return { status: response.status, body: parsed, location: response.headers.get('location'), cookie: response.headers.getSetCookie()[0] };
+    const page = path.startsWith('/pair') && response.status < 300
+      ? Object.fromEntries(PAGE_HEADERS.map((name) => [name, response.headers.get(name)])) : undefined;
+    return { status: response.status, body: parsed, location: response.headers.get('location'), cookie: response.headers.getSetCookie()[0],
+      headers: page };
   };
 }
 
@@ -72,7 +77,7 @@ function normalizer() {
     return value;
   };
   return (step: Step) => ({ status: step.status, location: step.location ?? null, cookie: step.cookie ? text(step.cookie) : null,
-    ...(step.status >= 300 ? {} : { body: walk(step.body) }) });
+    headers: step.headers ?? null, ...(step.status >= 300 ? {} : { body: walk(step.body) }) });
 }
 
 async function session(base: string) {

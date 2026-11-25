@@ -158,13 +158,16 @@ export async function openBoxSettings() {
   }
   const pairing = el('div');
   body.append(action('Pair another device', async () => {
-    const code = await api<{ code: string; url: string; expiresAt: string; qr: string }>('pairing', {});
+    // The native host draws no QR code: its link and code are enough.
+    const code = await api<{ code: string; url: string; expiresAt: string; qr: string | null }>('pairing', {});
     const picture = el('img');
-    picture.src = code.qr;
-    picture.alt = 'QR code for ' + code.url;
-    picture.width = 180;
-    pairing.replaceChildren(el('p', 'On the other device, open the link or scan the code, then enter this code if asked:'),
-      el('strong', code.code, 'sign-in-code'), link(code.url, code.url, true), picture,
+    if (code.qr) {
+      picture.src = code.qr;
+      picture.alt = 'QR code for ' + code.url;
+      picture.width = 180;
+    }
+    pairing.replaceChildren(el('p', 'On the other device, open the link' + (code.qr ? ' or scan the code' : '') + ', then enter this code if asked:'),
+      el('strong', code.code, 'sign-in-code'), link(code.url, code.url, true), ...(code.qr ? [picture] : []),
       el('small', 'Valid until ' + new Date(code.expiresAt).toLocaleTimeString() + ', for one device.'));
   }), pairing, el('h3', 'Network'), action('Change Wi-Fi', async () => {
     await api('box/setup', { requested: true });

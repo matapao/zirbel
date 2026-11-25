@@ -70,6 +70,8 @@ The Go host is one static binary with the player files embedded, so it needs no 
 
 Box settings has two switches. **Harnesses** runs Claude Code or Codex on the box. It starts on where they are made for the system and the box has at least 2 GB of memory, and while it is off nothing of theirs runs. **External MCP access** lets agents elsewhere on the network use the box's games at `/mcp`, each with a project grant from the game's Agent access. It starts off, and while off `/mcp` answers only the box itself.
 
+The Go host takes `--box` too (`zirbel-host --box --port 80`), with the same pairing, switches and files. It runs no harnesses, so it suits a box whose system Claude Code and Codex are not made for, such as a 32-bit board: agents on your own computer use its games over MCP, and it shows a pairing link and code without a QR code.
+
 ## Security
 
 The editor and MCP listen only on loopback, except in box mode, where devices on the box's network reach the editor only once paired, and `/mcp` only while external MCP access is on and with a project grant. A box serves plain HTTP, so pair devices and use it only on a network you trust. Keep those ports and the data dir private. Game JS runs in an opaque-origin iframe, so only play games from creators you trust. LAN room links are secrets. End the room to revoke its link. Behind Docker port publishing every client looks private, so expose the port only on a trusted network. Report vulnerabilities privately through the repository's security advisories.
