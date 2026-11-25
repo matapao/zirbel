@@ -3,12 +3,12 @@ import { chatStreamType, type ChatEvent, type ChatUpdate } from '../sdk/chat-str
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 let statusTimer: number;
 
-function request(path: string, payload?: unknown, accept = 'application/json', signal?: AbortSignal) {
+function request(path: string, payload?: unknown, accept = 'application/json', signal?: AbortSignal, method?: 'PUT' | 'DELETE') {
   const headers = new Headers({ accept });
   if (payload !== undefined) headers.set('content-type', 'application/json');
   return fetch(new URL('api/' + path, document.baseURI), {
     redirect: 'error',
-    method: payload === undefined ? 'GET' : 'POST',
+    method: method ?? (payload === undefined ? 'GET' : 'POST'),
     headers,
     signal,
     body: payload === undefined ? undefined : JSON.stringify(payload),
@@ -23,6 +23,11 @@ async function json<T>(response: Response): Promise<T> {
 
 export async function api<T = unknown>(path: string, payload?: unknown, signal?: AbortSignal): Promise<T> {
   return json(await request(path, payload, undefined, signal));
+}
+
+/** A PUT or DELETE request to the editor's API. */
+export async function apiWith<T = unknown>(method: 'PUT' | 'DELETE', path: string, payload?: unknown): Promise<T> {
+  return json(await request(path, payload, undefined, undefined, method));
 }
 
 export async function chatApi<T>(path: string, payload: unknown, update: (event: ChatUpdate) => void, signal: AbortSignal): Promise<T> {

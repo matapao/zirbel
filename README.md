@@ -64,9 +64,15 @@ node --max-semi-space-size=2 dist/server.mjs --host-only --lan ...   # same flag
 
 The Go host is one static binary with the player files embedded, so it needs no Node. A release plays only on a host built from the same runtime. For Docker, build first, then `docker build -f Dockerfile.host .` (Go) or `docker build .` (Node), and run the image with `-p 4174:4174 -v DIR:/data --lan --player-host HOST`.
 
+### A Zirbel box
+
+`node dist/server.mjs --box --port 80` (or `ZIRBEL_BOX=1`) runs the editor for a small computer on your network, such as a single-board computer without a screen, reached at `http://<hostname>.local`. The box itself uses the editor as on a laptop. Other devices on its network must pair first, at `/pair`: with a one-time code from a device already paired or from the box's own setup, valid for ten minutes, or, while no device has ever paired, by claiming the box with one click. Paired devices and their sessions are kept hashed in the account folder, and can be removed in Box settings.
+
+Box settings has two switches. **Harnesses** runs Claude Code or Codex on the box. It starts on where they are made for the system and the box has at least 2 GB of memory, and while it is off nothing of theirs runs. **External MCP access** lets agents elsewhere on the network use the box's games at `/mcp`, each with a project grant from the game's Agent access. It starts off, and while off `/mcp` answers only the box itself.
+
 ## Security
 
-The editor and MCP listen only on loopback. Keep those ports and the data dir private. Game JS runs in an opaque-origin iframe, so only play games from creators you trust. LAN room links are secrets. End the room to revoke its link. Behind Docker port publishing every client looks private, so expose the port only on a trusted network. Report vulnerabilities privately through the repository's security advisories.
+The editor and MCP listen only on loopback, except in box mode, where devices on the box's network reach the editor only once paired, and `/mcp` only while external MCP access is on and with a project grant. A box serves plain HTTP, so pair devices and use it only on a network you trust. Keep those ports and the data dir private. Game JS runs in an opaque-origin iframe, so only play games from creators you trust. LAN room links are secrets. End the room to revoke its link. Behind Docker port publishing every client looks private, so expose the port only on a trusted network. Report vulnerabilities privately through the repository's security advisories.
 
 ## License
 

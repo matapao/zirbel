@@ -51,17 +51,25 @@ const reserveSchema = z.strictObject({
   role: z.enum(['player', 'spectator']),
 });
 
+/** Where the player is reached from: on a box, also by its network names (hosts), from addresses on its own network
+ *  (network), and embedded by the editor on the host the device reached it by (editorOrigins by host name). */
+export type PlayerReach = { hosts: () => string[]; network: (address: string) => boolean };
+
 export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, Buffer>, addons: Addons, config: {
-  port: number; bind: string; lan: boolean; editorOrigins?: string[]; extraHosts?: string[];
+  port: number; bind: string; lan: boolean; editorOrigins?: string[] | ((host: string) => string[]); extraHosts?: string[];
+  reach?: PlayerReach;
 }) {
   let port: number;
-  const hosts = () => ['localhost', '127.0.0.1', ...(config.lan ? lanAddresses() : []), ...(config.extraHosts ?? [])];
+  const hosts = () => config.reach?.hosts() ??
+    ['localhost', '127.0.0.1', ...(config.lan ? lanAddresses() : []), ...(config.extraHosts ?? [])];
+  const editorOrigins = (host: string) =>
+    typeof config.editorOrigins === 'function' ? config.editorOrigins(host) : config.editorOrigins ?? [];
   const allows = (room: { access: 'local' | 'lan' }) => {
     if (room.access !== (config.lan ? 'lan' : 'local'))
       throw new ZirbelError(404, 'This room is unavailable on this listener.');
   };
-  const isLocalNetwork = (request: IncomingMessage) => !config.lan ||
-    privateAddress.test(request.socket.remoteAddress?.replace(/^::ffff:/, '') ?? '');
+  const isLocalNetwork = (request: IncomingMessage) => config.reach ? config.reach.network(request.socket.remoteAddress ?? '')
+    : !config.lan || privateAddress.test(request.socket.remoteAddress?.replace(/^::ffff:/, '') ?? '');
   const runtimeFile = (name: string) => {
     const file = runtime.get(name);
     if (!file) throw new ZirbelError(404, 'Runtime file does not exist.');
@@ -79,14 +87,14 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
       if (!roomId) throw new ZirbelError(404, 'Open the invitation link from the host.');
       const room = rooms.get(roomId);
       allows(room);
-      const frame = config.lan ? "'none'" : ["'self'", ...(config.editorOrigins ?? [])].join(' ');
+      const frame = config.lan ? "'none'" : ["'self'", ...editorOrigins(url.hostname)].join(' ');
       const playerPolicy = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" +
         // The LAN player is plain HTTP by design, so its room socket is ws: on this same host.
         // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
         " connect-src 'self' ws://" + url.host + "; frame-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors " + frame;
       response.setHeader('content-security-policy', playerPolicy);
       if (route === 'game' && request.method === 'GET' && room.release.game && parts[0] === room.documentKey) {
-        const ancestors = ["'self'", ...(config.editorOrigins ?? [])].join(' ');
+        const ancestors = ["'self'", ...editorOrigins(url.hostname)].join(' ');
         const page = cachedGamePage(room, url.origin, ancestors);
         // A file opened on its own stays in the game's sandbox too.
         response.setHeader('content-security-policy', page.policy);

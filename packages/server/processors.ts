@@ -33,7 +33,8 @@ export class TurnEndedError extends ZirbelError {
   constructor(name: string, readonly ended: TurnEnded) { super(502, endedText(name, ended)); }
 }
 
-export type SignInStatus = { status: 'pending' | 'complete' | 'failed'; url?: string };
+/** A sign-in as it goes: the page to open, and for one finished on another device, the code to enter there. */
+export type SignInStatus = { status: 'pending' | 'complete' | 'failed'; url?: string; userCode?: string };
 /** Where a turn works: its thread's folder, the session it continues, its MCP servers and what else it may read. */
 type TurnPlace = { cwd: string; sessionId?: string; resume: boolean; mcpServers?: McpServerSpec[]; readable?: string[] };
 export type ProcessorRun = {
@@ -52,7 +53,8 @@ export interface Processors {
   list(): Promise<Processor[]>;
   start(id: string, prompt: string, run?: ProcessorRun): Promise<ProcessorReply>;
   settings?(id: string, model?: string, signal?: AbortSignal): Promise<ModelSettings>;
-  beginSignIn?(id: string): Promise<SignInStatus>;
+  /** elsewhere: the person signs in from another device than the one the harness runs on. */
+  beginSignIn?(id: string, options?: { elsewhere?: boolean }): Promise<SignInStatus>;
   signInStatus?(id: string): SignInStatus;
   submitSignInCode?(id: string, code: string): SignInStatus;
   /** Removes what the harness keeps of a session that ran in cwd: once the thread it belonged to is gone. */
