@@ -26,12 +26,15 @@ import { importReleases, Players, readLanHost, readPort, stopOnSignal } from './
 import { localHarnesses } from './local-harnesses.ts';
 import { modelId, processorId, type Processors } from './processors.ts';
 import { Mcp, stdioMcp } from './mcp.ts';
+import { Pairing } from './box-pairing.ts';
+import { boxDoor, boxHealth, boxHosts, boxRequest, onBoxNetwork, type Access, type BoxContext } from './box-routes.ts';
+import { boxCapabilities, BoxHarnesses, BoxSettings } from './box-settings.ts';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     data: { type: 'string' }, port: { type: 'string' }, 'player-port': { type: 'string' },
-    'lan': { type: 'boolean' }, 'enable-mcp': { type: 'boolean' },
+    'lan': { type: 'boolean' }, 'enable-mcp': { type: 'boolean' }, box: { type: 'boolean' },
     'player-host': { type: 'string' },
     release: { type: 'string', multiple: true }, import: { type: 'string', multiple: true },
     open: { type: 'boolean' }, help: { type: 'boolean' },
@@ -42,6 +45,8 @@ const port = readPort(values.port ?? process.env.ZIRBEL_PORT ?? '4173');
 const playerPort = readPort(values['player-port'] ?? process.env.ZIRBEL_PLAYER_PORT ?? '4174');
 const lanHost = readLanHost(values['player-host'] ?? process.env.ZIRBEL_LAN_HOST);
 const enableMcp = values['enable-mcp'] || process.env.ZIRBEL_ENABLE_MCP === '1';
+// A box: the editor on its own network for paired devices (box-routes.ts), with the box's switches.
+const boxMode = values.box || process.env.ZIRBEL_BOX === '1';
 const boot = newId();
 
 function browser(url: string) {
@@ -108,9 +113,20 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
 
   try {
     projects.archiveLegacyPreviews();
-    const harnesses = harnessesFor(root);
-    closeHarnesses = async () => { await harnesses.close?.(); };
+    let editorPort = port;
     const chat = new ChatRuns();
+    let box: BoxContext | undefined;
+    let harnesses: Processors;
+    if (boxMode) {
+      // On a box, the harnesses are built only while their switch is on, and only where they are made for the system.
+      const capabilities = boxCapabilities();
+      const settings = new BoxSettings(join(account, 'box'), capabilities);
+      const switched = new BoxHarnesses(() => harnessesFor(root), () => capabilities.harnesses && settings.read().harnesses);
+      harnesses = switched;
+      box = { pairing: new Pairing(join(account, 'box')), settings, harnesses: switched, capabilities, port: () => editorPort,
+        turns: () => chat.count, qr: (link) => QRCode.toDataURL(link, { margin: 2, width: 240 }) };
+    } else harnesses = harnessesFor(root);
+    closeHarnesses = async () => { await harnesses.close?.(); };
     closeTurns = () => chat.close();
     const activity = new ActivityStore(root);
     const threads = new Threads(join(account, 'turns'), root);
@@ -124,13 +140,24 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
     const mcp = new Mcp(projects);
     importReleases(releases, values.import ?? []);
 
-    let editorPort = port;
     const editorOrigin = () => 'http://127.0.0.1:' + editorPort;
+    const mcpOn = () => enableMcp || Boolean(box?.settings.read().externalMcp);
+    /** The editor's origin on the host name a device reached the box by, and on loopback. */
+    const boxEditorOrigins = (host: string) => ['http://' + host + (editorPort === 80 ? '' : ':' + editorPort), editorOrigin(),
+      'http://localhost:' + editorPort];
     async function editorRequest(request: IncomingMessage, response: ServerResponse) {
       secure(response);
       try {
-        const url = requestUrl(request, editorPort, ['127.0.0.1', 'localhost']);
-        const mcpRequest = enableMcp && url.pathname === '/mcp';
+        const url = requestUrl(request, editorPort, box ? boxHosts() : ['127.0.0.1', 'localhost']);
+        let access: Access = { local: true };
+        if (box) {
+          const opened = await boxDoor(box, request, response, url);
+          if (!opened) return;
+          access = opened;
+        }
+        // On a box, the player is reached on the host name the editor was.
+        const playerHost = box ? url.hostname : undefined;
+        const mcpRequest = mcpOn() && url.pathname === '/mcp';
         const turnRequest = url.pathname === '/turn-mcp';
         // MCP authenticates every request by project grant. Node HTTP clients can send
         // Sec-Fetch-Mode without Origin; browsers supplying Origin must still match this editor.
@@ -158,7 +185,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
         const [, prefix, resource, pathID, action, tail, ...extra] = url.pathname.split('/');
         if (prefix !== 'api') {
           if (method !== 'GET') throw new ZirbelError(404, 'Route does not exist.');
-          const playerOrigin = 'http://127.0.0.1:' + local.port;
+          const playerOrigin = 'http://' + (playerHost ?? '127.0.0.1') + ':' + local.port;
           response.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src " + playerOrigin + "; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
           staticFile(response, webRoot, url.pathname === '/' ? 'index.html' : url.pathname.slice(1));
           return;
@@ -166,8 +193,8 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
         if (extra.length) throw new ZirbelError(404, 'Route does not exist.');
         if (resource === 'health' && method === 'GET') {
           // chat: this editor runs harness chat and keeps each turn's activity; turns: how many are running.
-          reply(response, { status: 'ok', pid: process.pid, boot, editor: editorOrigin(), mcp: Boolean(enableMcp), chat: true,
-            turns: chat.count });
+          reply(response, { status: 'ok', pid: process.pid, boot, editor: editorOrigin(), mcp: mcpOn(), chat: true,
+            turns: chat.count, ...(box ? { box: boxHealth(box) } : {}) });
           return;
         }
         if (resource === 'processors' && harnesses) {
@@ -190,10 +217,14 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
             checkOrigin(request, true);
             const processor = processorId.parse(pathID);
             const { code } = z.strictObject({ code: z.string().trim().min(1).max(2048).regex(/^\S+$/).optional() }).parse(await body(request));
-            reply(response, code === undefined ? await harnesses.beginSignIn(processor) : harnesses.submitSignInCode(processor, code));
+            // On a box, a paired device signs in from elsewhere than the box the harness runs on.
+            reply(response, code === undefined ? await harnesses.beginSignIn(processor, { elsewhere: !access.local })
+              : harnesses.submitSignInCode(processor, code));
             return;
           }
         }
+        if (box && (resource === 'pairing' || resource === 'box') &&
+          await boxRequest(box, request, response, access, { resource, pathID, action, tail })) return;
         if (resource === 'chat' && await chatRequest(chatContext, request, response, pathID, action, tail)) return;
         if (resource === 'projects') {
           if (!pathID && method === 'GET') { reply(response, projects.summaries()); return; }
@@ -285,7 +316,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
             if (!lanHost && !lanAddresses().length) throw new ZirbelError(409, 'Connect the host to your local network to share a development room.');
             await players.startLan();
             projects.read(projectId);
-            reply(response, await players.describe(rooms.create(release, false, 'lan', true)), 201);
+            reply(response, await players.describe(rooms.create(release, false, 'lan', true), playerHost), 201);
             return;
           }
           if (action === 'playtest' && method === 'POST') {
@@ -293,9 +324,9 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
             if (input.baseRevision) assertCurrent(projects.read(projectId), input.branch, input.baseRevision);
             // Draft play stays on loopback. Delivery rights are checked when sharing or exporting.
             const release = releases.package(projectId, input.branch, shareDefaults, false, true, input.proposalId);
-            reply(response, players.solo(release), 201); return;
+            reply(response, players.solo(release, playerHost), 201); return;
           }
-          if (action === 'grants' && enableMcp) {
+          if (action === 'grants' && mcpOn()) {
             if (method === 'POST' && !tail) {
               const input = z.strictObject({ write: z.boolean(), hours: z.number() }).parse(await body(request));
               reply(response, mcp.create({ ...input, projectId }), 201); return;
@@ -309,7 +340,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
           if (method === 'POST' && pathID && action === 'play') {
             const release = releases.read(pathID);
             if (!release.manifest.permissions.play) throw new ZirbelError(403, 'The creator has disabled play for this release.');
-            reply(response, players.solo(release), 201); return;
+            reply(response, players.solo(release, playerHost), 201); return;
           }
           if (method === 'GET' && pathID && action === 'download') {
             const release = releases.read(pathID);
@@ -323,9 +354,9 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
           if (method === 'GET' && !pathID) { reply(response, rooms.list()); return; }
           if (method === 'POST' && !pathID) {
             const input = z.strictObject({ releaseId: id, lan: z.boolean() }).parse(await body(request));
-            reply(response, await players.start(input.releaseId, input.lan), 201); return;
+            reply(response, await players.start(input.releaseId, input.lan, playerHost), 201); return;
           }
-          if (method === 'GET' && pathID && action === 'link') { reply(response, await players.describe(rooms.get(pathID))); return; }
+          if (method === 'GET' && pathID && action === 'link') { reply(response, await players.describe(rooms.get(pathID), playerHost)); return; }
           if (method === 'POST' && pathID && action === 'close') { rooms.close(pathID); reply(response, {}); return; }
         }
         throw new ZirbelError(404, 'Editor route does not exist.');
@@ -342,14 +373,19 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
     });
     editor.requestTimeout = 25_000;
     editor.headersTimeout = 10_000;
-    editorPort = await listen(editor, port, '127.0.0.1');
-    const local = await players.openLocal(0, [editorOrigin(), 'http://localhost:' + editorPort, ]);
+    editorPort = await listen(editor, port, box ? '::' : '127.0.0.1').catch((error: NodeJS.ErrnoException) => {
+      // A box without IPv6 listens on IPv4 alone.
+      if (!box || error.code !== 'EAFNOSUPPORT') throw error;
+      return listen(editor!, port, '0.0.0.0');
+    });
+    const local = box ? await players.openLocal(0, boxEditorOrigins, { hosts: boxHosts, network: onBoxNetwork })
+      : await players.openLocal(0, [editorOrigin(), 'http://localhost:' + editorPort, ]);
     if (values.lan) await players.startLan();
     for (const id of values.release ?? []) console.log(JSON.stringify(await players.start(id, Boolean(values.lan))));
     const info = { pid: process.pid, port: editorPort, boot, editor: true };
     atomicWrite(serviceFile, JSON.stringify(info));
     console.log(JSON.stringify({ pid: process.pid, data: root, editor: editorOrigin(),
-      player: 'http://127.0.0.1:' + local.port, mcp: Boolean(enableMcp) }));
+      player: 'http://127.0.0.1:' + local.port, mcp: mcpOn(), ...(box ? { box: true } : {}) }));
     if (values.open) browser(editorOrigin() + '/');
     process.once('SIGINT', () => void stopOnSignal(stop));
     process.once('SIGTERM', () => void stopOnSignal(stop));
@@ -360,7 +396,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
 /** Runs the command line: the editor, `--help` or the stdio MCP bridge. */
 export async function main(options: EditorOptions = {}) {
   try {
-    if (values.help) console.log('Zirbel\n  start: [--data DIR] [--port PORT] [--open] [--enable-mcp]\n  host: --host-only [--lan] [--player-port PORT] [--player-host HOST] [--import FILE] [--release ID]\n  mcp: set ZIRBEL_MCP_TOKEN and optional ZIRBEL_MCP_URL');
+    if (values.help) console.log('Zirbel\n  start: [--data DIR] [--port PORT] [--open] [--enable-mcp] [--box]\n  host: --host-only [--lan] [--player-port PORT] [--player-host HOST] [--import FILE] [--release ID]\n  mcp: set ZIRBEL_MCP_TOKEN and optional ZIRBEL_MCP_URL');
     else if (positionals[0] === 'mcp') await stdioMcp(process.env.ZIRBEL_MCP_URL ?? 'http://127.0.0.1:4173/mcp', z.string().min(1).parse(process.env.ZIRBEL_MCP_TOKEN));
     else if (positionals.length) throw new Error('Unknown command. Use --help.');
     else await start(options);

@@ -1,20 +1,23 @@
 import type { Processor, SignInStatus } from '../server/processors.ts';
 import { action, api, attempt, dialog, el, link, openDialog } from './editor-ui.ts';
 
-type AccountChoices = { providers: Processor[]; notice: string };
+/** notes: a plain word for a harness's card, by its id. */
+type AccountChoices = { providers: Processor[]; notice: string; notes?: Record<string, string> };
 
 export function showHarnessAccounts(refresh: () => Promise<AccountChoices>) {
   const body = openDialog('Harnesses');
   const reload = async () => {
-    const { providers, notice } = await refresh();
-    if (dialog.open && body.isConnected) render(providers, notice);
+    const { providers, notice, notes = {} } = await refresh();
+    if (dialog.open && body.isConnected) render(providers, notice, notes);
   };
-  function render(providers: Processor[], notice: string) {
+  function render(providers: Processor[], notice: string, notes: Record<string, string>) {
     body.replaceChildren();
     for (const processor of providers) {
       const item = el('section', undefined, 'item');
       const detail = processor.ready !== false ? 'Ready' : processor.signIn ? 'Signed out' : processor.detail ?? 'Unavailable';
       item.append(el('strong', processor.name), el('small', detail));
+      const note = Object.hasOwn(notes, processor.id) ? notes[processor.id] : undefined;
+      if (note && processor.signIn) item.append(el('p', note));
       if (processor.signIn) item.append(action('Sign in to ' + processor.name, () => signInHarness(item, processor, reload), 'primary'));
       body.append(item);
     }
@@ -47,10 +50,17 @@ async function signInHarness(item: HTMLElement, processor: Processor, reload: ()
   });
   controls.append(form);
   let signInLink: HTMLAnchorElement | undefined;
+  let userCode: HTMLElement | undefined;
   while (state.status === 'pending' && dialog.open && item.isConnected) {
     if (state.url && !signInLink) {
       signInLink = link('Open ' + processor.name + ' sign-in', state.url, true);
       controls.insertBefore(signInLink, form);
+    }
+    // A sign-in finished on another device: its page, and the one-time code to enter there.
+    if (state.userCode && !userCode) {
+      status.textContent = 'Open this page and enter this code:';
+      userCode = el('strong', state.userCode, 'sign-in-code');
+      controls.insertBefore(userCode, form);
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
     if (!dialog.open || !item.isConnected) return;

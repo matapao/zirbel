@@ -8,6 +8,7 @@ import { agentAccessDialog, assetDialog, historyDialog, sharingDialog } from './
 import { openGame } from './library.ts';
 import { openChatSettings } from './chat-settings.ts';
 import { openHarnesses } from './chat.ts';
+import { openBoxSettings } from './box.ts';
 
 let assets: { readonly open: boolean } | undefined;
 
@@ -53,6 +54,7 @@ function moreMenu(): MenuItem[] {
       items.push({ label: 'Agent access…', run: () => attempt(() => agentAccessDialog(project.id, project.title)) });
   }
   if (ws.health.chat) items.push({ label: 'Harnesses', run: () => attempt(openHarnesses) });
+  if (ws.health.box) items.push({ label: 'Box settings…', run: () => attempt(openBoxSettings) });
   items.push({ label: 'Settings', run: openChatSettings });
   return items;
 }

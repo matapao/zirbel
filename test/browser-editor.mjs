@@ -38,7 +38,8 @@ export function answer(res, result, extra = {}) {
   res.end(JSON.stringify({ task: 'fixture-turn', stopReason: 'end_turn', ...extra, text, ...(files ? { files } : {}) }));
 }
 
-export async function openEditor(t, run) {
+/** extra: arguments the editor starts with besides its port and data folder, such as ['--box']. */
+export async function openEditor(t, run, extra = []) {
   const data = await mkdtemp(join(tmpdir(), 'zirbel-browser-'));
   // The threads' working folders, apart from the projects as the account folder is.
   const account = await mkdtemp(join(tmpdir(), 'zirbel-browser-account-'));
@@ -73,6 +74,7 @@ export async function openEditor(t, run) {
         port,
         '--data',
         data,
+        ...extra,
       ],
       {
         env: { ...process.env, FIXTURE_HARNESS_URL: 'http://127.0.0.1:' + harnessHost.address().port, ZIRBEL_ACCOUNT_DIR: account },
@@ -105,7 +107,8 @@ export async function openEditor(t, run) {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(editor);
-  await page.getByRole('textbox', { name: 'Describe a game' }).waitFor();
+  // By its id: a dialog the workspace opens as it starts (a box's first-run choice) leaves the page behind it inert.
+  await page.locator('#prompt').waitFor();
   return { page, editor, data, account, errors, browser, restart };
 }
 

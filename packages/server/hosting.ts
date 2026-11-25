@@ -4,7 +4,7 @@ import { ZirbelError } from '../core/projects.ts';
 import type { Releases } from '../core/releases.ts';
 import type { Room, Rooms } from '../core/rooms.ts';
 import { lanAddresses, roomLink } from './http.ts';
-import { playerListener } from './player-listener.ts';
+import { playerListener, type PlayerReach } from './player-listener.ts';
 import { threeAddons, type Addons } from './runtime-files.ts';
 
 // Shared by the editor and the headless host. Keep editor-only code (harnesses,
@@ -69,8 +69,16 @@ export class Players {
 
   get lanHost() { return this.options.lanHost; }
 
-  async openLocal(port: number, editorOrigins: string[] = []) {
-    this.local = await playerListener(this.rooms, this.releases.runtime, this.addons, { bind: '127.0.0.1', lan: false, port, editorOrigins });
+  /** The player for the editor's own playtests: on loopback, or on a box (reach) on every interface, for the box's
+   *  network, embedded by the editor on the host name the device reached it by. */
+  async openLocal(port: number, editorOrigins: string[] | ((host: string) => string[]) = [], reach?: PlayerReach) {
+    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons,
+      { bind, lan: false, port, editorOrigins, reach });
+    // A box without IPv6 listens on IPv4 alone.
+    this.local = await (reach ? open('::').catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'EAFNOSUPPORT') throw error;
+      return open('0.0.0.0');
+    }) : open('127.0.0.1'));
     return this.local;
   }
 
@@ -83,30 +91,31 @@ export class Players {
     return this.startingLan;
   }
 
-  async describe(room: Room) {
+  /** host: the name the editor was reached by, on a box; loopback otherwise. */
+  async describe(room: Room, host = '127.0.0.1') {
     const shared = room.access === 'lan';
     const active = shared ? this.lan : this.local;
     if (!active) throw new ZirbelError(409, 'The player service is unavailable.');
     const address = shared ? this.options.lanHost ?? lanAddresses()[0] : undefined;
-    const link = roomLink('http://' + (address ?? '127.0.0.1') + ':' + active.port, room);
+    const link = roomLink('http://' + (address ?? host) + ':' + active.port, room);
     return { ...room.summary(), lan: Boolean(address), link,
-      localLink: roomLink('http://127.0.0.1:' + active.port, room),
+      localLink: roomLink('http://' + host + ':' + active.port, room),
       qr: shared && address && this.options.qr ? await this.options.qr(link) : null,
     };
   }
 
-  solo(release: Release) {
+  solo(release: Release, host = '127.0.0.1') {
     if (!this.local) throw new ZirbelError(503, 'The player service is unavailable.');
     const room = this.rooms.create(release, true);
-    return { link: roomLink('http://127.0.0.1:' + this.local.port, room), id: room.id };
+    return { link: roomLink('http://' + host + ':' + this.local.port, room), id: room.id };
   }
 
-  async start(releaseId: string, share: boolean) {
+  async start(releaseId: string, share: boolean, host?: string) {
     const release = this.releases.read(releaseId);
     if (!release.manifest.permissions.play)
       throw new ZirbelError(403, 'The creator has disabled play for this release.');
     if (share) await this.startLan();
-    return this.describe(this.rooms.create(release, false, share ? 'lan' : 'local'));
+    return this.describe(this.rooms.create(release, false, share ? 'lan' : 'local'), host);
   }
 
   async close() {

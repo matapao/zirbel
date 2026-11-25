@@ -9,6 +9,7 @@ import { scheduleDraw } from './viewport.ts';
 import { type Processor } from '../server/processors.ts';
 import { modelPicker } from './model-picker.ts';
 import { showHarnessAccounts } from './harness-accounts.ts';
+import { onTheBox, openBoxSettings, REMOTE_SIGN_IN } from './box.ts';
 import { renderSuggestions } from './chat-settings.ts';
 import { renderMessages, setupThread } from './thread.ts';
 import { setThreadOpen } from './desk.ts';
@@ -106,7 +107,12 @@ function renderNotice(ready: boolean) {
   const notice = $('chat-notice');
   notice.hidden = ready || processorNotice === 'Checking harnesses…';
   notice.replaceChildren(ws.health.chat ? processorNotice : 'This editor has no harness chat. Import a game folder, or open a game from the Library.');
-  if (!notice.hidden && ws.health.chat) notice.append(' ', action('Harnesses', () => openHarnesses(), 'link'));
+  if (notice.hidden || !ws.health.chat) return;
+  if (ws.health.box && !ws.health.box.harnesses) {
+    notice.replaceChildren('Harnesses are off on this box.', ' ', action('Box settings', () => openBoxSettings(), 'link'));
+    return;
+  }
+  notice.append(' ', action('Harnesses', () => openHarnesses(), 'link'));
 }
 
 export function renderProcessors() {
@@ -155,7 +161,7 @@ export async function refreshProcessors() {
 
 export const openHarnesses = () => showHarnessAccounts(async () => {
   await refreshProcessors();
-  return { providers, notice: processorNotice };
+  return { providers, notice: processorNotice, notes: ws.health.box && !onTheBox() ? REMOTE_SIGN_IN : {} };
 });
 
 export function setupActivity() {
