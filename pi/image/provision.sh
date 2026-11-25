@@ -1,6 +1,9 @@
 #!/bin/bash
 # Runs in a privileged Debian container on an arm64 host (build.mjs starts it): grows a Raspberry Pi OS image to SIZE,
-# mounts its two partitions and runs a stage's script in a chroot of its root file system, natively, with no emulation.
+# mounts its two partitions and runs a stage's script in a chroot of its root file system (natively for an arm64
+# image, through Docker's emulation for an armhf one). The app stage, the last, then shrinks the image to what it holds
+# and a little room: first boot grows it to the card (cmdline.txt's resize), so the image stays as small to write as it
+# can be.
 #   provision.sh IMAGE SIZE STAGE [ARG...]   STAGE is base or app (chroot-base.sh, chroot-app.sh)
 set -euo pipefail
 IMAGE=$1 SIZE=$2 STAGE=$3
@@ -59,4 +62,19 @@ chroot "$ROOT" /bin/bash "/tmp/zirbel-build/chroot-$STAGE.sh" "$@" || status=$?
 rm -rf "$WORK" "$ROOT/usr/sbin/policy-rc.d"
 rm -f "$RESOLV"
 [ -e "$RESOLV.zirbel-build" ] || [ -L "$RESOLV.zirbel-build" ] && mv "$RESOLV.zirbel-build" "$RESOLV"
-exit $status
+[ $status -eq 0 ] && [ "$STAGE" = app ] || exit $status
+
+# The root file system to its smallest and 512 MB of room, its partition to the file system, the image to the partition.
+for mount in dev/pts dev proc sys boot/firmware ""; do mountpoint -q "$ROOT/$mount" && umount "$ROOT/$mount"; done
+e2fsck -fy "$DISK" >/dev/null || [ $? -le 1 ]
+resize2fs -M "$DISK" >/dev/null 2>&1
+blocks() { dumpe2fs -h "$DISK" 2>/dev/null | awk -F': *' -v f="$1" '$1 == f { print $2 }'; }
+SECTORS=$(( ($(blocks 'Block count') * $(blocks 'Block size') + 512 * 1024 * 1024) / 512 ))
+SECTORS=$(( (SECTORS + 2047) / 2048 * 2048 ))
+resize2fs "$DISK" "${SECTORS}s" >/dev/null 2>&1
+losetup -d "$BOOT" "$DISK"
+trap - EXIT
+echo "start=$ROOT_START, size=$SECTORS" | sfdisk --no-reread --no-tell-kernel -N 2 "$IMAGE" >/dev/null
+truncate -s $(( (ROOT_START + SECTORS) * 512 )) "$IMAGE"
+sfdisk --dump "$IMAGE" | grep "^$IMAGE"
+echo "Image: $(( (ROOT_START + SECTORS) * 512 / 1024 / 1024 )) MiB, its root file system grows to the card on first boot."

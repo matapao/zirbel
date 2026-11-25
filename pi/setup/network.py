@@ -247,6 +247,18 @@ RULES = """table inet zirbel_setup {{
 """
 
 
+def local_address() -> str | None:
+    """The box's IPv4 address on the network it reaches the rest of the world by (no packet goes out to learn it)."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect(("192.0.2.1", 9))  # TEST-NET-1: only a route is looked up
+            return probe.getsockname()[0]
+        except OSError:
+            return None
+
+
 def firewall(iface: str | None, port: int = 8081) -> None:
     """The hotspot's rules while it runs, on its interface alone; None takes them away."""
     subprocess.run(["nft", "delete", "table", "inet", "zirbel_setup"], capture_output=True, check=False)

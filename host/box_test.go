@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -209,6 +210,10 @@ func TestTheDoorLetsInTheBoxAndItsNetworkOnly(t *testing.T) {
 	if !isLoopbackAddress("::ffff:127.0.0.1") || onBoxNetwork("8.8.8.8") || !onBoxNetwork("fe80::1") ||
 		hostnameOf("[FE80::1]:8080") != "[fe80::1]" || hostnameOf("Zirbel.local") != "zirbel.local" || hostnameOf("10.0.0.2:80") != "10.0.0.2" {
 		t.Fatal("addresses and host names are not read as Node reads them")
+	}
+	// Its plain name too, for devices that resolve it through the home router rather than .local.
+	if !slices.Contains(boxHosts(), strings.TrimSuffix(boxName(), ".local")) {
+		t.Fatal("the box's plain name is not a host it answers to")
 	}
 	if info, err := os.Stat(filepath.Join(account, "box")); err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("the box folder is not private: %v %v", info, err)

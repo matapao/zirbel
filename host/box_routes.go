@@ -97,9 +97,10 @@ func boxNetworks() []*net.IPNet {
 }
 
 // boxHosts are the host names a request may reach the box by: loopback, its
-// .local name and its addresses now, IPv6 bracketed.
+// .local and plain names and its addresses now, IPv6 bracketed.
 func boxHosts() []string {
-	hosts := []string{"localhost", "127.0.0.1", "[::1]", boxName()}
+	// Its plain name too, which many home routers resolve for the devices that can't look up .local names.
+	hosts := []string{"localhost", "127.0.0.1", "[::1]", boxName(), strings.TrimSuffix(boxName(), ".local")}
 	for _, network := range boxNetworks() {
 		if network.IP.To4() != nil {
 			hosts = append(hosts, network.IP.To4().String())

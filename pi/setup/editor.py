@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -32,19 +33,38 @@ def _call(method: str, path: str, payload: object | None = None, timeout: float 
 
 
 def pairing(attempts: int = 10) -> Pairing | None:
-    """A one-time pairing link from the editor; the editor may still be starting, so this waits for it a little."""
+    """A pairing link from the editor; the editor may still be starting, so this waits for it a little. While no device
+    has paired with the box, the link is its pairing page alone, where the device claims the box with no code."""
     for attempt in range(attempts):
         try:
             reply = _call("POST", "/api/pairing", {})
             if isinstance(reply, dict) and isinstance(reply.get("code"), str) and isinstance(reply.get("url"), str):
                 url = reply["url"]
                 if url.startswith(("http://", "https://")):
-                    return Pairing(code=reply["code"][:32], url=url[:500])
+                    claim = _claimable()
+                    return Pairing(code=reply["code"][:32], url=(url.split("?", 1)[0] if claim else url)[:500], claim=claim)
             return None
         except (OSError, ValueError):
             if attempt + 1 < attempts:
                 time.sleep(3)
     return None
+
+
+def _claimable() -> bool:
+    try:
+        status = _call("GET", "/api/box/status", timeout=3.0)
+    except (OSError, ValueError):
+        return False
+    return bool(isinstance(status, dict) and status.get("claimable") is True)
+
+
+def at(url: str, address: str | None) -> str:
+    """The link at the box's own address on the network, which every device can open, where the box knows it."""
+    if not address:
+        return url
+    parts = urllib.parse.urlsplit(url)
+    host = f"[{address}]" if ":" in address else address
+    return urllib.parse.urlunsplit(parts._replace(netloc=host + (f":{parts.port}" if parts.port else "")))
 
 
 def requested() -> bool:

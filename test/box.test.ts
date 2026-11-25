@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { test } from 'node:test';
 import { CODE_MS, deviceLabel, normalizeCode, Pairing, sessionToken, WRONG_CODES } from '../packages/server/box-pairing.ts';
-import { boxDoor, boxName, boxRequest, isLoopback, onBoxNetwork, type BoxContext } from '../packages/server/box-routes.ts';
+import { boxDoor, boxHosts, boxName, boxRequest, isLoopback, onBoxNetwork, type BoxContext } from '../packages/server/box-routes.ts';
 import { BoxHarnesses, BoxSettings, harnessesUnavailable, type Capabilities } from '../packages/server/box-settings.ts';
 import type { Processors } from '../packages/server/processors.ts';
 import { launch, tempDir } from './helpers.ts';
@@ -115,6 +115,8 @@ test('the box answers loopback, private, link-local and unique-local addresses, 
     assert.ok(onBoxNetwork(address), address);
   for (const address of ['8.8.8.8', '::ffff:1.1.1.1', '172.32.0.1', '2001:4860:4860::8888']) assert.ok(!onBoxNetwork(address), address);
   assert.match(boxName(), /^[a-z0-9-]+\.local$/);
+  // Its plain name too, for devices that resolve it through the home router rather than .local.
+  assert.ok(boxHosts().includes(boxName().replace(/\.local$/, '')));
 });
 
 /** A request as the box's door sees it, from an address, with a body when one is given. */

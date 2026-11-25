@@ -56,7 +56,22 @@ class Forms(unittest.TestCase):
         self.assertIn("ABCD-EFGH", page)
         self.assertIn("href='http://zirbel.local/pair?code=ABCD-EFGH&amp;x=&#x27;y&#x27;'", page)
         self.assertIn("Home &lt;5G&gt;", page)
+        self.assertIn("http://zirbel/pair", page)
         self.assertIn("http://zirbel.local", portal.joining_page("Zirbel-3456", "Home", None).decode())
+
+    def test_an_unclaimed_box_is_claimed_with_no_code_and_no_hurry(self):
+        page = portal.joining_page("Zirbel-3456", "Home",
+                                   portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair", claim=True)).decode()
+        self.assertIn("Claim this box", page)
+        self.assertIn("href='http://zirbel.local/pair'", page)
+        self.assertNotIn("ABCD-EFGH", page)
+        self.assertNotIn("10 minutes", page)
+
+    def test_a_link_moves_to_the_boxs_own_address(self):
+        self.assertEqual(editor.at("http://zirbel.local/pair?code=ABCD-EFGH", "192.168.1.20"),
+                         "http://192.168.1.20/pair?code=ABCD-EFGH")
+        self.assertEqual(editor.at("http://zirbel.local:8080/pair", "fd00::5"), "http://[fd00::5]:8080/pair")
+        self.assertEqual(editor.at("http://zirbel.local/pair", None), "http://zirbel.local/pair")
 
 
 class Server(unittest.TestCase):
@@ -113,7 +128,7 @@ class Editor(unittest.TestCase):
             # As the box's editor answers on loopback.
             def do_GET(self):
                 test.calls.append(("GET", self.path, None))
-                self._reply({"box": True, "paired": False, "claimable": True,
+                self._reply({"box": True, "paired": False, "claimable": test.claimable,
                              "settings": {"harnesses": True, "externalMcp": False, "onboarded": False,
                                           "setupRequested": test.requested}})
 
@@ -127,6 +142,7 @@ class Editor(unittest.TestCase):
                              "expiresAt": "2026-01-01T00:00:00Z", "qr": "data:image/png;base64,"}, 201)
 
         self.requested = False
+        self.claimable = True
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.saved = editor.EDITOR, editor.REQUEST
@@ -141,8 +157,11 @@ class Editor(unittest.TestCase):
         self.folder.cleanup()
 
     def test_a_pairing_link_comes_from_the_editor(self):
-        self.assertEqual(editor.pairing(), portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair?code=ABCD-EFGH"))
+        # While no device has paired, the link is the claim page, with no code.
+        self.assertEqual(editor.pairing(), portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair", claim=True))
         self.assertEqual(self.calls[0][:2], ("POST", "/api/pairing"))
+        self.claimable = False
+        self.assertEqual(editor.pairing(), portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair?code=ABCD-EFGH"))
 
     def test_a_request_is_the_file_or_the_editors_setting_and_goes_with_setup(self):
         self.assertFalse(editor.requested())

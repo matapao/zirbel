@@ -23,6 +23,8 @@ from portal import Choice, Pairing, Portal  # noqa: E402
 
 LED = Path("/sys/class/leds/ACT/trigger")
 TICK_SECONDS = 5
+# At boot the box's Bluetooth controller comes up a few seconds after this service may: it is looked for this long.
+BLUETOOTH_WAIT_SECONDS = 120
 
 
 def log(message: str) -> None:
@@ -70,6 +72,9 @@ class Setup:
         self.networks: list[improv.Network] = []
         self.portal_pairing: Pairing | None = None
         self.bluetooth = None
+        self.bluetooth_pending = None  # made once its controller is there, started once BlueZ takes it
+        self.bluetooth_radios: policy.Radios | None = None
+        self.bluetooth_error = ""
         address = ""
         if radios.bluetooth:
             import bluetooth
@@ -99,20 +104,36 @@ class Setup:
     def run(self) -> None:
         log(f"Setting up as {self.box}" + (", as asked." if self.requested else ": the box has no network."))
         self.networks = self.nm.scan()
-        if self.radios.bluetooth:
-            import bluetooth
-
-            try:
-                self.bluetooth = bluetooth.Bluetooth(self.bus, self.service, self.box, lambda: self._used(True))
-                self.service.changed = self.bluetooth.changed
-                self.bluetooth.start()
-                log("Bluetooth setup is advertising.")
-            except Exception as error:  # noqa: BLE001 - the hotspot still serves
-                log(f"Bluetooth setup did not start: {error}")
-                self.bluetooth = None
+        if not self._start_bluetooth():
+            log("Bluetooth setup waits for the box's Bluetooth controller.")
         self._hotspot_if_due()
         self.GLib.timeout_add_seconds(TICK_SECONDS, self._tick)
         self.loop.run()
+
+    def _start_bluetooth(self) -> bool:
+        """Bluetooth setup, once the box's controller and BlueZ's handle for it are there; the hotspot serves meanwhile.
+        Its objects are made once, when the controller is first there, and only its start is tried again."""
+        if self.bluetooth is not None:
+            return True
+        try:
+            if self.bluetooth_pending is None:
+                radios = policy.detect()
+                if not radios.bluetooth:
+                    return False
+                import bluetooth
+
+                self.bluetooth_pending = bluetooth.Bluetooth(self.bus, self.service, self.box, lambda: self._used(True))
+                self.bluetooth_radios = radios
+            self.service.changed = self.bluetooth_pending.changed
+            self.bluetooth_pending.start()
+        except Exception as error:  # noqa: BLE001 - the hotspot still serves
+            if str(error) != self.bluetooth_error:
+                log(f"Bluetooth setup did not start yet: {error}")
+            self.bluetooth_error = str(error)
+            return False
+        self.bluetooth, self.radios = self.bluetooth_pending, self.bluetooth_radios or self.radios
+        log("Bluetooth setup is advertising.")
+        return True
 
     def _hotspot_if_due(self) -> None:
         radios = policy.Radios(self.radios.wifi, self.bluetooth is not None, self.radios.sharing)
@@ -133,6 +154,8 @@ class Setup:
             self.hotspot = None
 
     def _tick(self) -> bool:
+        if self.bluetooth is None and time.monotonic() - self.started < BLUETOOTH_WAIT_SECONDS:
+            self._start_bluetooth()
         if self.busy:
             return True
         online = self.nm.online()
@@ -179,6 +202,8 @@ class Setup:
         return False
 
     def _join(self, nm, ssid: bytes, password: bytes, pairing: Pairing | None) -> None:
+        import network
+
         self._hotspot_down(nm)
         auth = next((network.auth for network in self.networks if network.ssid == ssid), "")
         try:
@@ -189,7 +214,10 @@ class Setup:
             self.GLib.idle_add(self._failed, ssid, "")
             return
         pairing = pairing or editor.pairing()
-        self.GLib.idle_add(self._joined, pairing.url if pairing else "http://zirbel.local/")
+        # The Bluetooth client opens the link once the box is on the network: at the box's own address, which every
+        # device resolves, where .local names fail on some.
+        url = editor.at(pairing.url, network.local_address()) if pairing else "http://zirbel.local/"
+        self.GLib.idle_add(self._joined, url)
 
     def _join_from_bluetooth(self, ssid: bytes, password: bytes) -> None:
         self._used(True)
@@ -250,8 +278,12 @@ class Setup:
 
     def _finish(self) -> bool:
         log("Setup is over.")
-        if self.bluetooth:
-            self.bluetooth.stop()
+        # A start that never finished may have left part of it with BlueZ: that goes too.
+        if self.bluetooth or self.bluetooth_pending:
+            try:
+                (self.bluetooth or self.bluetooth_pending).stop()
+            except Exception:  # noqa: BLE001 - a controller that went away took it with it
+                pass
         self.portal.stop()
         if self.hotspot:
             self.nm.hotspot_down(self.hotspot)

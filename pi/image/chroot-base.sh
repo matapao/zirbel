@@ -66,5 +66,7 @@ grep -q '^127\.0\.1\.1' /etc/hosts || printf '127.0.1.1\tzirbel\n' >> /etc/hosts
 # Wi-Fi stays blocked until a country is set; the kernel takes it at boot, and the saved block is cleared.
 sed -i "s/ cfg80211\.ieee80211_regdom=[A-Z]*//; s/\$/ cfg80211.ieee80211_regdom=$COUNTRY/" /boot/firmware/cmdline.txt
 for state in /var/lib/systemd/rfkill/*:wlan; do [ -e "$state" ] && echo 0 > "$state"; done
+# What only the build needed: npm's download cache and apt's package lists (apt update fetches them again).
+rm -rf /root/.npm /var/lib/apt/lists/*
 if [ "$ARCH" = arm64 ]; then echo "Base ready ($ARCH): $(node --version), $(codex --version | head -1), Wi-Fi country $COUNTRY."
 else echo "Base ready ($ARCH): Wi-Fi country $COUNTRY."; fi

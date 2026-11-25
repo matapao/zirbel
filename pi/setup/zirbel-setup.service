@@ -5,7 +5,7 @@
 [Unit]
 Description=Zirbel box Wi-Fi setup
 After=NetworkManager.service bluetooth.service
-Wants=NetworkManager.service
+Wants=NetworkManager.service bluetooth.service
 ConditionPathExistsGlob=/sys/class/ieee80211/*
 
 [Service]

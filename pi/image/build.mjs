@@ -8,8 +8,8 @@
 // image's through Docker's emulation. Build the repository first (pnpm build).
 //   node pi/image/build.mjs --out DIR --country XX --ssh-key FILE [--target arm64|armhf] [--base IMAGE]
 //                           [--rebuild-base] [--base-only]
-// DIR keeps the downloaded OS, zirbel-base-TARGET.img (the slow stage, reused) and zirbel-TARGET.img, the image to
-// write to a card.
+// DIR keeps the downloaded OS, zirbel-base-TARGET.img (the slow stage, reused), and zirbel-TARGET.img, the image to
+// write to a card, with zirbel-TARGET.img.xz beside it and each one's SHA-256.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -49,21 +49,35 @@ const sha256 = (file) => {
   return hash.digest('hex');
 };
 
+/** A request to Raspberry Pi's servers, tried three times a few seconds apart before it fails. */
+async function fetchRetried(url) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+      if (!response.ok) throw new Error(`HTTP ${response.status} from ${url}`);
+      return response;
+    } catch (error) {
+      if (attempt === 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 5000 * attempt));
+    }
+  }
+}
+
 /** The target's Raspberry Pi OS Lite, as Raspberry Pi's own list names it, downloaded once and checked twice: the
  *  download against the SHA-256 published beside it, the image against the list's. */
 async function osImage() {
   if (values.base) return path.resolve(values.base);
-  const list = await (await fetch(OS_LIST)).json();
+  const list = await (await fetchRetried(OS_LIST)).json();
   const walk = (items) => items.flatMap((item) => item.subitems ? walk(item.subitems) : [item]);
   const os = walk(list.os_list).find((item) => item.name === target.name && item.devices?.includes(target.device));
   if (!os || !/^https:\/\/downloads\.raspberrypi\.com\/.+\.img\.xz$/.test(os.url)) throw new Error(`${target.name} is not in Raspberry Pi's list.`);
   const image = path.join(out, path.basename(os.url, '.xz'));
   if (fs.existsSync(image) && sha256(image) === os.extract_sha256) return image;
   const archive = image + '.xz';
-  const published = (await (await fetch(os.url + '.sha256')).text()).split(/\s/)[0];
+  const published = (await (await fetchRetried(os.url + '.sha256')).text()).split(/\s/)[0];
   console.log(`Downloading ${path.basename(os.url)} (${os.release_date})`);
   // Over HTTPS only, redirects included, and kept only once it matches its published hash.
-  execFileSync('curl', ['--fail', '--location', '--proto', '=https', '--silent', '--show-error', '--output', archive, os.url],
+  execFileSync('curl', ['--fail', '--location', '--proto', '=https', '--silent', '--show-error', '--retry', '3', '--output', archive, os.url],
     { stdio: 'inherit' });
   if (sha256(archive) !== published) throw new Error('The download does not match its published SHA-256.');
   execFileSync('xz', ['--decompress', '--keep', '--force', archive], { stdio: 'inherit' });
@@ -105,4 +119,9 @@ const setup = path.join(REPO, 'pi', 'setup');
 if (fs.existsSync(setup)) app[setup] = '/setup';
 const image = path.join(out, `zirbel-${values.target}.img`);
 stage(base, image, 'app', [values.country], app);
-console.log(`Ready: ${image}`);
+// Beside it, compressed for keeping or sharing: Raspberry Pi Imager writes an .img.xz as it is.
+execFileSync('xz', ['--compress', '--keep', '--force', '--threads=0', image], { stdio: 'inherit' });
+for (const file of [image, image + '.xz']) {
+  fs.writeFileSync(file + '.sha256', `${sha256(file)}  ${path.basename(file)}\n`);
+  console.log(`Ready: ${file} (${Math.round(fs.statSync(file).size / 1024 / 1024)} MiB)`);
+}

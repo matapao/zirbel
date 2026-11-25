@@ -36,9 +36,11 @@ function wakeSetup(file: string) {
 
 const interfaces = () => Object.values(networkInterfaces()).flatMap((items) => items ?? []).filter((item) => !item.internal);
 
-/** The host names a request may reach the box by: loopback, its .local name and its addresses now, IPv6 bracketed. */
+/** The host names a request may reach the box by: loopback, its .local and plain names and its addresses now, IPv6
+ *  bracketed. */
 export function boxHosts() {
-  return ['localhost', '127.0.0.1', '[::1]', boxName(),
+  // Its plain name too, which many home routers resolve for the devices that can't look up .local names.
+  return ['localhost', '127.0.0.1', '[::1]', boxName(), boxName().slice(0, -'.local'.length),
     ...interfaces().map((item) => item.family === 'IPv6' ? '[' + item.address + ']' : item.address)];
 }
 

@@ -180,7 +180,12 @@ class Bluetooth:
     def start(self) -> None:
         self.adapter.Set(ADAPTER, "Powered", dbus.Boolean(True), dbus_interface=PROPS)
         self.adapter.Set(ADAPTER, "Alias", self.name, dbus_interface=PROPS)
-        dbus.Interface(self.adapter, GATT_MANAGER).RegisterApplication(dbus.ObjectPath(self.app.path), {})
+        try:
+            dbus.Interface(self.adapter, GATT_MANAGER).RegisterApplication(dbus.ObjectPath(self.app.path), {})
+        except dbus.DBusException as error:
+            # An earlier start that failed after it may have left it registered: then it is there already.
+            if not (error.get_dbus_name() or "").endswith(".AlreadyExists"):
+                raise
         self._advertise()
 
     def _advertise(self) -> None:

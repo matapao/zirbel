@@ -45,10 +45,13 @@ class Choice:
 
 @dataclass
 class Pairing:
-    """The one-time link that pairs the person's device with the box's editor, once both are on the same network."""
+    """The link that pairs the person's device with the box's editor, once both are on the same network. While no device
+    has paired with the box (claim), its page claims the box with one tap and no code, with no time limit; after that
+    it pairs with the one-time code, for 10 minutes."""
 
     code: str
     url: str
+    claim: bool = False
 
 
 def parse(body: bytes) -> Choice:
@@ -111,15 +114,25 @@ def choose_page(box: str, networks: list[Network], error: str = "") -> bytes:
 
 def joining_page(box: str, network: str, pairing: Pairing | None) -> bytes:
     """What to do next, shown before the box leaves the hotspot: the phone loses this page when it does."""
-    if pairing:
+    # Some phones can't open .local names: the box's plain name, which many home routers resolve, is the other way.
+    plain = "<p><small>If it doesn't open, try <b>http://zirbel/pair</b>, or the box's address in your router's list " \
+        "of devices.</small></p>"
+    if pairing and pairing.claim:
+        finish = (
+            "<p>Then open this address and tap Claim this box:</p>"
+            f"<p><a href='{html.escape(pairing.url, quote=True)}'>{html.escape(pairing.url)}</a></p>"
+            "<p><small>No device has paired with this box yet, so there is no code and no hurry.</small></p>" + plain
+        )
+    elif pairing:
         finish = (
             "<p>Then open this address and tap Pair this device:</p>"
             f"<p><a href='{html.escape(pairing.url, quote=True)}'>{html.escape(pairing.url)}</a></p>"
             f"<p>Or open <b>http://zirbel.local/pair</b> and enter the code</p>"
-            f"<p class=code>{html.escape(pairing.code)}</p><small>The code works once, for 10 minutes.</small>"
+            f"<p class=code>{html.escape(pairing.code)}</p><small>The code works once, for 10 minutes. A device "
+            "already paired with the box can make a new one in Box settings.</small>" + plain
         )
     else:
-        finish = "<p>Then open <b>http://zirbel.local</b>.</p>"
+        finish = "<p>Then open <b>http://zirbel.local</b>.</p>" + plain
     return _page(
         "Joining " + network,
         f"<h1>{html.escape(box)} is joining {html.escape(network)}</h1>"
