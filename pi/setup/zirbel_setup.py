@@ -148,10 +148,14 @@ class Setup:
 
     def _hotspot_down(self, nm) -> None:
         """From a worker, with its own NetworkManager connection, before the radio joins a network."""
+        import network
+
         self.portal.stop()
         if self.hotspot:
             nm.hotspot_down(self.hotspot)
             self.hotspot = None
+        # Whether or not a hotspot is known to be up: the network the box joins must reach it.
+        network.firewall(None)
 
     def _tick(self) -> bool:
         if self.bluetooth is None and time.monotonic() - self.started < BLUETOOTH_WAIT_SECONDS:
@@ -288,6 +292,9 @@ class Setup:
         if self.hotspot:
             self.nm.hotspot_down(self.hotspot)
             self.hotspot = None
+        import network
+
+        network.firewall(None)
         if self.requested:
             editor.clear_request()
         self.loop.quit()

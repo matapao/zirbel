@@ -63,6 +63,14 @@ echo zirbel > /etc/hostname
 printf '# A Zirbel box keeps its host name, zirbel (zirbel.local).\npreserve_hostname: true\n' > /etc/cloud/cloud.cfg.d/90-zirbel.cfg
 sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tzirbel/' /etc/hosts
 grep -q '^127\.0\.1\.1' /etc/hosts || printf '127.0.1.1\tzirbel\n' >> /etc/hosts
+if [ "$ARCH" = arm64 ] && ! grep -q '^kernel=kernel8.img' /boot/firmware/config.txt; then
+  # The Pi 5 boots the 4K-page kernel the Pi 3 and 4 use: Claude Code's bundled tools fail on its 16K-page one.
+  printf '\n# Zirbel: the 4K-page kernel, which Claude Code needs.\n[pi5]\nkernel=kernel8.img\n[all]\n' >> /boot/firmware/config.txt
+fi
+# Wi-Fi given when the card was written (pi/write-card.sh) is cloud-init's on the first boot; then its password leaves
+# the boot partition, which anyone with the card can read.
+install -m 644 /tmp/zirbel-build/files/zirbel-first-boot.service /etc/systemd/system/zirbel-first-boot.service
+systemctl enable zirbel-first-boot.service >/dev/null 2>&1
 # Wi-Fi stays blocked until a country is set; the kernel takes it at boot, and the saved block is cleared.
 sed -i "s/ cfg80211\.ieee80211_regdom=[A-Z]*//; s/\$/ cfg80211.ieee80211_regdom=$COUNTRY/" /boot/firmware/cmdline.txt
 for state in /var/lib/systemd/rfkill/*:wlan; do [ -e "$state" ] && echo 0 > "$state"; done

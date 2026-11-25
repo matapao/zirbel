@@ -262,6 +262,8 @@ def local_address() -> str | None:
 def firewall(iface: str | None, port: int = 8081) -> None:
     """The hotspot's rules while it runs, on its interface alone; None takes them away."""
     subprocess.run(["nft", "delete", "table", "inet", "zirbel_setup"], capture_output=True, check=False)
+    if not iface and subprocess.run(["nft", "list", "table", "inet", "zirbel_setup"], capture_output=True).returncode == 0:
+        print("The setup hotspot's firewall could not be taken away.", flush=True)
     if iface:
         if not iface.replace("-", "").replace("_", "").isalnum():
             raise ValueError("An unexpected interface name.")
