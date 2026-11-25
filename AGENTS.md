@@ -16,6 +16,7 @@ pnpm format:check        # Prettier (.prettierrc.json); report-only in CI until 
 pnpm contracts           # regenerate contracts/*.schema.json from the Zod schemas (CI runs it with --check)
 pnpm build:host          # embed dist/web into the Go host binary (host/bin/)
 pnpm test:browser        # Playwright e2e (first: pnpm exec playwright install chromium)
+pnpm test:pi             # the box's Wi-Fi setup service's unit tests (python3, no hardware); part of pnpm test
 ```
 
 The two `link:` dependencies in `package.json` are submodules in `deps/`, pinned to the commits this repository records; `pnpm run deps` installs and builds them, and Dependabot proposes updates. Type errors in `harness-activity.ts` or `local-harnesses.ts` usually mean the submodules are not at those commits (`git submodule update --init`, then `pnpm run deps`).
@@ -32,9 +33,10 @@ The two `link:` dependencies in `package.json` are submodules in `deps/`, pinned
 | `public/` | Static HTML and CSS, copied into `dist/web` |
 | `contracts/` | Generated JSON Schemas (do not edit) and the Go loader that validates against them |
 | `host/` | Go host: `projects.go` store, `editor.go` API, `mcp.go`, `package.go` releases, `release.go` import checks, `rooms.go`, `listener.go` player |
-| `desktop/` | Electron app, a pnpm project with its own lockfile: `src/main.ts` window and hardening, `editor.ts` starts and stops `dist/server.mjs` (which ends with the app through its IPC channel), `routes.ts` where pages may go, `view-game.ts` renders games for the editor's `view_game`, `scripts/pack.mjs` packs it for macOS. Its `typecheck`, `lint` (this repo's oxlint config) and Playwright `test` run in `desktop/` after `pnpm build` here |
+| `desktop/` | Electron app, a pnpm project with its own lockfile: `src/main.ts` window and hardening, `editor.ts` starts and stops `dist/server.mjs` (which ends with the app through its IPC channel), `routes.ts` where pages may go, `view-game.ts` renders games for the editor's `view_game`, `bluetooth.ts` the chooser for a box to set up, `scripts/pack.mjs` packs it for macOS. Its `typecheck`, `lint` (this repo's oxlint config) and Playwright `test` run in `desktop/` after `pnpm build` here |
+| `pi/` | The Zirbel box on a Raspberry Pi. `setup/` its Wi-Fi setup service (Python, stdlib with the system's D-Bus bindings): Improv Wi-Fi over Bluetooth (`improv.py`, `bluetooth.py`), a setup hotspot with its page (`portal.py`, `network.py`), when it runs (`policy.py`), and the systemd and NetworkManager files the image installs; `test_*.py` beside it (`pnpm test:pi`). The editor's side is `packages/web/improv.ts` and `box-setup.ts` |
 | `scripts/` | `build.mjs` (dist), `build-host.mjs` (Go binaries), `contracts.ts` (schemas) |
-| `test/` | `projects`, `rooms`, `mcp`, `harness`, `threads`, `turn-folder`, `view-game`, `parent`, `claude-sdk`, `box`, `activity`, `ask-summary` and `chat-control` `.test.ts` unit; `host.contract` + `editor.contract` run on both hosts; `browser.mjs`, `browser-workspace.mjs`, `browser-turns.mjs`, `browser-folder.mjs`, `browser-box.mjs` + `host-browser.ts` e2e (`browser-editor.mjs` starts `fixture-editor.ts`, the editor with a fake harness). Go unit tests sit beside the code in `host/` and `contracts/` |
+| `test/` | `projects`, `rooms`, `mcp`, `harness`, `threads`, `turn-folder`, `view-game`, `parent`, `claude-sdk`, `box`, `improv`, `activity`, `ask-summary` and `chat-control` `.test.ts` unit; `host.contract` + `editor.contract` run on both hosts; `browser.mjs`, `browser-workspace.mjs`, `browser-turns.mjs`, `browser-folder.mjs`, `browser-box.mjs` + `host-browser.ts` e2e (`browser-editor.mjs` starts `fixture-editor.ts`, the editor with a fake harness). Go unit tests sit beside the code in `host/` and `contracts/` |
 
 ## Rules
 

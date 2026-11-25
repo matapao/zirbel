@@ -66,7 +66,14 @@ const config = {
   nodeGypRebuild: false,
   electronVersion: require('electron/package.json').version,
   electronDist: path.join(electronDir, 'dist'),
-  mac: { category: 'public.app-category.developer-tools', type: 'distribution', identity, notarize: !dir },
+  mac: {
+    category: 'public.app-category.developer-tools',
+    type: 'distribution',
+    identity,
+    notarize: !dir,
+    // What macOS shows when "Set up a Zirbel box" first uses Bluetooth.
+    extendInfo: { NSBluetoothAlwaysUsageDescription: 'Zirbel uses Bluetooth to put a Zirbel box on your Wi-Fi.' },
+  },
   publish: null,
 };
 const targets = Platform.MAC.createTarget(dir ? ['dir'] : ['zip', 'dmg'], cpu === 'arm64' ? Arch.arm64 : Arch.x64);

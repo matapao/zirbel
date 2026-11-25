@@ -9,6 +9,7 @@ import { openGame } from './library.ts';
 import { openChatSettings } from './chat-settings.ts';
 import { openHarnesses } from './chat.ts';
 import { openBoxSettings } from './box.ts';
+import { boxSetupDialog } from './box-setup.ts';
 
 let assets: { readonly open: boolean } | undefined;
 
@@ -55,7 +56,7 @@ function moreMenu(): MenuItem[] {
   }
   if (ws.health.chat) items.push({ label: 'Harnesses', run: () => attempt(openHarnesses) });
   if (ws.health.box) items.push({ label: 'Box settings…', run: () => attempt(openBoxSettings) });
-  items.push({ label: 'Settings', run: openChatSettings });
+  items.push({ label: 'Set up a Zirbel box…', run: boxSetupDialog }, { label: 'Settings', run: openChatSettings });
   return items;
 }
 

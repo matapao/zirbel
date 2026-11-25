@@ -1,0 +1,2 @@
+# Where the editor (user zirbel) asks for Wi-Fi setup: installed as /usr/lib/tmpfiles.d/zirbel-setup.conf.
+d /run/zirbel-setup 0770 root zirbel -

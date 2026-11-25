@@ -40,6 +40,7 @@ jobs:
           pnpm build:host "" linux/amd64 linux/arm64 linux/arm/7
           pnpm check:go
           pnpm coverage
+          pnpm test:pi
           node dist/server.mjs --help
           pnpm exec playwright install --with-deps chromium
           pnpm test:browser

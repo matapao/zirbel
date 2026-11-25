@@ -1,0 +1,30 @@
+# The Zirbel box's Wi-Fi setup, over Bluetooth and a setup hotspot. It runs at boot, when the network goes away
+# (90-zirbel-setup, NetworkManager's dispatcher) and when the editor asks to change the Wi-Fi (zirbel-setup.path),
+# waits a minute for a network, and exits as soon as the box has one: nothing of it stays running on a box that is set
+# up. A box without a Wi-Fi radio never starts it.
+[Unit]
+Description=Zirbel box Wi-Fi setup
+After=NetworkManager.service bluetooth.service
+Wants=NetworkManager.service
+ConditionPathExistsGlob=/sys/class/ieee80211/*
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -E -s /opt/zirbel/pi/setup/zirbel_setup.py
+Restart=on-failure
+RestartSec=10
+# Root for NetworkManager, BlueZ and nftables, with only the network capabilities nftables needs.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=-/run/zirbel-setup
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+MemoryMax=96M
+
+[Install]
+WantedBy=multi-user.target
