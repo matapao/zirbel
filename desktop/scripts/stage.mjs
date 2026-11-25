@@ -64,6 +64,8 @@ export function stageEditor(editor, repo, { os, cpu }) {
   fs.mkdirSync(install, { recursive: true });
   for (const file of ['package.json', 'pnpm-lock.yaml'])
     fs.copyFileSync(path.join(repo, file), path.join(install, file));
+  // The patches pnpm-workspace.yaml names (patchedDependencies), which the install applies.
+  fs.cpSync(path.join(repo, 'patches'), path.join(install, 'patches'), { recursive: true });
   const settings = fs.readFileSync(path.join(repo, 'pnpm-workspace.yaml'), 'utf8');
   fs.writeFileSync(
     path.join(install, 'pnpm-workspace.yaml'),
