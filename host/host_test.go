@@ -247,6 +247,29 @@ func TestOpeningAtTheRoomLimitReplacesOneIdlePlaytest(t *testing.T) {
 	}
 }
 
+func TestAnAssetIsWrittenOnlyUnderItsHash(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewProjects(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"../escape", "", strings.Repeat("A", 64), strings.Repeat("a", 63)} {
+		if err := store.writeAsset(name, []byte("x")); err == nil {
+			t.Fatalf("an asset named %q was written", name)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "escape")); !os.IsNotExist(err) {
+		t.Fatalf("a file was written outside the assets: %v", err)
+	}
+	hash, err := store.storeAsset([]byte("asset"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, err := store.readAsset(hash); err != nil || string(data) != "asset" {
+		t.Fatalf("the stored asset reads back as %q: %v", data, err)
+	}
+}
+
 func TestClaimDirectoryIsExclusiveAndRecoversItsOwnStalePID(t *testing.T) {
 	root := t.TempDir()
 	parent := owner{PID: os.Getppid(), Boot: newID()}

@@ -10,8 +10,12 @@ import (
 	"regexp"
 )
 
-// writeAsset stores asset bytes under a hash the caller has already verified.
+// writeAsset stores asset bytes under a hash the caller has already verified, and that is a hash, as readAsset
+// checks too.
 func (s *Projects) writeAsset(hash string, data []byte) error {
+	if !hashPattern.MatchString(hash) {
+		return fail(http.StatusBadRequest, "Invalid asset hash.")
+	}
 	return atomicWrite(filepath.Join(s.root, "assets", hash), data)
 }
 func (s *Projects) storeAsset(data []byte) (string, error) {

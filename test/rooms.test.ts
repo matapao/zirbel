@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync, truncateSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { head } from '../packages/core/projects.ts';
@@ -123,6 +124,29 @@ test('game documents carry an HTTP sandbox and only the room-scoped game SDK', a
   assert.match(page.policy, /connect-src http:\/\/localhost:4000\/game\/test\/key\/ http:\/\/localhost:4000\/runtime\/test\/three\/addons\/ data: blob:;/);
   assert.match(page.html, /runtime\/test\/three\.module\.js/);
   assert.ok(page.html.endsWith(game.html));
+});
+
+test('a release to import is checked and read through one handle: only a file under 48 MB imports', async (t) => {
+  const { importReleases } = await import('../packages/server/hosting.ts');
+  const { PORTABLE_FILE_LIMIT } = await import('../packages/sdk/contracts.ts');
+  const { root } = install(t);
+  const imported: unknown[] = [];
+  const releases = { import: (release: unknown) => imported.push(release) } as unknown as Parameters<typeof importReleases>[0];
+  const file = join(root, 'release.json');
+  writeFileSync(file, '{"manifest":{}}');
+  importReleases(releases, [file]);
+  assert.deepEqual(imported, [{ manifest: {} }]);
+  const large = join(root, 'large.json');
+  writeFileSync(large, '');
+  truncateSync(large, PORTABLE_FILE_LIMIT + 1);
+  const refused = [root, large];
+  if (process.platform !== 'win32') {
+    // A named pipe is refused at once, not waited on for a writer.
+    execFileSync('mkfifo', [join(root, 'pipe')]);
+    refused.push(join(root, 'pipe'));
+  }
+  for (const path of refused) assert.throws(() => importReleases(releases, [path]), /under 48 MB/, path);
+  assert.equal(imported.length, 1);
 });
 
 test('a service claim is exclusive and an old owner cannot release its successor', async (t) => {

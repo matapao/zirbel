@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { PORTABLE_FILE_LIMIT, type Release } from '../sdk/contracts.ts';
 import { ZirbelError } from '../core/projects.ts';
 import type { Releases } from '../core/releases.ts';
@@ -23,11 +23,25 @@ export function readLanHost(input?: string) {
 }
 
 export function importReleases(releases: Releases, files: string[]) {
-  for (const file of files) {
-    const stat = statSync(file);
-    if (!stat.isFile() || stat.size > PORTABLE_FILE_LIMIT) throw new Error('Import a release file under 48 MB.');
-    releases.import(JSON.parse(readFileSync(file, 'utf8')));
-  }
+  for (const file of files) releases.import(JSON.parse(readRelease(file)));
+}
+
+/** A release file's text, checked and read through one handle, never past the portable file limit. It opens without
+ *  waiting, so a named pipe is refused rather than waited on. */
+function readRelease(file: string) {
+  const refused = () => new Error('Import a release file under 48 MB.');
+  const handle = openSync(file, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+  try {
+    const stat = fstatSync(handle);
+    if (!stat.isFile() || stat.size > PORTABLE_FILE_LIMIT) throw refused();
+    const buffer = Buffer.alloc(stat.size + 1);
+    let length = 0;
+    for (let read = 1; read > 0 && length < buffer.length; length += read)
+      read = readSync(handle, buffer, length, buffer.length - length, null);
+    // One that grew while it was read is not the file that was checked.
+    if (length > stat.size) throw refused();
+    return buffer.toString('utf8', 0, length);
+  } finally { closeSync(handle); }
 }
 
 // A failed shutdown must not become an unhandled rejection.

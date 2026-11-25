@@ -299,7 +299,7 @@ func (r *Room) sendSnapshot(s *seat, body []byte) {
 	if s.peer == nil {
 		return
 	}
-	message := make([]byte, 0, len(body)+48)
+	message := make([]byte, 0, int64(len(body))+48) // in 64 bits, where the sum can't wrap
 	message = append(message, `{"type":"snapshot","tick":`...)
 	message = strconv.AppendInt(message, r.tick, 10)
 	message = append(message, `,"ack":`...)

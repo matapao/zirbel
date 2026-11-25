@@ -18,6 +18,7 @@
       ],
       "ignoreBinaries": [
         "go",
+        "mkfifo",
         "rundll32.exe",
         "xdg-open"
       ]

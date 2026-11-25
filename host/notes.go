@@ -131,8 +131,10 @@ func (s *Projects) AddMedia(projectID string, data []byte) (*Attachment, error) 
 	if err != nil {
 		return nil, err
 	}
+	// The file is named by the host's own new ID, never by anything the request sent.
+	id := newID()
 	item := input.Attachment
-	item.ID = newID()
+	item.ID = id
 	if item.Original != "" {
 		found := false
 		for _, media := range p.Attachments {
@@ -142,7 +144,7 @@ func (s *Projects) AddMedia(projectID string, data []byte) (*Attachment, error) 
 			return nil, fail(http.StatusNotFound, "The original attachment is missing.")
 		}
 	}
-	if err := atomicWrite(filepath.Join(s.root, "media", item.ID), file); err != nil {
+	if err := atomicWrite(filepath.Join(s.root, "media", id), file); err != nil {
 		return nil, err
 	}
 	p.Attachments = append(p.Attachments, item)
