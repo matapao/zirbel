@@ -13,7 +13,10 @@ import { accountDirectory, privateDirectory } from './account.ts';
 import { harnessActivity } from './harness-activity.ts';
 import { TurnEndedError, type Processor, type ProcessorRun, type Processors, type SignInStatus } from './processors.ts';
 
-const TURN_TIMEOUT = 60 * 60 * 1000;
+/** A turn has no time limit: it runs until it ends or Stop ends it. The library needs a value, and its clock takes this
+ *  one, the largest a number holds (it sets its timer again every 2^31 - 1 ms, and stands still while the person is
+ *  asked). */
+const NO_TIME_LIMIT = Number.POSITIVE_INFINITY;
 
 /** The model tiers every harness takes, and the reasoning efforts each agent offers, by its runtime's kind. */
 const TIERS = [{ value: 'fast', name: 'Fast' }, { value: 'balanced', name: 'Balanced' }, { value: 'strong', name: 'Strong' }];
@@ -137,7 +140,7 @@ export class LocalHarnesses implements Processors {
       signal?.throwIfAborted();
       return await this.run(processor, { cwd, prompt, systemPrompt: '', model: model ?? '', effort,
         sessionId: place?.sessionId ?? newId(), resume: Boolean(place?.resume && place.sessionId),
-        mcpServers: place?.mcpServers ?? [], readable: place?.readable, purpose: 'work', timeoutMs: TURN_TIMEOUT },
+        mcpServers: place?.mcpServers ?? [], readable: place?.readable, purpose: 'work', timeoutMs: NO_TIME_LIMIT },
       { signal, update, ask, session });
     } finally {
       if (!place) await rm(cwd, { recursive: true, force: true, maxRetries: 2 }).catch(() => console.warn('Could not remove a harness scratch folder.'));

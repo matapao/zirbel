@@ -152,7 +152,7 @@ test('standalone harnesses use existing sign-in and enable chat after provider s
       run(spec, onProgress) {
         assert.equal(spec.purpose, 'work');
         assert.equal(spec.resume, false);
-        assert.equal(spec.timeoutMs, 3_600_000);
+        assert.equal(spec.timeoutMs, Number.POSITIVE_INFINITY, 'no time limit: only Stop ends a turn');
         assert.ok(spec.cwd.startsWith(join(root, 'turn-')));
         assert.equal(existsSync(spec.cwd), true);
         workingFolder = spec.cwd;
