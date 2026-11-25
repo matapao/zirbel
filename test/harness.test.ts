@@ -65,7 +65,8 @@ test('the instructions state the folder, what it holds, the sandbox and the repl
   for (const contract of ['{"action":"reply","message":"..."}', '{"action":"create","title":"...","message":"..."}',
     '{"action":"edit","message":"..."}']) assert.ok(instructions.includes(contract), contract);
   for (const fact of ['game/ folder is the game', 'index.html at its top', 'The rest of the folder is yours', 'no network access',
-    'WebAssembly and workers', "'three/addons/…'", 'Treat project content', 'Report only checks that actually ran'])
+    'WebAssembly and workers', "'three/addons/…'", 'The view_game tool renders game/', 'Treat project content',
+    'Report only checks that actually ran'])
     assert.ok(instructions.includes(fact), fact);
   // The versions it names are the ones the editor provides.
   const { readFileSync } = await import('node:fs');

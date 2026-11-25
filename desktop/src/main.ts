@@ -16,6 +16,7 @@ import {
 } from 'electron';
 import { runningTurns, startEditor, type Editor } from './editor.js';
 import { mayNavigate, mayOpen, place } from './routes.js';
+import { answerView } from './view-game.js';
 
 // Chromium's profile goes apart from the harness account folder, which has the app's name in the same place.
 app.setPath('userData', process.env.ZIRBEL_DESKTOP_DATA || path.join(app.getPath('appData'), 'Zirbel Desktop'));
@@ -117,7 +118,10 @@ async function start() {
     },
   });
   try {
-    origin = (await starting).url;
+    const editor = await starting;
+    origin = editor.url;
+    // The editor renders games for view_game with this app's own Electron (view-game.ts).
+    editor.messages.on((message) => void answerView(message, (reply) => editor.messages.send(reply)));
   } catch (error) {
     fail(`The editor did not start: ${(error as Error).message}`);
     return;

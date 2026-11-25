@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { PROTOCOL_VERSION, SDK_VERSION, distribution, portableRelease, type Manifest, type Revision, type Release } from '../sdk/contracts.ts';
+import { PROTOCOL_VERSION, SDK_VERSION, distribution, portableRelease, type Asset, type Manifest, type Revision, type Release } from '../sdk/contracts.ts';
+import type { GameDocument } from '../sdk/game.ts';
 import { templates } from '../games/templates.ts';
 import { atomicWrite, deliveryAssets, digest, gameFileBytes, gameFileHashes, head, newId, readData, safeId, verifyAssetBytes, ZirbelError, type Projects } from './projects.ts';
 
@@ -71,6 +72,20 @@ export class Releases {
       manifest, game: revision.game, scene: revision.scene, sceneHash: digest(JSON.stringify(revision.game ?? revision.scene)), files: this.files,
     }, draft ? revision.assets : deliveryAssets([revision]), gameFileHashes([revision]));
     return publish ? this.save(release) : release;
+  }
+
+  /** A release of a game that no revision holds yet, for one solo room on this host: a harness turn's game/ as it is,
+   *  its files and assets as bytes by their hashes. It is never saved, shared or downloaded. */
+  draft(title: string, game: GameDocument, assets: Asset[], bytes: ReadonlyMap<string, Buffer>): Release {
+    const template = runtimeSettings(undefined, game);
+    const manifest: Manifest = {
+      format: 1, releaseId: newId(), gameId: newId(), sourceRevision: newId(), title,
+      sdk: SDK_VERSION, protocol: PROTOCOL_VERSION, client: 'player.html', simulation: template.simulation,
+      players: { min: 1, max: template.max }, capabilities: [...template.capabilities],
+      permissions: { play: true, download: false, remix: false }, assets, credits: [], files: this.fileHashes,
+    };
+    return { manifest, game, sceneHash: digest(JSON.stringify(game)), files: this.files,
+      assets: Object.fromEntries([...bytes].map(([hash, file]) => [hash, file.toString('base64')])) };
   }
 
   read(releaseId: string) {

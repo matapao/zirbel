@@ -18,6 +18,8 @@ import { accountDirectory } from './account.ts';
 import { exitWithParent } from './parent.ts';
 import { Threads } from './threads.ts';
 import { turnTools } from './turn-tools.ts';
+import { TurnServers } from './turn-mcp.ts';
+import { chooseRenderer } from './browser-app.ts';
 import { ActivityStore } from './activity-log.ts';
 import { Rooms } from '../core/rooms.ts';
 import { importReleases, Players, readLanHost, readPort, stopOnSignal } from './hosting.ts';
@@ -115,7 +117,10 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
     threads.interruptStale();
     // What a turn's folder links to and may read: three.js from this build, TypeScript and esbuild as installed.
     const { links, readable } = turnTools(webRoot);
-    const chatContext: ChatContext = { projects, harnesses, chat, activity, threads, tools: { readable }, links };
+    // Each turn's own MCP server, with view_game for its folder, on this loopback listener.
+    const views = new TurnServers({ projects, releases, rooms, playerPort: () => players.local?.port, renderer: chooseRenderer() },
+      () => editorOrigin() + '/turn-mcp');
+    const chatContext: ChatContext = { projects, harnesses, chat, activity, threads, tools: { readable }, links, views };
     const mcp = new Mcp(projects);
     importReleases(releases, values.import ?? []);
 
@@ -126,12 +131,20 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
       try {
         const url = requestUrl(request, editorPort, ['127.0.0.1', 'localhost']);
         const mcpRequest = enableMcp && url.pathname === '/mcp';
+        const turnRequest = url.pathname === '/turn-mcp';
         // MCP authenticates every request by project grant. Node HTTP clients can send
         // Sec-Fetch-Mode without Origin; browsers supplying Origin must still match this editor.
-        if (!mcpRequest || request.headers.origin !== undefined) checkOrigin(request);
+        if ((!mcpRequest && !turnRequest) || request.headers.origin !== undefined) checkOrigin(request);
         const local = players.local;
         if (!local || stopping) throw new ZirbelError(503, 'The editor is unavailable.');
         const method = request.method;
+        if (turnRequest) {
+          // A turn's own server: its credential names the turn, and its tool reaches that turn's folder alone.
+          if (method !== 'POST') { response.writeHead(405, { allow: 'POST' }); response.end(); return; }
+          const result = await views.handle(await body(request, 64_000), request.headers.authorization);
+          if (!result) { response.writeHead(202); response.end(); } else reply(response, result);
+          return;
+        }
         if (mcpRequest) {
           const credential = request.headers.authorization;
           mcp.verify(credential);

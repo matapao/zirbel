@@ -18,7 +18,7 @@ const gzipAsync = promisify(gzip);
 // The game page embeds its assets (up to tens of MB), so build and gzip it once
 // per room and origin rather than on every load.
 type GamePage = { policy: string; html: string; gzip: Promise<Buffer> };
-const gamePath = (room: Room) => '/game/' + room.id + '/' + room.documentKey + '/';
+export const gamePath = (room: Room) => '/game/' + room.id + '/' + room.documentKey + '/';
 // A built game's files, decoded once per room from the release they came in.
 const gameFiles = new WeakMap<Room, Map<string, Buffer>>();
 function gameFile(room: Room, path: string) {

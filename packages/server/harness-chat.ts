@@ -28,6 +28,7 @@ Return one JSON object as your final message, and nothing else. To answer or ask
 The game runs in a sandboxed browser document with no network access; WebAssembly and workers are available. window.zirbel.assets maps the project's imported asset IDs to data URLs.
 If registerObjects is true, register the game's objects with window.zirbel.register(id, properties), with stable IDs and JSON properties, call it again when they change, and call window.zirbel.unregister(id) when one goes away. If it is false, don't.
 A game has 1 to 4 players: add "maxPlayers" to a create or edit to set the number; without it an edit keeps the game's and a create has 1. With more than one, window.zirbel.send(state) shares a player's compact JSON state and window.zirbel.onRoom(callback) receives {self,seats,states}, also after a reconnect. The room only relays these states; the game applies its own rules.
+The view_game tool renders game/ in a browser as the editor runs it, and returns screenshots and the page's console messages and errors.
 Report only checks that actually ran.`;
 
 /** The game a create or edit keeps: the folder's game/, its files stored by their hashes. */

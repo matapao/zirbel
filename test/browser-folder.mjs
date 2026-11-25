@@ -35,6 +35,29 @@ test('a turn builds a folder game in game/, which plays, and a later turn sees a
   assert.deepEqual(errors, []);
 });
 
+test('a turn sees its game through its own MCP server’s view_game, rendered outside its sandbox', { timeout: 90_000 }, async (t) => {
+  const { page: tab, errors } = await openEditor(t, (context, res) =>
+    answer(res, { action: 'create', title: 'Seen game', message: 'Looked at it.' }, {
+      files: { 'index.html': page('./main.js'), 'main.js': "document.querySelector('#out').textContent = 'Seen'; console.log('seen');" },
+      view: { width: 320, height: 200 },
+    }),
+  );
+  const ui = controls(tab);
+  await ui.send('Build it and look at it.');
+  await tab.getByText('Looked at it.').waitFor();
+  const step = tab.locator('.step[data-kind="notice"]').filter({ hasText: 'Viewed the game' });
+  await step.getByRole('button').click();
+  const seen = JSON.parse(await step.locator('.step-detail').textContent());
+  assert.deepEqual(seen.tools, ['view_game'], 'the turn’s server has view_game alone');
+  // A screenshot and the page's console where a browser is installed; where none is, it says so.
+  if (seen.isError) assert.match(seen.content[0], /No browser available/);
+  else {
+    assert.equal(seen.content[0], 'image:image/png');
+    assert.match(seen.content[1], /"console":\[[^\]]*"seen"/);
+  }
+  assert.deepEqual(errors, []);
+});
+
 test('a turn compiles TypeScript with the folder’s own TypeScript, and the built game plays', { timeout: 60_000 }, async (t) => {
   const { page: tab, errors } = await openEditor(t, (context, res) =>
     answer(res, { action: 'create', title: 'Typed game', message: 'Compiled the game.' }, {

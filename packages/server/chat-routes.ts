@@ -4,7 +4,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import type { ThreadView } from '../sdk/chat-stream.ts';
-import { id, workspaceHistory } from '../sdk/contracts.ts';
+import { id, workspaceHistory, type Asset } from '../sdk/contracts.ts';
 import { objectRegistry, type GameDocument } from '../sdk/game.ts';
 import { head, newId, safeId, ZirbelError, type Projects } from '../core/projects.ts';
 import type { ActivityStore } from './activity-log.ts';
@@ -14,17 +14,20 @@ import { body, checkOrigin, reply } from './http.ts';
 import { modelSelection, processorId, type Processors } from './processors.ts';
 import { inThread, type TurnTools } from './thread-turns.ts';
 import { prepareFolder, type ToolLink } from './turn-folder.ts';
+import type { TurnServers } from './turn-mcp.ts';
 import { projectThread, workspaceThread, type Threads } from './threads.ts';
 
 export type ChatContext = {
   projects: Projects; harnesses: Processors; chat: ChatRuns; activity: ActivityStore; threads: Threads;
-  /** What every turn gets: its MCP server and the places it may read; and node_modules' links in its folder. */
-  tools: TurnTools; links: ToolLink[];
+  /** What every turn gets: the places it may read, node_modules' links in its folder, and its own MCP server. */
+  tools: TurnTools; links: ToolLink[]; views?: TurnServers;
 };
 
-/** A turn's tools, its folder readied with the game it starts from: game/ from that revision, node_modules linked. */
-function toolsFor({ tools, links, projects }: ChatContext, game: GameDocument | undefined): TurnTools {
-  return { ...tools, prepare: (folder) => prepareFolder(folder, game, (hash) => projects.readAsset(hash), links) };
+/** A turn's tools for the game it starts from: its folder readied (game/ from that revision, node_modules linked), and
+ *  its view_game server for that folder. */
+function toolsFor({ tools, links, projects, views }: ChatContext, title: string, game: GameDocument | undefined, assets: Asset[]): TurnTools {
+  return { ...tools, prepare: (folder) => prepareFolder(folder, game, (hash) => projects.readAsset(hash), links),
+    ...(views ? { server: (folder: string) => views.open(folder, { title, assets, maxPlayers: game?.maxPlayers ?? 1 }) } : {}) };
 }
 
 const text = z.string().trim().min(1).max(3000);
@@ -70,7 +73,7 @@ export async function chatRequest(ctx: ChatContext, request: IncomingMessage, re
     if (response.destroyed) return true;
     const turn = chat.start(key, { name: await harnessName(harnesses, input.provider), text: input.text }, async (run, turn) => {
       const result = await inThread(threads, harnesses, key, { id: turn.id, harness: input.provider, text: input.text },
-        toolsFor(ctx, undefined), run.signal, (harness, folder) => runWorkspaceChat(harness, input.provider, projects, input.text,
+        toolsFor(ctx, 'New game', undefined, []), run.signal, (harness, folder) => runWorkspaceChat(harness, input.provider, projects, input.text,
           input.conversation, { ...run, selection: input.modelSettings }, input.registerObjects, folder));
       if ('projectId' in result) {
         threads.moveToProject(key, result.projectId);
@@ -128,7 +131,7 @@ export async function projectChat(ctx: ChatContext, request: IncomingMessage, re
       const kept = activity.keep(projectId, note.id, turn.log, () => projects.has(projectId));
       try {
         return await inThread(threads, harnesses, key, { id: turn.id, harness: input.provider, text: input.text, noteId: note.id },
-          toolsFor(ctx, base.game), run.signal, (harness, folder) => runHarnessChat(harness, input.provider, projects, project,
+          toolsFor(ctx, project.title, base.game, base.assets), run.signal, (harness, folder) => runHarnessChat(harness, input.provider, projects, project,
             base, { ...input, folder }, references, { ...run, selection: input.modelSettings }));
       } finally { kept.close(); }
     });
