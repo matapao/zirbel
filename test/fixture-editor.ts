@@ -2,7 +2,8 @@
 // FIXTURE_HARNESS_URL: GET /access lists its processors, and POST /runs answers one run. The fixture is told the
 // run's thread folder and session; an answer may list steps to show (activity) and requests to put to the person
 // (asks) before its reply, each waiting for the person's answer, files to write into the folder's game/ (files) or the
-// folder itself (sources), and commands to run in the folder (commands), as a real turn's harness would; and with
+// folder itself (sources), and whether to compile src/main.ts with the folder's own TypeScript (compile), as a real
+// turn's harness would; and with
 // view, a call to the turn's own MCP server's view_game, whose answer it shows as a step.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -20,7 +21,7 @@ const FIXTURE_FOLDER = '/work/zirbel/turn-fixture';
 
 type FixtureReply = {
   task: string; stopReason: string; text?: string; activity?: ActivityEntry[]; asks?: AgentAsk[];
-  files?: Record<string, string>; sources?: Record<string, string>; commands?: string[][]; view?: object;
+  files?: Record<string, string>; sources?: Record<string, string>; compile?: boolean; view?: object;
 };
 
 /** Calls the turn's MCP server as a harness does, and says what it answered: its tools, and view_game's content. */
@@ -64,8 +65,10 @@ await main({
         mkdirSync(dirname(file), { recursive: true });
         writeFileSync(file, content!);
       }
-      for (const [command, ...args] of reply.commands ?? [])
-        execFileSync(command === 'node' ? process.execPath : command!, args, { cwd: folder, stdio: 'pipe' });
+      // The one command a fake turn runs, fixed here: the folder's own TypeScript compiles src/main.ts into game/.
+      if (reply.compile)
+        execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '--target', 'es2022', '--module', 'es2022',
+          '--outDir', 'game', 'src/main.ts'], { cwd: folder, stdio: 'pipe' });
       const server = place.mcpServers?.[0];
       if (reply.view && server) update?.({ type: 'activity', entry: { id: 'view', kind: 'notice', title: 'Viewed the game',
         detail: JSON.stringify(await viewThrough(server, reply.view)) } });
