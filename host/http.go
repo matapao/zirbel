@@ -175,6 +175,28 @@ func listenTCP4(ctx context.Context, bind string, port int) (net.Listener, int, 
 	return socket, address.Port, nil
 }
 
+// everyInterface is the bind for a box's listeners, which answer its whole network.
+const everyInterface = "::"
+
+// listenOn binds as listenTCP4 does, but everyInterface binds IPv6 and IPv4
+// together, as Node's "::" does for a box, and IPv4 alone on a system without
+// IPv6.
+func listenOn(ctx context.Context, bind string, port int) (net.Listener, int, error) {
+	if bind != everyInterface {
+		return listenTCP4(ctx, bind, port)
+	}
+	socket, err := (&net.ListenConfig{}).Listen(ctx, "tcp", net.JoinHostPort("::", strconv.Itoa(port)))
+	if err != nil {
+		return listenTCP4(ctx, "0.0.0.0", port)
+	}
+	address, ok := socket.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = socket.Close()
+		return nil, 0, errors.New("the listener has no TCP address")
+	}
+	return socket, address.Port, nil
+}
+
 // limitListener caps open connections like the Node host's maxConnections.
 type limitListener struct {
 	net.Listener

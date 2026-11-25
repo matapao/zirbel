@@ -222,8 +222,8 @@ func (s *EditorServer) serveProjects(w http.ResponseWriter, r *http.Request, pat
 		if err != nil {
 			return err
 		}
-		return s.solo(w, release)
-	case action == "grants" && s.mcp != nil:
+		return s.solo(w, r, release)
+	case action == "grants" && s.mcpOn():
 		return s.serveGrants(w, r, projectID, tail)
 	}
 	return fail(http.StatusNotFound, "Editor route does not exist.")

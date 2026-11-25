@@ -74,7 +74,7 @@ func (l *Listener) serveGame(w http.ResponseWriter, r *http.Request, room *Room,
 		return errors.New("the game page cache holds an unexpected value")
 	}
 	entry.once.Do(func() {
-		policy, html := gamePage(room.Release, origin+"/runtime/"+room.ID+"/", l.ancestors(), origin+gamePath(room))
+		policy, html := gamePage(room.Release, origin+"/runtime/"+room.ID+"/", l.ancestors(hostnameOf(r.Host)), origin+gamePath(room))
 		var out bytes.Buffer
 		writer := gzip.NewWriter(&out)
 		_, _ = writer.Write([]byte(html))

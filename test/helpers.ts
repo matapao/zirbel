@@ -72,8 +72,9 @@ export function stopHost(child: ChildProcess) {
 
 // Start a host that is stopped when the test ends. `ready` resolves with the
 // first value `pick` returns for one of the JSON lines the host prints.
-export function launch<T>(t: TestContext, command: string[], args: string[], pick: (line: Record<string, unknown>) => T | undefined) {
-  const child = spawn(command[0]!, [...command.slice(1), ...args]);
+export function launch<T>(t: TestContext, command: string[], args: string[], pick: (line: Record<string, unknown>) => T | undefined,
+  env?: Record<string, string>) {
+  const child = spawn(command[0]!, [...command.slice(1), ...args], env ? { env: { ...process.env, ...env } } : {});
   t.after(() => stopHost(child));
   let errors = '';
   child.stderr.on('data', (chunk: Buffer) => { errors += chunk.toString('utf8'); });

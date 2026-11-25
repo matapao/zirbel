@@ -42,9 +42,10 @@ func (p *Players) StartLAN(ctx context.Context) (*Listener, error) {
 }
 
 // Describe mirrors Players.describe in packages/server/hosting.ts: a room and
-// its links on the listener that serves it. The Go host does not render QR
+// its links on the listener that serves it, a local room's on host (the name
+// a box was reached by; loopback otherwise). The Go host does not render QR
 // codes yet; the editor shows the link.
-func (p *Players) Describe(ctx context.Context, room *Room) (any, error) {
+func (p *Players) Describe(ctx context.Context, room *Room, host string) (any, error) {
 	active, address := p.local, ""
 	if room.Access == "lan" {
 		var err error
@@ -58,18 +59,18 @@ func (p *Players) Describe(ctx context.Context, room *Room) (any, error) {
 			}
 		}
 	}
-	host := address
-	if host == "" {
-		host = "127.0.0.1"
+	linked := address
+	if linked == "" {
+		linked = host
 	}
-	base := "http://" + host + ":" + strconv.Itoa(active.port)
+	port := ":" + strconv.Itoa(active.port)
 	return struct {
 		summary
 		LAN       bool    `json:"lan"`
 		Link      string  `json:"link"`
 		LocalLink string  `json:"localLink"`
 		QR        *string `json:"qr"`
-	}{room.Summary(), address != "", roomLink(base, room), roomLink(loopback(active.port), room), nil}, nil
+	}{room.Summary(), address != "", roomLink("http://"+linked+port, room), roomLink("http://"+host+port, room), nil}, nil
 }
 
 // Close lets seated sockets flush, then stops both listeners.
