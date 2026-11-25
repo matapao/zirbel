@@ -13,10 +13,12 @@ export type ActionField = {
 };
 /** Where an answered request takes effect: inside the turn's sandbox, or outside it; reach says so in plain words. */
 export type ActionReach = { scope: 'sandboxed' | 'outside'; reach: string };
-/** A permission request in plain language: a headline, and what it runs or changes for the details. */
+/** A permission request in plain language: a headline, the harness's reason in its own words (plain text, never markup),
+ *  and what it runs or changes for the details. */
 export type PermissionRequest = {
   summary: string;
   tool: string;
+  reason?: string;
   command?: string;
   file?: string;
   folder?: string;

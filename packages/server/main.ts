@@ -81,6 +81,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
 
   const { file: serviceFile, release: releaseDirectory } = claim;
   let editor: ReturnType<typeof createServer> | undefined;
+  let closeHarnesses: (() => Promise<void>) | undefined;
   const requests = new Set<Promise<void>>();
   let stopping = false;
   async function stop() {
@@ -91,6 +92,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
     // A disconnected chat can still finish and save. Hold the directory claim
     // until all editor handlers and any LAN startup have settled.
     await Promise.allSettled(requests);
+    await closeHarnesses?.();
     await players.close();
     releaseDirectory();
   }
@@ -98,6 +100,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
   try {
     projects.archiveLegacyPreviews();
     const harnesses = harnessesFor(root);
+    closeHarnesses = async () => { await harnesses.close?.(); };
     const chat = new ChatRuns();
     const activity = new ActivityStore(root);
     const mcp = new Mcp(projects);

@@ -1,16 +1,16 @@
 // The editor as the packed app carries it (Contents/Resources/editor): the repository's built dist/, and beside it the
 // packages the server still loads from node_modules at runtime. Everything else dist/server.mjs imports is bundled into
-// it; local-harnesses.ts resolves the harness adapters and their programs from node_modules and starts them as
-// processes of their own. Those packages are installed from the repository's lockfile, with its supply-chain settings,
-// for the target platform only, without install scripts, and then cut down to what RUNTIME needs.
+// it; the agent SDKs stay out of dist/ (scripts/build.mjs), and the harnesses run the person's own Claude Code and
+// Codex through them. Those packages are installed from the repository's lockfile, with its supply-chain settings, for
+// the target platform only, without install scripts, and then cut down to what RUNTIME needs.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-/** The packages the server resolves at runtime that go in the app. The Claude Code adapter does not: it runs only with
- *  Anthropic's Agent SDK and its Claude Code binaries, which are under Anthropic's terms and go in no image or release
- *  (scripts/check-security.mjs). The packed app shows that harness as unavailable; the app run from a checkout has it. */
-const RUNTIME = ['@agentclientprotocol/codex-acp'];
+/** The packages the server resolves at runtime that go in the app. Anthropic's Agent SDK does not: it is under
+ *  Anthropic's terms and goes in no image or release (scripts/check-security.mjs). The packed app shows the Claude Code
+ *  harness as unavailable; the app run from a checkout has it. */
+const RUNTIME = ['@openai/codex-sdk'];
 
 /** The folder of a package as Node finds it from `from`: in node_modules beside `from`, then in each folder above, up
  *  to the install's own node_modules. */

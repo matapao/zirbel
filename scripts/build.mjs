@@ -1,6 +1,22 @@
 import { build } from 'esbuild';
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 
+// The agent SDKs the harness library runs its agents through stay out of dist/, installed with the editor and loaded
+// from node_modules: Anthropic's is under Anthropic's terms and goes in no image or release. An editor installed
+// without it (the packed desktop app) still starts, and its Claude Code harness is unavailable (local-harnesses.ts).
+const CLAUDE_SDK = '@anthropic-ai/claude-agent-sdk';
+const agentSdks = {
+  name: 'agent-sdks',
+  setup(sdks) {
+    sdks.onResolve({ filter: /^@openai\/codex-sdk$/ }, ({ path }) => ({ path, external: true }));
+    sdks.onResolve({ filter: /^@anthropic-ai\/claude-agent-sdk$/ }, ({ path, namespace }) =>
+      namespace === 'optional-sdk' ? { path, external: true } : { path, namespace: 'optional-sdk' });
+    sdks.onLoad({ filter: /.*/, namespace: 'optional-sdk' }, () => ({ loader: 'js', contents:
+      `const sdk = await import(${JSON.stringify(CLAUDE_SDK)}).catch(() => undefined);
+      export const query = sdk?.query ?? (() => { throw new Error('Claude Code is unavailable in this editor.'); });` }));
+  },
+};
+
 await rm('dist', { recursive: true, force: true });
 await mkdir('dist/web', { recursive: true });
 await cp('public', 'dist/web', { recursive: true });
@@ -51,7 +67,7 @@ await Promise.all([
   build({
     entryPoints: { server: 'packages/server/cli.ts' },
     bundle: true, splitting: true, platform: 'node', target: 'node24', format: 'esm',
-    outdir: 'dist', outExtension: { '.js': '.mjs' }, chunkNames: 'server-[name]-[hash]',
+    outdir: 'dist', outExtension: { '.js': '.mjs' }, chunkNames: 'server-[name]-[hash]', plugins: [agentSdks],
     banner: { js: "import { createRequire as __zirbelCreateRequire } from 'node:module'; const require = __zirbelCreateRequire(import.meta.url);" },
   }),
   // The player runtime ships inside every release and on the LAN listener, so

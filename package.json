@@ -8,7 +8,7 @@
     "node": ">=24.22.3 <25"
   },
   "scripts": {
-    "deps": "pnpm --dir deps/celler install --frozen-lockfile --ignore-workspace --pm-on-fail=ignore && pnpm --dir deps/celler run --pm-on-fail=ignore build && pnpm --dir deps/vindu install --frozen-lockfile && pnpm --dir deps/vindu run build",
+    "deps": "pnpm --dir deps/celler install --frozen-lockfile --pm-on-fail=ignore && pnpm --dir deps/celler run --pm-on-fail=ignore build && pnpm --dir deps/vindu install --frozen-lockfile && pnpm --dir deps/vindu run build",
     "build": "node scripts/build.mjs",
     "build:host": "node scripts/build-host.mjs",
     "contracts": "node --experimental-transform-types --disable-warning=ExperimentalWarning scripts/contracts.ts",
@@ -26,10 +26,10 @@
     "mcp": "node dist/server.mjs mcp"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.108.0",
-    "@agentclientprotocol/codex-acp": "2.7.0",
+    "@anthropic-ai/claude-agent-sdk": "0.3.330",
+    "@matapao/celler": "link:deps/celler",
     "@matapao/vindu": "link:deps/vindu",
-    "celler": "link:deps/celler",
+    "@openai/codex-sdk": "0.171.0",
     "qrcode": "1.5.4",
     "three": "0.187.0",
     "ws": "8.23.0",

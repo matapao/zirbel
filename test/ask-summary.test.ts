@@ -1,7 +1,7 @@
 // A permission request in plain language: its headline, its scope and the details behind it.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { AgentAsk } from 'celler/harness';
+import type { AgentAsk } from '@matapao/celler/harness';
 import { describeAsk, programsOf, SANDBOXED } from '../packages/server/ask-summary.ts';
 
 const folder = '/work/zirbel/turn-1';
@@ -20,7 +20,7 @@ test('a shell request reads as the agent described it, with the command only in 
     ask(
       'Bash',
       { command, description: 'Render only the ship draws to find the black polygon' },
-      { kind: 'execute', title: command },
+      { title: command },
     ),
     { folder },
   );
@@ -68,27 +68,38 @@ test('an edit names its file in the turn folder and carries the change', () => {
     describeAsk(ask('apply_patch', { input: '*** Begin Patch\n*** End Patch' })).diff,
     '*** Begin Patch\n*** End Patch',
   );
-  assert.equal(describeAsk(ask('NotebookEdit', {}, { kind: 'edit' })).summary, 'Edit a file');
+  assert.equal(describeAsk(ask('NotebookEdit', {})).summary, 'Edit a file');
 });
 
-test('an MCP tool is outside the sandbox and names its server', () => {
-  const own = describeAsk(ask('mcp__zirbel__propose_change', {}, { title: 'mcp__zirbel__propose_change' }));
-  assert.equal(own.summary, 'propose change (zirbel)');
+test('an MCP tool is outside the sandbox and names its server, as the harness reported it', () => {
+  const own = describeAsk(ask('mcp__zirbel__view_game', {}, { title: 'mcp__zirbel__view_game' }));
+  assert.equal(own.summary, 'view game (zirbel)');
   assert.equal(own.scope, 'outside');
-  assert.equal(own.reach, 'Changes your game');
+  assert.equal(own.reach, 'Shows your game in a browser on this computer');
   const other = describeAsk(ask('mcp__github__create_issue', {}, { title: 'Create an issue' }));
   assert.equal(other.summary, 'Create an issue (github)');
   assert.equal(other.reach, 'Reaches github');
+  // Codex names a call to a server's tool apart; the progress's server and tool name it, whatever the tool is called.
+  const reported = describeAsk(ask('my_server.list__items', {}), { mcp: { server: 'my_server', tool: 'list__items' } });
+  assert.equal(reported.summary, 'list items (my_server)');
+  assert.equal(reported.reach, 'Reaches my_server');
 });
 
-test('any other request is a short sentence from its kind and tool', () => {
+test('the reason the harness gives comes along as it is, under its own label on the card', () => {
+  const reason = 'This command writes outside the sandbox.\nIt needs the network.';
+  assert.equal(describeAsk(ask('Bash', { command: 'npm install' }, { reason })).reason, reason);
+  assert.equal(describeAsk(ask('mcp__zirbel__view_game', {}, { reason: '  ' })).reason, undefined);
+  assert.equal(describeAsk(ask('Read', {}, { reason: 'x'.repeat(1200) })).reason?.length, 1000);
+});
+
+test('any other request is a short sentence from its tool', () => {
   assert.equal(
-    describeAsk(ask('Read', { file_path: folder + '/a.txt' }, { kind: 'read' }), { folder }).summary,
+    describeAsk(ask('Read', { file_path: folder + '/a.txt' }), { folder }).summary,
     'Read a.txt',
   );
-  assert.equal(describeAsk(ask('Delete', {}, { kind: 'delete' })).summary, 'Delete a file');
-  assert.equal(describeAsk(ask('Grep', {}, { kind: 'search' })).summary, 'Search with Grep');
-  assert.equal(describeAsk(ask('WebFetch', {}, { kind: 'fetch' })).summary, 'Fetch a page with WebFetch');
+  assert.equal(describeAsk(ask('Read', {})).summary, 'Read a file');
+  assert.equal(describeAsk(ask('Grep', {})).summary, 'Search with Grep');
+  assert.equal(describeAsk(ask('WebFetch', {})).summary, 'Fetch a page with WebFetch');
   assert.equal(describeAsk(ask('TodoWrite', null)).summary, 'Use TodoWrite');
   assert.equal(describeAsk(ask('', [])).summary, 'Use a tool');
   assert.equal(describeAsk(ask('Glob', {})).scope, 'sandboxed');

@@ -1,6 +1,7 @@
 // What a harness asks during a turn, as a card under its row: a permission in plain language, a form, or a page to
-// open. The headline says what it wants to do, a badge says whether that stays in the turn's sandbox, and the exact
-// command, file or change waits in the closed details. The buttons are the harness's own options.
+// open. The headline says what it wants to do, the harness's own reason follows as plain text, a badge says whether
+// that stays in the turn's sandbox, and the exact command, file or change waits in the closed details. The buttons are
+// the harness's own options.
 import type { ActionField, ActionValue, HarnessAction } from '../sdk/chat-stream.ts';
 import { $, action, api, attempt, el, link, option } from './editor-ui.ts';
 import { diffView } from './activity-rows.ts';
@@ -32,6 +33,13 @@ function scopeBadge(request: HarnessAction) {
   return badge;
 }
 
+/** The harness's reason, in its own words: set as text, never read as HTML or Markdown. */
+function reasonLine(reason: string) {
+  const line = el('p', undefined, 'ask-reason');
+  line.append(el('span', 'Why it’s asking', 'ask-label'), el('span', reason, 'ask-reason-text'));
+  return line;
+}
+
 function details(request: Extract<HarnessAction, { kind: 'permission' }>) {
   const box = el('details', undefined, 'ask-details');
   box.append(el('summary', 'Details'));
@@ -55,7 +63,9 @@ export function actionCard(run: string, request: HarnessAction, harness: string)
   const title = el('strong', headlineOf(request), 'ask-title');
   title.id = 'ask-' + ++cards;
   card.setAttribute('aria-labelledby', title.id);
-  card.append(el('span', harness + ' asks', 'ask-from'), title, scopeBadge(request));
+  card.append(el('span', harness + ' asks', 'ask-from'), title);
+  if (request.kind === 'permission' && request.reason) card.append(reasonLine(request.reason));
+  card.append(scopeBadge(request));
   const answer = async (payload: object) => {
     await api('chat/' + run + '/actions/' + request.id, payload);
   };

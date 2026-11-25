@@ -4,7 +4,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import type { RunSpec, SessionConfigOption } from 'celler/harness';
+import type { RunSpec } from '@matapao/celler/harness';
 import { chatStreamType, type ChatEvent, type ChatUpdate } from '../packages/sdk/chat-stream.ts';
 import { head } from '../packages/core/projects.ts';
 import { rights, legacyProject, install } from './helpers.ts';
@@ -94,19 +94,16 @@ test('standalone harnesses use existing sign-in and enable chat after provider s
       kind: 'codex', async health() { return health(true); }, login() { throw new Error('Already signed in'); },
       run(spec, onProgress) {
         assert.equal(spec.purpose, 'work');
-        assert.equal(spec.trusted, true);
+        assert.equal(spec.resume, false);
         assert.equal(spec.timeoutMs, 3_600_000);
         assert.ok(spec.cwd.startsWith(join(root, 'turn-')));
         assert.equal(existsSync(spec.cwd), true);
         workingFolder = spec.cwd;
         assert.deepEqual(spec.mcpServers, []);
         onProgress({ type: 'session', sessionId: 'test-session' });
-        onProgress({ type: 'update', update: { sessionUpdate: 'plan', entries: [{ content: 'Design a sailing game', priority: 'high', status: 'in_progress' }] } });
         onProgress({ type: 'tool', tool: 'Agent', call: 'helper', summary: 'Delegate', helper: 'Design steering' });
         onProgress({ type: 'tool', tool: 'Write', call: 'write', parent: 'helper', summary: 'Write controls' });
         onProgress({ type: 'helper-done', call: 'helper', ok: true });
-        onProgress({ type: 'update', update: { sessionUpdate: 'subagent_update', sessionId: 'native-helper', title: 'Test controls', state: { state: 'running' } } });
-        onProgress({ type: 'update', update: { sessionUpdate: 'subagent_update', sessionId: 'native-helper', state: { state: 'idle' } } });
         onProgress({ type: 'file', file: 'index.html' });
         onProgress({ type: 'text', text: 'What should' });
         onProgress({ type: 'text', text: 'What should the player do?' });
@@ -118,7 +115,7 @@ test('standalone harnesses use existing sign-in and enable chat after provider s
       login() {
         loginStarts++;
         const done = Promise.withResolvers<{ ok: boolean }>();
-        return { url: Promise.resolve('https://example.com/sign-in'), done: done.promise, sendCode(code) {
+        return { url: Promise.resolve('https://example.com/sign-in'), done: done.promise, cancel() {}, sendCode(code) {
           assert.equal(code, 'one-time-code');
           claudeReady = true;
           done.resolve({ ok: true });
@@ -127,7 +124,7 @@ test('standalone harnesses use existing sign-in and enable chat after provider s
     } },
   ]);
   assert.deepEqual(await harnesses.list(), [
-    { id: 'codex', name: 'Codex', ready: true, activity: 'zirbel', modelSettings: true }, { id: 'claude', name: 'Claude Code', ready: false, signIn: true },
+    { id: 'codex', name: 'Codex', ready: true, modelSettings: true }, { id: 'claude', name: 'Claude Code', ready: false, signIn: true },
   ]);
   const events: ChatUpdate[] = [];
   const reply = await runWorkspaceChat(harnesses, 'codex', projects, 'A game about a sailing ship', [], { update: (event) => events.push(event) });
@@ -137,9 +134,6 @@ test('standalone harnesses use existing sign-in and enable chat after provider s
   const entries = events.filter((event) => event.type === 'activity').map(({ entry }) => entry);
   assert.equal(entries.find(({ id }) => id === 'tool:write')?.parent, 'tool:helper');
   assert.equal(entries.findLast(({ id }) => id === 'tool:helper')?.state, 'completed');
-  assert.equal(entries.findLast(({ id }) => id === 'helper:native-helper')?.state, 'idle');
-  assert.equal(entries.findLast(({ id }) => id === 'helper:native-helper')?.title, 'Test controls');
-  assert.match(entries.find(({ kind }) => kind === 'plan')?.detail ?? '', /Design a sailing game/);
   assert.equal(entries.find(({ kind }) => kind === 'file')?.title, 'Updated index.html');
   assert.equal(entries.findLast(({ kind }) => kind === 'message')?.detail, 'What should the player do?');
   assert.deepEqual(reply.conversation?.at(-1)?.usage, { source: 'Codex', total: 19 });
@@ -175,7 +169,7 @@ test('streamed harness requests accept a single reviewed answer and stopping end
     assert.ok(ask && signal);
     const selected = await ask({ call: 'choice', title: 'Create a scratch file?', tool: 'Write', input: { path: 'index.html' },
       options: [{ optionId: 'yes', name: 'Allow once', kind: 'allow_once' },
-        { optionId: 'always', name: 'Always allow', kind: 'allow_always' }] }, signal);
+        { optionId: 'no', name: 'Reject', kind: 'reject_once' }] }, signal);
     assert.deepEqual(selected, { option: 'yes' });
     const form = await ask({ call: 'form', title: 'Choose the player count', tool: '', options: [],
       form: { message: 'Choose the player count', fields: [{ name: 'players', title: 'Players', type: 'integer', required: true }] } }, signal);
@@ -186,13 +180,14 @@ test('streamed harness requests accept a single reviewed answer and stopping end
   const run = frames.find((event) => event.type === 'run');
   const first = frames.find((event) => event.type === 'action');
   assert.ok(run && first?.action.kind === 'permission');
-  assert.deepEqual(first.action.options, [{ id: 'yes', title: 'Allow once' }]);
+  assert.deepEqual(first.action.options, [{ id: 'yes', title: 'Allow once' }, { id: 'no', title: 'Reject' }]);
   assert.equal(first.action.summary, 'Edit index.html');
   assert.equal(first.action.scope, 'sandboxed');
   // Each request is a step of the turn too: waiting while open, then with the answer it got.
   const asked = frames.find((event) => event.type === 'activity' && event.entry.kind === 'request');
   assert.ok(asked?.type === 'activity' && asked.entry.state === 'waiting' && asked.entry.title === 'Edit index.html');
   assert.throws(() => chat.answer(run.id, first.action.id, { choice: 'option', option: 'always' }), /offered/);
+  assert.equal(first.action.reason, undefined);
   chat.answer(run.id, first.action.id, { choice: 'option', option: 'yes' });
   assert.throws(() => chat.answer(run.id, first.action.id, { choice: 'option', option: 'yes' }), /no longer open/);
   await hasForm.promise;
@@ -219,59 +214,51 @@ test('a chat connection closed before streaming does not start a harness turn', 
   await chatReply(request, response, async () => assert.fail('The harness must not start for a closed connection.'));
 });
 
-test('the model picker reads native choices before the first prompt and applies only the selected variant options', async (t) => {
+test('the model picker offers the tiers and each agent’s efforts, and a turn takes only those', async (t) => {
   const { LocalHarnesses } = await import('../packages/server/local-harnesses.ts');
   const { root } = install(t);
   const calls: RunSpec[] = [];
-  let probesCancelled = 0;
-  let ignoreEffort = false;
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 };
-  const modes = { currentModeId: 'work', availableModes: [{ id: 'work', name: 'Work' }] };
-  const modelOptions = [{ group: 'current', name: 'Current models', options: [
-    { value: 'model-one', name: 'Model One' }, { value: 'model-two', name: 'Model Two', description: 'Model from the harness' },
-  ] }];
-  const harnesses = new LocalHarnesses(root, [{ id: 'fixture', name: 'Fixture', runtime: {
-    kind: 'fixture', async health() { return { ok: true, checkedAt: Date.now(), detail: '' }; },
+  const harnesses = new LocalHarnesses(root, [{ id: 'claude', name: 'Claude Code', runtime: {
+    kind: 'claude-code', async health() { return { ok: true, checkedAt: Date.now(), detail: '' }; },
     login() { throw new Error('Already signed in'); },
-    run(spec, report) {
+    run(spec) {
       calls.push(spec);
-      const model = spec.model || 'model-one';
-      const levels = model === 'model-one' ? ['light'] : ['regular', 'intensive'];
-      const options: SessionConfigOption[] = [
-        { id: 'mode', category: 'mode', type: 'select', name: 'Permission mode', currentValue: 'work', options: [] },
-        { id: 'model', category: 'model', type: 'select', name: 'Harness model', currentValue: model, options: modelOptions },
-        { id: 'reasoning', category: 'thought_level', type: 'select', name: 'Thinking effort',
-          currentValue: (!ignoreEffort && spec.effort) || levels[0]!, options: levels.map((value) => ({ value, name: value })) },
-      ];
-      let cancelled = false;
-      const done = Promise.resolve().then(() => {
-        report({ type: 'options', modes: null, options: [] });
-        report({ type: 'options', modes, options });
-        if (!spec.prompt) assert.equal(cancelled, true, 'Discovery must end the initialized session before it sends a prompt');
-        return { ok: !cancelled, cancelled, text: spec.prompt ? 'Reply' : '', usage, costUsd: null, permissionDenials: [] };
-      });
-      return { done, cancel() { cancelled = true; probesCancelled++; } };
+      return { done: Promise.resolve({ ok: true, text: 'Reply', usage, costUsd: null, permissionDenials: [] }), cancel() {} };
     },
   } }]);
+  const settings = await harnesses.settings('claude');
+  assert.deepEqual(settings.model?.options.map((option) => 'value' in option && option.value), ['fast', 'balanced', 'strong']);
+  assert.deepEqual(settings.effort?.options.map((option) => 'value' in option && option.value), ['low', 'medium', 'high', 'xhigh', 'max']);
+  assert.equal(settings.model?.currentValue, '', 'no choice: the harness’s own default');
+  await assert.rejects(harnesses.settings('claude', 'gpt-unknown'), /offered by the harness/);
+  await assert.rejects(harnesses.start('claude', 'Build it.', { selection: { model: 'unknown' } }), /offered by the harness/);
+  await assert.rejects(harnesses.start('claude', 'Build it.', { selection: { model: 'strong', effort: 'minimal' } }), /offered for this model/);
+  assert.equal(calls.length, 0);
+  assert.equal((await harnesses.start('claude', 'Build it.', { selection: { model: 'strong', effort: 'max' } })).text, 'Reply');
+  assert.equal(calls[0]?.model, 'strong');
+  assert.equal(calls[0]?.effort, 'max');
+});
 
-  const defaults = await harnesses.settings('fixture');
-  assert.equal(defaults.model?.name, 'Harness model');
-  assert.equal(defaults.model?.currentValue, 'model-one');
-  assert.deepEqual(JSON.parse(JSON.stringify(defaults.model?.options)), modelOptions);
-  assert.deepEqual(Object.keys(defaults).sort(), ['effort', 'model']);
-  assert.equal(defaults.effort?.currentValue, 'light');
-  const second = await harnesses.settings('fixture', 'model-two');
-  assert.deepEqual(second.effort?.options.map(({ name }) => name), ['regular', 'intensive']);
-  assert.equal(probesCancelled, 2);
-  await assert.rejects(harnesses.start('fixture', 'Build it.', { selection: { model: 'unknown' } }), /offered by the harness/);
-  await assert.rejects(harnesses.start('fixture', 'Build it.', { selection: { model: 'model-two', effort: 'light' } }), /offered for this model/);
-  assert.equal(calls.length, 2);
-  const selection = { model: 'model-two', effort: 'intensive' };
-  assert.equal((await harnesses.start('fixture', 'Build it.', { selection })).text, 'Reply');
-  assert.equal(calls[2]?.model, selection.model);
-  assert.equal(calls[2]?.effort, selection.effort);
-  ignoreEffort = true;
-  await assert.rejects(harnesses.start('fixture', 'Build it.', { selection }), /did not apply the selected model settings/);
+test('a turn that ends for a known reason says so in plain words', async (t) => {
+  const { LocalHarnesses } = await import('../packages/server/local-harnesses.ts');
+  const { TurnEndedError } = await import('../packages/server/processors.ts');
+  const { root } = install(t);
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 };
+  let ended: 'usage-limit' | 'max-turns' | 'timed-out' | 'session-not-found' = 'usage-limit';
+  const harnesses = new LocalHarnesses(root, [{ id: 'codex', name: 'Codex', runtime: {
+    kind: 'codex', async health() { return { ok: true, checkedAt: Date.now(), detail: '' }; },
+    login() { throw new Error('Already signed in'); },
+    run() { return { done: Promise.resolve({ ok: false, text: '', usage, costUsd: null, permissionDenials: [], ended, error: 'raw' }), cancel() {} }; },
+  } }]);
+  const words = { 'usage-limit': /usage limit/, 'max-turns': /most steps/, 'timed-out': /out of time/, 'session-not-found': /no longer has this thread’s session/ };
+  for (const [reason, pattern] of Object.entries(words) as [typeof ended, RegExp][]) {
+    ended = reason;
+    const error = await harnesses.start('codex', 'Go on.').then(() => undefined, (error: unknown) => error);
+    assert.ok(error instanceof TurnEndedError, reason);
+    assert.equal(error.ended, reason);
+    assert.match(error.message, pattern);
+  }
 });
 
 test('a reply that arrives after cancellation does not create a draft', async (t) => {

@@ -168,6 +168,9 @@ button.step-head[aria-expanded="true"]::after{transform:rotate(90deg)}
 .ask-card:focus{outline:2px solid var(--accent);outline-offset:1px}
 .ask-from{color:var(--quiet);font-size:.75rem}
 .ask-title{font-size:.95rem;line-height:1.35;overflow-wrap:anywhere}
+.ask-reason{margin:0;line-height:1.4}
+.ask-reason .ask-label{margin-top:0}
+.ask-reason-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .scope{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .45rem;margin:0;font-size:.8rem;color:var(--quiet)}
 .scope strong{display:inline-flex;align-items:center;gap:.3rem;padding:.1rem .45rem;border-radius:1rem;border:1px solid var(--line);color:var(--ink);font-size:.75rem}
 .scope-icon{display:inline-flex}

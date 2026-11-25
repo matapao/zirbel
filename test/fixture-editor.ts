@@ -2,7 +2,7 @@
 // FIXTURE_HARNESS_URL: GET /access lists its processors, and POST /runs answers one run. An answer may list steps to
 // show (activity) and requests to put to the person (asks) before its reply; each ask waits for the person's answer.
 import { resolve } from 'node:path';
-import type { AgentAsk } from 'celler/harness';
+import type { AgentAsk } from '@matapao/celler/harness';
 import { ZirbelError } from '../packages/core/projects.ts';
 import { main } from '../packages/server/main.ts';
 import type { ActivityEntry } from '../packages/sdk/chat-stream.ts';

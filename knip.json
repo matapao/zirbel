@@ -14,8 +14,7 @@
         "test/**/*.{ts,mjs}"
       ],
       "ignoreDependencies": [
-        "@agentclientprotocol/claude-agent-acp",
-        "@agentclientprotocol/codex-acp"
+        "@openai/codex-sdk"
       ],
       "ignoreBinaries": [
         "go",

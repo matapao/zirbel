@@ -1,7 +1,7 @@
 // The desktop app as packed (scripts/pack.mjs), started from its bundle with folders of the test's own and driven by
-// Playwright's Electron support. The bundle is signed, holds the checkout's built dist/ and the Codex harness it runs,
-// links to nothing outside itself, and carries nothing under Anthropic's terms. Started, it runs the editor inside the
-// bundle, hardened as from desktop/, finds the bundled Codex harness, and stops the editor as it quits.
+// Playwright's Electron support. The bundle is signed, holds the checkout's built dist/ and the Codex SDK the Codex
+// harness runs the person's own Codex through, links to nothing outside itself, and carries nothing under Anthropic's
+// terms. Started, it runs the editor inside the bundle, hardened as from desktop/, and stops the editor as it quits.
 //   pnpm build (in the repository), then pnpm build && pnpm pack:app && pnpm test:packed here
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -42,7 +42,7 @@ function files(root: string): string[] {
     .map((entry) => path.relative(root, path.join(entry.parentPath, entry.name)));
 }
 
-test('the bundle is signed, and holds the built dist/ and the Codex harness, linked to nothing outside it', () => {
+test('the bundle is signed, and holds the built dist/ and the Codex SDK, linked to nothing outside it', () => {
   assert.equal(spawnSync('codesign', ['--verify', '--deep', '--strict', BUNDLE]).status, 0, 'valid as signed');
   const built = files(path.join(REPO, 'dist')).filter((file) => !file.endsWith('.DS_Store'));
   const different = built.filter(
@@ -50,21 +50,13 @@ test('the bundle is signed, and holds the built dist/ and the Codex harness, lin
   );
   assert.deepEqual(different, [], "the checkout's dist/, as built");
   const modules = path.join(EDITOR, 'node_modules');
-  const codex = path.join(modules, '@openai', `codex-darwin-${process.arch}`, 'vendor');
-  assert.ok(
-    fs.existsSync(path.join(modules, '@agentclientprotocol', 'codex-acp', 'package.json')),
-    'the Codex adapter',
-  );
-  assert.ok(
-    fs.readdirSync(codex).some((triple) => fs.existsSync(path.join(codex, triple, 'bin', 'codex'))),
-    'its program',
-  );
+  assert.ok(fs.existsSync(path.join(modules, '@openai', 'codex-sdk', 'package.json')), 'the Codex SDK');
+  assert.ok(!fs.existsSync(path.join(modules, '@openai', `codex-darwin-${process.arch}`)), 'no copy of Codex: the person’s own runs');
   const scopes = fs.readdirSync(modules).filter((name) => name.startsWith('@'));
   const packages = scopes.flatMap((scope) =>
     fs.readdirSync(path.join(modules, scope)).map((name) => `${scope}/${name}`),
   );
   assert.ok(!packages.some((name) => name.startsWith('@anthropic-ai/')), "nothing under Anthropic's terms");
-  assert.ok(!packages.includes('@agentclientprotocol/claude-agent-acp'), 'no Claude Code adapter without its SDK');
   const links = fs
     .readdirSync(path.join(BUNDLE, 'Contents', 'Resources'), { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isSymbolicLink())
@@ -105,7 +97,7 @@ test('the packed app is hardened as from desktop/', async () => {
   await child.close();
 });
 
-test('the editor finds the bundled Codex harness and runs it; Claude Code is unavailable', async () => {
+test('the editor offers the Codex harness where Codex is installed; Claude Code is unavailable', async () => {
   const listed = await page.evaluate(
     async () =>
       (await (await fetch('/api/processors')).json()) as {
@@ -114,9 +106,9 @@ test('the editor finds the bundled Codex harness and runs it; Claude Code is una
   );
   const codex = listed.processors.find((processor) => processor.id === 'codex');
   const claude = listed.processors.find((processor) => processor.id === 'claude');
-  // The test's account folder has no sign-in: a Codex that runs says so.
-  assert.ok(codex && (codex.ready || codex.signIn), `Codex runs from the bundle: ${JSON.stringify(codex)}`);
-  assert.equal(claude?.ready, false);
+  // The test's account folder has no sign-in: a Codex that runs says so, and one that isn't installed is unavailable.
+  assert.ok(codex && (codex.ready || codex.signIn || codex.detail), `Codex is listed: ${JSON.stringify(codex)}`);
+  assert.deepEqual(claude && { ready: claude.ready, detail: claude.detail }, { ready: false, detail: 'Unavailable in this editor' });
 });
 
 test('quitting the packed app stops its editor', async () => {

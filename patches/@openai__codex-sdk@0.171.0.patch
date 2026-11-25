@@ -1,0 +1,15 @@
+diff --git a/dist/index.js b/dist/index.js
+index 04492aee5c59991ef0d40b0752a62d4b93a21338..24df90b2ba2aa685d031c0b1864b3b7ba9b86a2e 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -274,6 +274,10 @@ var CodexExec = class {
+       child.kill();
+       throw new Error("Child process has no stdin");
+     }
++    // Patched: a Codex that ends before it reads its input (a setting it refuses) closes the pipe, and the
++    // write still pending fails (EPIPE). With no listener, that error would end the host; its exit says what went wrong.
++    child.stdin.on("error", () => {
++    });
+     child.stdin.write(args.input);
+     child.stdin.end();
+     if (!child.stdout) {

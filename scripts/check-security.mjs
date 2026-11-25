@@ -33,7 +33,8 @@ const SHELL_SCRIPTS = [];
 const LICENCES = ['MIT', 'ISC', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', '0BSD', 'BlueOak-1.0.0', 'CC0-1.0', 'MPL-2.0', 'Unlicense', 'Python-2.0', 'CC-BY-4.0'];
 // A package the owner chose under other terms, by name, with why: { 'name': 'reason' }.
 const CLAUDE_CODE = "Anthropic's Agent SDK and its Claude Code binaries, under Anthropic's terms (SEE LICENSE IN README.md): " +
-  '@agentclientprotocol/claude-agent-acp runs the Claude harness with them, installed with the editor, never in an image or release';
+  'the Claude harness runs the person\'s own Claude Code through the SDK, installed with the editor and kept out of dist/, ' +
+  'never in an image or release; its binaries are not installed (pnpm-workspace.yaml)';
 const LICENCE_EXCEPTIONS = Object.fromEntries(['', '-darwin-arm64', '-darwin-x64', '-linux-arm64', '-linux-arm64-musl', '-linux-x64',
   '-linux-x64-musl', '-win32-arm64', '-win32-x64'].map((platform) => ['@anthropic-ai/claude-agent-sdk' + platform, CLAUDE_CODE]));
 // ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────

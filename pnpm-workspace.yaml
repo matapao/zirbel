@@ -14,6 +14,11 @@ minimumReleaseAgeExclude:
   - 'router@2.3.0'
   - 'standardwebhooks@1.3.0'
   - 'unbash@6.0.5'
+  # The agent SDKs the harness library runs its agents through, at the versions it is made with; the library's own
+  # settings name the same until 2026-11-27.
+  - '@anthropic-ai/claude-agent-sdk@0.3.330'
+  - '@openai/codex-sdk@0.171.0'
+  - '@openai/codex@0.171.0'
 # - no version whose publisher is proven less well than for the versions before it, checked for versions out less
 #   than 30 days;
 trustPolicy: no-downgrade
@@ -26,3 +31,12 @@ strictDepBuilds: true
 allowBuilds:
   # It finds its own platform's binary, a package of its own; its script only checks for it.
   esbuild: false
+# The harness library's settings for the agent SDKs, which pnpm takes from this file only:
+# - the SDKs' own copies of Claude Code and Codex: the harness runs the person's own programs, so none is installed;
+ignoredOptionalDependencies:
+  - '@anthropic-ai/claude-agent-sdk-*'
+  - '@openai/codex-*'
+# - the Codex SDK writes its prompt to Codex with no listener for the pipe's errors, so a Codex that ends before it
+#   reads a long prompt would end the editor. The library's patch adds the listener, and nothing else.
+patchedDependencies:
+  '@openai/codex-sdk@0.171.0': patches/@openai__codex-sdk@0.171.0.patch

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { AgentAsk, AskAnswer } from 'celler/harness';
+import type { AgentAsk, AskAnswer } from '@matapao/celler/harness';
 import { z } from 'zod';
 import { newId, ZirbelError } from '../core/projects.ts';
 import { boundEntry, TurnLog } from '../sdk/activity.ts';
@@ -51,7 +51,8 @@ function actionOf(question: AgentAsk, place: AskPlace = {}): HarnessAction {
 /** A request as a step of the turn: its headline, and once it closes, the answer it got. */
 function requestEntry(action: HarnessAction, answer?: string): ActivityEntry {
   const headline = action.kind === 'permission' ? action.summary : action.kind === 'link' ? 'Open a web page' : action.title || 'Fill in a form';
-  const parts = [answer, action.reach, action.kind === 'permission' ? action.command ?? action.file : action.kind === 'link' ? action.url : action.title];
+  const parts = [answer, action.kind === 'permission' ? action.reason : undefined, action.reach,
+    action.kind === 'permission' ? action.command ?? action.file : action.kind === 'link' ? action.url : action.title];
   return { id: 'request:' + action.id, kind: 'request', title: headline, detail: parts.filter(Boolean).join('\n\n'),
     state: answer === undefined ? 'waiting' : 'completed', ...(action.kind === 'permission' && action.diff ? { diff: action.diff } : {}) };
 }

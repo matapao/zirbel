@@ -84,66 +84,38 @@ test('the Node editor keeps each turn apart from the project file and validates 
   assert.throws(() => store.read(project, note), /changed while it was read/);
 });
 
-test('harness events become steps with their commands, output and diffs, without the game document', () => {
+test('harness progress becomes steps: messages, tool calls, MCP calls by server, helpers and files, never the reply', () => {
   const events: ChatUpdate[] = [];
   const cwd = '/work/turn-1';
   const report = harnessActivity('Codex', cwd, (event) => events.push(event));
   const long = 'A long thought. '.repeat(400);
+  report({ type: 'session', sessionId: 'thread-1' });
+  report({ type: 'settings', settings: [{ id: 'model', name: 'Model', value: 'gpt-6.1-sol' }] });
   report({ type: 'text', text: long });
-  report({
-    type: 'update',
-    update: {
-      sessionUpdate: 'plan',
-      entries: Array.from({ length: 20 }, (_, index) => ({
-        content: 'Step ' + index + ' '.repeat(300) + 'end',
-        priority: 'medium',
-        status: index ? 'pending' : 'completed',
-      })),
-    },
-  });
-  report({ type: 'tool', tool: 'Bash', call: 'run', summary: 'Run the tests' });
-  report({
-    type: 'update',
-    update: {
-      sessionUpdate: 'tool_call_update',
-      toolCallId: 'run',
-      kind: 'execute',
-      status: 'completed',
-      rawInput: { command: 'npm test' },
-      content: [{ type: 'content', content: { type: 'text', text: '3 passing' } }],
-    },
-  });
-  report({
-    type: 'update',
-    update: {
-      sessionUpdate: 'tool_call',
-      toolCallId: 'edit',
-      title: 'Edit index.html',
-      kind: 'edit',
-      status: 'completed',
-      content: [{ type: 'diff', path: cwd + '/index.html', oldText: 'a\nb\nc', newText: 'a\nB\nc' }],
-    },
-  });
-  report({ type: 'text', text: '{"action":"edit","game":{"html":"<p>"}}' });
+  report({ type: 'tool', tool: 'execute', call: 'run', summary: 'execute: npm test' });
+  report({ type: 'tool', tool: 'zirbel.view_game', call: 'view', summary: 'zirbel.view_game', mcp: { server: 'zirbel', tool: 'view_game' } });
+  report({ type: 'tool', tool: 'Agent', call: 'helper', summary: 'Agent', helper: 'Check the controls' });
+  report({ type: 'tool', tool: 'Write', call: 'write', parent: 'helper', summary: 'Write game/index.html' });
+  report({ type: 'helper-done', call: 'helper', ok: true });
+  report({ type: 'file', file: 'game/index.html' });
+  report({ type: 'text', text: '{"action":"edit","message":"Done."}' });
   report({ type: 'file', file: '/elsewhere/secret.txt' });
   report.flush();
   const steps = new Map(events.flatMap((event) => (event.type === 'activity' ? [[event.entry.id, event.entry]] : [])));
   assert.equal(steps.get('message:0')?.detail?.length, long.length);
-  assert.equal(steps.get('plan')?.detail?.split('\n').length, 20);
-  assert.match(steps.get('plan')?.detail ?? '', /end$/);
-  assert.equal(steps.get('tool:run')?.detail, 'Run the tests\n\n$ npm test\n\n3 passing');
-  assert.equal(steps.get('tool:edit')?.diff, '--- index.html\n+++ index.html\n@@ line 1 @@\n a\n-b\n+B\n c');
-  assert.equal(
-    [...steps.values()].some(({ detail }) => detail?.includes('"action"')),
-    false,
-  );
-  assert.equal(
-    [...steps.keys()].some((id) => id.startsWith('file:')),
-    false,
-  );
+  assert.equal(steps.get('settings')?.title, 'Codex · Model: gpt-6.1-sol');
+  assert.equal(steps.get('tool:run')?.detail, 'execute: npm test');
+  assert.equal(steps.get('tool:view')?.title, 'view_game (zirbel)');
+  assert.equal(steps.get('tool:helper')?.kind, 'helper');
+  assert.equal(steps.get('tool:helper')?.state, 'completed');
+  assert.equal(steps.get('tool:helper')?.detail, 'Check the controls');
+  assert.equal(steps.get('tool:write')?.parent, 'tool:helper');
+  assert.equal(steps.get('file:game/index.html')?.title, 'Updated game/index.html');
+  assert.equal([...steps.values()].some(({ detail }) => detail?.includes('"action"')), false);
+  assert.equal([...steps.keys()].some((id) => id.includes('secret')), false);
   assert.deepEqual(
     events.filter((event) => event.type === 'progress').map((event) => event.type === 'progress' && event.phase),
-    ['responding'],
+    ['running', 'responding'],
   );
 });
 

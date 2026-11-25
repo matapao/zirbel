@@ -1,22 +1,29 @@
 // A harness's permission request in plain language: a headline that says what it wants to do, whether that stays in
-// the turn's sandbox, and the command, file or change for the details. The harness's own title for a shell command is
-// the raw command, and it does not say why it asks, so the headline comes from what the request carries.
+// the turn's sandbox, the harness's own reason where it gives one, and the command, file or change for the details. The
+// harness's own title for a shell command is the raw command, so the headline comes from what the request carries.
 import { basename, isAbsolute, relative, resolve } from 'node:path';
-import type { AgentAsk } from 'celler/harness';
+import type { AgentAsk } from '@matapao/celler/harness';
 import type { ActionReach, PermissionRequest } from '../sdk/chat-stream.ts';
 import { textDiff } from './text-diff.ts';
 
 const HEADLINE = 200;
+/** The harness's reason, as the library gives it: plain text, already cleaned and capped. */
+const REASON_LIMIT = 1000;
 const COMMAND_LIMIT = 12_000;
 const DIFF_LIMIT = 64 * 1024;
 const SHELL_TOOLS = new Set(['Bash', 'bash', 'shell', 'local_shell', 'exec_command', 'container.exec']);
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'apply_patch']);
+/** Tools that read or search, by what they do: the headline names the file, or the tool. */
+const READ_TOOLS = new Set(['Read', 'NotebookRead']);
+const SEARCH_TOOLS = new Set(['Glob', 'Grep', 'WebSearch', 'ToolSearch']);
+const FETCH_TOOLS = new Set(['WebFetch']);
 /** The editor's own MCP server, as it names itself. */
 const OWN_SERVER = 'zirbel';
 export const SANDBOXED = 'Runs in this turn’s folder on this computer, with no network and no access to your files.';
 
-/** Where a request comes from: the turn's working folder and the harness that asks. */
-export type AskPlace = { folder?: string; harness?: string };
+/** Where a request comes from: the turn's working folder, the harness that asks, and for a call to one of the turn's
+ *  MCP servers, that server and tool as the harness reported them. */
+export type AskPlace = { folder?: string; harness?: string; mcp?: { server: string; tool: string } };
 
 const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
 const cap = (value: string, room: number) => (value.length <= room ? value : value.slice(0, room - 1) + '…');
@@ -124,49 +131,38 @@ function readable(name: string) {
   return name.replace(/[_-]+/g, ' ').trim();
 }
 
-const verbs: Record<string, string> = {
-  read: 'Read',
-  delete: 'Delete',
-  move: 'Move',
-  search: 'Search with',
-  fetch: 'Fetch a page with',
-  think: 'Think with',
-  switch_mode: 'Switch mode with',
-};
-
-/** The plain headline, scope and details of a permission request. */
+/** The plain headline, scope, reason and details of a permission request. */
 export function describeAsk(question: AgentAsk, place: AskPlace = {}): PermissionRequest & ActionReach {
   const input = record(question.input);
   const tool = question.tool.slice(0, 160);
-  const mcp = /^mcp__(.+?)__(.+)$/.exec(question.tool);
+  const reason = text(question.reason) ? { reason: cap(text(question.reason)!, REASON_LIMIT) } : {};
+  const named = /^mcp__(.+?)__(.+)$/.exec(question.tool);
+  const mcp = place.mcp ?? (named ? { server: named[1] ?? '', tool: named[2] ?? '' } : undefined);
   if (mcp) {
-    const [, server = '', name = ''] = mcp;
+    const { server, tool: name } = mcp;
     const title = text(question.title);
-    const label = title && !title.includes('mcp__') && title !== name ? title : readable(name);
+    const label = title && !title.includes('mcp__') && title !== name && title !== question.tool ? title : readable(name);
     return {
       summary: cap(label + ' (' + server + ')', HEADLINE),
       tool,
+      ...reason,
       scope: 'outside',
-      reach: server === OWN_SERVER ? 'Changes your game' : cap('Reaches ' + server, HEADLINE),
+      reach: server === OWN_SERVER ? 'Shows your game in a browser on this computer' : cap('Reaches ' + server, HEADLINE),
     };
   }
   const sandboxed = { scope: 'sandboxed', reach: SANDBOXED } as const;
-  if (SHELL_TOOLS.has(question.tool) || question.kind === 'execute')
-    return { ...shell(question, input, place), ...sandboxed, tool };
-  if (EDIT_TOOLS.has(question.tool) || question.kind === 'edit')
-    return { ...edit(question, input, place), ...sandboxed, tool };
-  const path = text(input.file_path) ?? text(input.path);
+  if (SHELL_TOOLS.has(question.tool)) return { ...shell(question, input, place), ...reason, ...sandboxed, tool };
+  if (EDIT_TOOLS.has(question.tool)) return { ...edit(question, input, place), ...reason, ...sandboxed, tool };
+  const path = text(input.file_path) ?? text(input.path) ?? text(input.notebook_path);
   const target = path ? ' ' + inFolder(path, place.folder) : '';
-  const verb = verbs[question.kind ?? ''];
-  const summary =
-    verb && (question.kind === 'read' || question.kind === 'delete' || question.kind === 'move')
-      ? verb + (target || ' a file')
-      : verb
-        ? verb + ' ' + readable(tool || 'a tool')
-        : 'Use ' + (readable(tool) || 'a tool');
+  const summary = READ_TOOLS.has(question.tool) ? 'Read' + (target || ' a file')
+    : SEARCH_TOOLS.has(question.tool) ? 'Search with ' + readable(tool)
+    : FETCH_TOOLS.has(question.tool) ? 'Fetch a page with ' + readable(tool)
+    : 'Use ' + (readable(tool) || 'a tool');
   return {
     summary: cap(summary, HEADLINE),
     tool,
+    ...reason,
     ...(path ? { file: cap(inFolder(path, place.folder), 1000) } : {}),
     ...sandboxed,
   };
