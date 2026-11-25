@@ -119,7 +119,10 @@ func TestABoxIsClaimedOnceAndStaysClaimedWhenItsDevicesGo(t *testing.T) {
 	if _, err := pairing.Claim("node"); statusOf(err) != http.StatusConflict {
 		t.Fatalf("a claimed box is claimed again: %v", err)
 	}
-	devices, _ := pairing.Devices("")
+	devices, err := pairing.Devices("")
+	if err != nil || len(devices) != 1 {
+		t.Fatalf("the claimed device: %v %v", devices, err)
+	}
 	if err := pairing.Revoke(devices[0].ID); err != nil {
 		t.Fatal(err)
 	}
@@ -149,14 +152,20 @@ func TestSwitchesStartOffAndKeepWhatChanges(t *testing.T) {
 	if _, err := settings.Update(func(next *boxSwitches) { next.ExternalMCP = true }); err != nil {
 		t.Fatal(err)
 	}
-	again, _ := NewBoxSettings(folder)
+	again, err := NewBoxSettings(folder)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if switches, _ := again.Read(); !switches.ExternalMCP {
 		t.Fatal("a change is not kept")
 	}
 	if err := os.WriteFile(filepath.Join(folder, "settings.json"), []byte(`{"version":1,"harnesses":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	broken, _ := NewBoxSettings(folder)
+	broken, err := NewBoxSettings(folder)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := broken.Read(); statusOf(err) != http.StatusInternalServerError {
 		t.Fatalf("incomplete settings are read: %v", err)
 	}
