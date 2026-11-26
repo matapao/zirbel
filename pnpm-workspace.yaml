@@ -1,4 +1,4 @@
-# pnpm's settings (pnpm 11 reads them here). What comes into the lockfile, and what every install checks it against:
+# pnpm's settings (pnpm 12 reads them here). What comes into the lockfile, and what every install checks it against:
 # - a version only once it has been out for a week (Dependabot waits as long);
 minimumReleaseAge: 10080
 # These versions were in package-lock.json before the move to pnpm and the week's wait (2026-11-24); each has waited
@@ -25,6 +25,10 @@ trustPolicy: no-downgrade
 trustPolicyIgnoreAfter: 43200
 # - a dependency's own dependencies only from the registry, never from git or a tarball's address.
 blockExoticSubdeps: true
+# The lockfile stays one YAML document: pnpm 12 otherwise writes it as two, pnpm's own first, and GitHub's dependency
+# graph, Dependabot alerts and OSV-Scanner then read only pnpm (tested: 16 packages of 304). pnpm still switches to
+# packageManager's version, and engines.pnpm stops pnpm 11.
+pmOnFail: ignore
 # No package runs code as it is installed. Each one with an install script is named here; one that isn't named fails
 # the install until it is decided.
 strictDepBuilds: true

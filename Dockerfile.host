@@ -2,7 +2,8 @@
 # Native Go host: one static binary on distroless, no Node (about 14 MB).
 # Build first: pnpm build && pnpm build:host linux/amd64 linux/arm64 linux/arm/7
 # Then: docker buildx build -f Dockerfile.host --platform linux/amd64,linux/arm64,linux/arm/v7 .
-FROM gcr.io/distroless/static-debian12:nonroot
+# Pinned by digest (Dependabot moves it).
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 ARG TARGETARCH
 ARG TARGETVARIANT
 COPY --chown=nonroot:nonroot host/bin/zirbel-host-linux-${TARGETARCH}${TARGETVARIANT} /zirbel-host

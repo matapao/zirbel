@@ -4,7 +4,7 @@
 // - arm64 (the default), for the Pis that run 64-bit Raspberry Pi OS: Pi 3, 4, 400, 5 and Zero 2 W. The Node editor
 //   and the harnesses; the editor turns harnesses on by default where there is memory for them. And its HDMI console,
 //   the lobby's TV page on a TV plugged into the box (docs/box-tv.md).
-// - armhf, for the Pi 2 B: the Go host, as an editor and MCP server for people's own agents, since neither Node 24
+// - armhf, for the Pi 2 B: the Go host, as an editor and MCP server for people's own agents, since neither Node 26
 //   nor the harnesses are made for 32-bit ARM.
 // It runs on an arm64 computer with Docker, where an arm64 image's programs run natively in a container and an armhf
 // image's through Docker's emulation. Build the repository first (pnpm build).

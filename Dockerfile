@@ -1,5 +1,6 @@
 # check=error=true
-FROM node:24.22.3-bookworm-slim
+# The Node of .nvmrc, pinned by digest (Dependabot moves it).
+FROM node:26.13.1-bookworm-slim@sha256:0042e17d232a87a2cd485be1da7900fca4d10a4ad11b29e9285da1d2e54798c9
 WORKDIR /app
 COPY dist/ /app/
 # The image's node user, by its ids, which the host resolves the same way.

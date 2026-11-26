@@ -5,23 +5,28 @@
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=24.22.3 <25"
+    "node": ">=26.13.1 <27",
+    "pnpm": ">=12.22.0 <13"
   },
   "scripts": {
-    "deps": "pnpm --dir deps/celler install --frozen-lockfile --pm-on-fail=ignore && pnpm --dir deps/celler run --pm-on-fail=ignore build && pnpm --dir deps/vindu install --frozen-lockfile && pnpm --dir deps/vindu run build && node deps/skalet/scripts/build-binaries.mjs",
+    "deps": "pnpm --dir deps/celler install --frozen-lockfile --pm-on-fail=ignore && pnpm --dir deps/celler run --pm-on-fail=ignore build && pnpm --dir deps/vindu install --frozen-lockfile --pm-on-fail=ignore && pnpm --dir deps/vindu run --pm-on-fail=ignore build && node deps/skalet/scripts/build-binaries.mjs",
     "build": "node scripts/build.mjs",
     "build:host": "node scripts/build-host.mjs",
-    "contracts": "node --experimental-transform-types --disable-warning=ExperimentalWarning scripts/contracts.ts",
-    "check": "tsc --noEmit",
-    "check:go": "node scripts/check-go.mjs",
-    "check:security": "node scripts/check-security.mjs",
-    "lint": "oxlint --type-aware --deny-warnings packages scripts test && knip && node scripts/check-size.mjs",
-    "format": "prettier --write .",
+    "contracts": "node scripts/contracts.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --type-aware --deny-warnings --report-unused-disable-directives packages scripts test pi && knip",
+    "format": "prettier --write . && ruff format",
     "format:check": "prettier --check .",
-    "test": "pnpm run build && node --experimental-transform-types --disable-warning=ExperimentalWarning --test test/*.test.ts && pnpm run test:pi",
+    "test": "pnpm run build && pnpm run build:host && node --test --test-randomize --import ./test/setup.ts test/*.test.ts && go test -race -shuffle=on -count=1 ./... && pnpm run test:pi",
+    "test:coverage": "pnpm run build && pnpm run build:host && node --test --test-randomize --import ./test/setup.ts --experimental-test-coverage --test-coverage-include='packages/**' --test-coverage-lines=80 --test-coverage-branches=70 --test-coverage-functions=75 test/*.test.ts && node scripts/coverage-go.mjs && pnpm run test:pi",
     "test:pi": "python3 -I -B -W error::ResourceWarning -m unittest discover -s pi/setup -t pi/setup && python3 -I -B -W error::ResourceWarning -m unittest discover -s pi/tv -t pi/tv && python3 -I -B -W error::ResourceWarning -m unittest discover -s pi/controllers -t pi/controllers",
-    "coverage": "node --experimental-transform-types --disable-warning=ExperimentalWarning --experimental-test-coverage --test-coverage-include='packages/**' --test-coverage-lines=80 --test-coverage-branches=70 --test-coverage-functions=75 --test test/*.test.ts && node scripts/coverage-go.mjs",
-    "test:browser": "pnpm run build && node --test test/browser.mjs test/browser-workspace.mjs test/browser-turns.mjs test/browser-folder.mjs test/browser-box.mjs test/browser-git.mjs test/browser-tv.mjs && node --experimental-transform-types --disable-warning=ExperimentalWarning --test test/host-browser.ts test/pads-browser.ts",
+    "test:browser": "pnpm run build && node --test test/browser.mjs test/browser-workspace.mjs test/browser-turns.mjs test/browser-folder.mjs test/browser-box.mjs test/browser-git.mjs test/browser-tv.mjs && node --test --import ./test/setup.ts test/host-browser.ts test/pads-browser.ts",
+    "check": "node scripts/check.mjs",
+    "check:files": "node scripts/check-files.mjs",
+    "check:go": "node scripts/check-go.mjs",
+    "check:py": "ruff check && ruff format --check",
+    "check:security": "node scripts/check-security.mjs",
+    "github:settings": "node scripts/github-settings.mjs",
     "start": "node dist/server.mjs",
     "dev": "pnpm run build && pnpm start",
     "mcp": "node dist/server.mjs mcp"
@@ -40,15 +45,16 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "@types/qrcode": "1.5.6",
     "@types/three": "0.187.0",
     "@types/ws": "8.18.2",
-    "knip": "6.45.1",
+    "fast-check": "4.10.3",
+    "knip": "6.46.1",
     "oxlint": "1.94.0",
     "oxlint-tsgolint": "7.0.2007",
     "playwright": "1.65.1",
     "prettier": "3.10.1"
   },
-  "packageManager": "pnpm@11.28.9+sha512.35421cea2720eca3f5ad722b67e8ef18f4d3cd4745ed2fcfeb0dc288d4e9437fad3870d91ee6e83f268f0f6f7e0f62723317b19617bb45ee4333172ef51159f8"
+  "packageManager": "pnpm@12.22.0+sha512.894940a3d9a57dfa6fd373990fb4e41e09c2f2d76d982ed1d75275d39267f988fb4e2d40900cbe9921c68d97c67aa1a1096d276633db248f7b34927ac9ddb7a4"
 }

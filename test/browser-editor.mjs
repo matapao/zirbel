@@ -67,8 +67,8 @@ export async function openEditor(t, run, extra = []) {
     host = spawn(
       process.execPath,
       [
-        '--experimental-transform-types',
-        '--disable-warning=ExperimentalWarning',
+        '--import',
+        './test/setup.ts',
         'test/fixture-editor.ts',
         '--port',
         port,

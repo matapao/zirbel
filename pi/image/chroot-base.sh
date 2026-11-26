@@ -2,13 +2,13 @@
 # The base stage, in the image's own root (provision.sh): what a Zirbel box runs beside Raspberry Pi OS Lite.
 #   chroot-base.sh COUNTRY SSH_KEY_FILE
 # Every box gets the Python bindings its Wi-Fi setup service uses (D-Bus and GLib, for NetworkManager), git (each of its
-# games is a git repository, docs/git-store.md), and:
+# games is a git repository, AGENTS.md), and:
 # - Two users: `zirbel` runs the editor (and the harnesses) and can't use sudo; `admin` is for maintenance over SSH,
 #   with the given public key only.
 # - The Wi-Fi country, which Wi-Fi needs before it turns on, and the host name `zirbel` (zirbel.local).
 # A 64-bit box (arm64) also gets what its harnesses need, none of which is made for 32-bit ARM, where the Go host runs
 # instead (chroot-app.sh):
-# - Node 24, from nodejs.org, checked against its published SHA-256.
+# - Node 26, from nodejs.org, checked against its published SHA-256.
 # - Claude Code from Anthropic's installer, which keeps it up to date, and Codex from npm, both as `zirbel`'s.
 # - Their command sandboxes (bubblewrap, socat), and Chromium for view_game.
 # And what its HDMI console needs (docs/box-tv.md, tv-install.sh): the cage kiosk compositor for that Chromium on a
@@ -16,8 +16,8 @@
 # user, `zirbel-tv`, in video, render and audio alone.
 set -euo pipefail
 COUNTRY=$1 SSH_KEY_FILE=$2
-NODE_VERSION=24.22.3
-NODE_SHA256=6e51a2ada00f0011cc266f65d98922b403d7ad88f809ca2aa615a5fe1ce6e86c
+NODE_VERSION=26.13.1
+NODE_SHA256=89e1853138db51e8b82d3e98ba9c0d3f2956a28e5e55ea1b7e12d25aae92d5dd
 CODEX_VERSION=0.171.0
 export DEBIAN_FRONTEND=noninteractive
 [[ $COUNTRY =~ ^[A-Z]{2}$ ]] || { echo "The Wi-Fi country must be two capital letters." >&2; exit 1; }
