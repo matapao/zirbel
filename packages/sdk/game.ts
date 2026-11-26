@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { compactProperties, MAX_REGISTERED_OBJECTS } from './bounded.ts';
+import { CONTROL_INPUTS, KEY_CODE } from './controls.ts';
 
 export { boundedJson, MAX_REGISTERED_OBJECTS } from './bounded.ts';
 
@@ -30,17 +31,10 @@ export const gameFilePath = pathWith(Object.keys(GAME_FILE_TYPES));
 // game page loads after the game's document, so the game itself carries nothing of Zirbel's.
 export const adapterPath = pathWith(['js', 'mjs']);
 export const MAX_GAME_FILES = 1000;
-// A game that reads only the keyboard can take gamepads anyway: its zirbel.json maps the inputs of the standard layout
-// (up/down/left/right: the d-pad, and the left stick beyond half way) to KeyboardEvent codes, which the game frame
-// presses as a keyboard would (packages/web/game-keys.ts). The map is the folder's, never part of the game itself.
-export const CONTROL_INPUTS = ['a', 'b', 'x', 'y', 'lb', 'rb', 'lt', 'rt', 'select', 'start', 'ls', 'rs', 'up', 'down', 'left',
-  'right', 'home'] as const;
-export type ControlInput = (typeof CONTROL_INPUTS)[number];
-export const KEY_CODE = /^[A-Za-z0-9]{1,24}$/;
+// The keys a game's zirbel.json gives gamepad inputs, for a game that reads only the keyboard (controls.ts).
 const gameControls = z.strictObject({
   keys: z.partialRecord(z.enum(CONTROL_INPUTS), z.string().regex(KEY_CODE)),
 });
-export type GameControls = z.infer<typeof gameControls>;
 const gameFiles = z.record(gameFilePath, z.string().regex(/^[a-f0-9]{64}$/)).refine(
   (files) => Object.keys(files).length <= MAX_GAME_FILES && !Object.hasOwn(files, 'index.html'),
   'Provide up to 1000 files besides index.html.',

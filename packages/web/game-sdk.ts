@@ -1,7 +1,11 @@
-// Runs inside the authored document. The host validates every message again.
-import { boundedJson, compactProperties, MAX_REGISTERED_OBJECTS } from '../sdk/bounded.ts';
+// Runs inside the authored document. The host validates every message again. It stays within what the game frame
+// already needs of a browser (import maps: Chromium 89, Safari 16.4), as on TV browsers that run games.
+import { boundedJson, compactProperties, jsonCopy, MAX_REGISTERED_OBJECTS } from '../sdk/bounded.ts';
 import type { RegisteredObject } from '../sdk/game.ts';
 import type { SeatInfo } from '../sdk/contracts.ts';
+import { pressKeys } from './game-keys.ts';
+import { screenPads } from './game-pads.ts';
+import { checkedFrame, checkedPads } from './pad-state.ts';
 
 type RoomState = { self: SeatInfo; seats: SeatInfo[]; states: Record<string, unknown> };
 const objects = new Map<string, RegisteredObject>();
@@ -27,7 +31,7 @@ const sdk = {
     if (typeof id !== 'string' || id.length < 1 || id.length > 120) throw new Error('Register an ID of 1 to 120 characters.');
     if (!compactProperties(properties)) throw new Error('Provide compact JSON properties.');
     if (!objects.has(id) && objects.size >= MAX_REGISTERED_OBJECTS) throw new Error('The inspector is full.');
-    objects.set(id, structuredClone({ id, properties }));
+    objects.set(id, jsonCopy({ id, properties }));
     publishObjects();
   },
   unregister(id: string) { if (objects.delete(id)) publishObjects(); },
@@ -41,10 +45,25 @@ const sdk = {
   },
 };
 Object.defineProperty(window, 'zirbel', { value: Object.freeze(sdk) });
+// The screen's controllers (phones, the box's gamepads) come as gamepads after the device's own, before the game reads
+// any; a game that reads only the keyboard gets its zirbel.json's keys from all of them.
+const pads = screenPads((effect) => notify('zirbel.rumble', effect));
+pressKeys();
 if (channel) {
   channel.port1.onmessage = (event) => {
-    if (event.data?.type !== 'zirbel.room') return;
-    room = event.data.value as RoomState;
+    const { type, value } = (event.data ?? {}) as { type?: unknown; value?: unknown };
+    if (type === 'zirbel.pads') {
+      const list = checkedPads(value);
+      if (list) pads.list(list);
+      return;
+    }
+    if (type === 'zirbel.pad') {
+      const frame = checkedFrame(value);
+      if (frame) pads.frame(frame.slot, frame);
+      return;
+    }
+    if (type !== 'zirbel.room') return;
+    room = value as RoomState;
     for (const listener of listeners) listener(room);
   };
   // /game/<room>/<key>/…, or a net game's /game/@<room>/<key>/…: a built game's document and the pages beside it share the key.
