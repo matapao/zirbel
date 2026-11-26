@@ -1,0 +1,27 @@
+# The box's TV console follows its display and the editor's TV switch (/opt/zirbel/pi/tv/zirbel_tv.py,
+# docs/box-tv.md): zirbel-tv.service runs while a display is connected and the switch is on. It runs at boot, when a
+# display is plugged in or out (72-zirbel-tv.rules) and when the switch changes (zirbel-tv-follow.path), and ends at
+# once. Root, to start and stop the console; its request to the editor over loopback is the box's own.
+[Unit]
+Description=Zirbel TV console, following its display and the editor's TV switch
+After=zirbel.service systemd-logind.service
+ConditionPathExists=/sys/class/drm
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -E -s /opt/zirbel/pi/tv/zirbel_tv.py
+# The editor may still be starting: it is asked for a minute.
+TimeoutStartSec=90
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=-/run/zirbel-tv
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=64M
+
+[Install]
+WantedBy=multi-user.target

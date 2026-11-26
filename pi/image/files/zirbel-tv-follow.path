@@ -1,0 +1,11 @@
+# The box's TV console follows the editor's TV switch: switching it leaves /run/zirbel-tv/wake, which the follower
+# removes as it starts (zirbel-tv-follow.service).
+[Unit]
+Description=Zirbel TV console, when the editor's TV switch changes
+
+[Path]
+PathExists=/run/zirbel-tv/wake
+Unit=zirbel-tv-follow.service
+
+[Install]
+WantedBy=paths.target

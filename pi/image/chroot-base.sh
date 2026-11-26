@@ -11,6 +11,9 @@
 # - Node 24, from nodejs.org, checked against its published SHA-256.
 # - Claude Code from Anthropic's installer, which keeps it up to date, and Codex from npm, both as `zirbel`'s.
 # - Their command sandboxes (bubblewrap, socat), and Chromium for view_game.
+# And what its HDMI console needs (docs/box-tv.md, tv-install.sh): the cage kiosk compositor for that Chromium on a
+# session logind gives the seat, PipeWire for the TV's sound over HDMI, fonts for web pages and their emoji, and its own
+# user, `zirbel-tv`, in video, render and audio alone.
 set -euo pipefail
 COUNTRY=$1 SSH_KEY_FILE=$2
 NODE_VERSION=24.22.3
@@ -21,9 +24,11 @@ export DEBIAN_FRONTEND=noninteractive
 
 ARCH=$(dpkg --print-architecture)
 HARNESSES=()
+CONSOLE=()
 [ "$ARCH" = arm64 ] && HARNESSES=(bubblewrap socat chromium xz-utils)
+[ "$ARCH" = arm64 ] && CONSOLE=(cage pipewire pipewire-pulse wireplumber dbus-user-session fonts-liberation2 fonts-noto-color-emoji)
 apt-get update -qq
-apt-get install -y -qq --no-install-recommends python3-dbus python3-gi ca-certificates git "${HARNESSES[@]}"
+apt-get install -y -qq --no-install-recommends python3-dbus python3-gi ca-certificates git "${HARNESSES[@]}" "${CONSOLE[@]}"
 apt-get clean
 
 install_node() {
@@ -46,6 +51,11 @@ systemctl enable ssh >/dev/null 2>&1
 
 id zirbel >/dev/null 2>&1 || useradd --create-home --home-dir /home/zirbel --shell /bin/bash --groups netdev zirbel
 passwd --lock zirbel >/dev/null
+if [ "$ARCH" = arm64 ]; then
+  id zirbel-tv >/dev/null 2>&1 ||
+    useradd --create-home --home-dir /home/zirbel-tv --shell /usr/sbin/nologin --groups video,render,audio zirbel-tv
+  passwd --lock zirbel-tv >/dev/null
+fi
 if [ "$ARCH" = arm64 ]; then
   install_node
   # Anthropic's installer, as `zirbel`: its own binary for this system, checked against its manifest, in ~/.local.

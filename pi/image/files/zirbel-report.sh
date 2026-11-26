@@ -30,11 +30,14 @@ touch /run/zirbel-report
   curl -s -o /dev/null -m 8 -w "internet: HTTP %{http_code} in %{time_total}s\n" https://downloads.raspberrypi.com/ 2>&1
   echo "== firewall tables"; nft list tables 2>&1
   echo "== radio switches"; rfkill list 2>&1
-  echo "== services"; systemctl is-active zirbel zirbel-setup NetworkManager avahi-daemon ssh | paste -sd' '
+  echo "== services"; systemctl is-active zirbel zirbel-setup zirbel-tv NetworkManager avahi-daemon ssh | paste -sd' '
   systemctl --failed --no-legend --no-pager
   echo "== listening"; ss -ltnu | head -20
   echo "== setup service, this boot"; journalctl -u zirbel-setup -b --no-pager -o short-monotonic | tail -60
   echo "== editor, this boot"; journalctl -u zirbel -b --no-pager -o short-monotonic | tail -15
+  # The HDMI console (docs/box-tv.md): the displays plugged in, and what it and its follower said.
+  echo "== TV console: displays $(grep -lx connected /sys/class/drm/card*-*/status 2>/dev/null | cut -d/ -f5 | paste -sd' ')"
+  journalctl -u zirbel-tv-follow -u zirbel-tv -b --no-pager -o short-monotonic | tail -15
   echo "== warnings, this boot"; journalctl -b -p warning --no-pager -o short-monotonic | tail -40
 } >"$tmp" 2>&1
 mv -f "$tmp" "$out"

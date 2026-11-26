@@ -1,0 +1,6 @@
+# The box's TV console (zirbel-tv.service), installed as /etc/pam.d/zirbel-tv: a Wayland session on the seat for its user,
+# which logind gives the display, the keyboard and a runtime folder, and whose user manager runs its PipeWire. No
+# password is asked: no one logs in, the service starts it.
+account  required  pam_unix.so
+session  required  pam_unix.so
+session  required  pam_systemd.so class=user type=wayland

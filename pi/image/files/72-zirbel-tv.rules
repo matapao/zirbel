@@ -1,0 +1,7 @@
+# The box's TV console (docs/box-tv.md), installed as /etc/udev/rules.d/72-zirbel-tv.rules.
+# A display plugged in or out: the console follows it (zirbel-tv-follow.service).
+ACTION=="change", SUBSYSTEM=="drm", ENV{HOTPLUG}=="1", RUN+="/usr/bin/systemctl --no-block restart zirbel-tv-follow.service"
+# The box's gamepads reach the TV's browser through the editor, as every screen's controllers do, never straight from
+# their devices: the seat's user (the console's zirbel-tv) gets no access to them. 70-uaccess.rules tags them for it and
+# 73-seat-late.rules gives it; this comes between.
+SUBSYSTEM=="input", ENV{ID_INPUT_JOYSTICK}=="?*", TAG-="uaccess"

@@ -1,0 +1,3 @@
+# Installed as /usr/lib/tmpfiles.d/zirbel-tv.conf. Where the editor (user zirbel) wakes the TV console's follower when
+# its TV switch changes; the editor's health says the box has the console while this folder is there.
+d /run/zirbel-tv 0770 root zirbel -
