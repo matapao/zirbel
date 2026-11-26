@@ -123,9 +123,9 @@ func (s *EditorServer) serveEditCodes(w http.ResponseWriter, r *http.Request, pr
 		if err != nil {
 			return err
 		}
-		var shown *editCodeView // null while the game has no code
+		var shown *editCodeLink // null while the game has no code
 		if found {
-			shown = &code
+			shown = &editCodeLink{code.Code, s.editLink(r, code.Code), code.ExpiresAt}
 		}
 		list, err := editors.List(projectID)
 		return send(w, http.StatusOK, map[string]any{"code": shown, "editors": list}, err)
@@ -139,6 +139,13 @@ func (s *EditorServer) serveEditCodes(w http.ResponseWriter, r *http.Request, pr
 		return send(w, http.StatusOK, map[string]any{}, editors.Remove(projectID, tail))
 	}
 	return fail(http.StatusNotFound, "Editor route does not exist.")
+}
+
+// editCodeLink is a game's code as its owners see it again, with its link.
+type editCodeLink struct {
+	Code      string `json:"code"`
+	Link      string `json:"link"`
+	ExpiresAt string `json:"expiresAt"`
 }
 
 // editLink is the edit page with a code, on the address other devices can use,

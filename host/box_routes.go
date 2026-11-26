@@ -177,7 +177,7 @@ func (b *Box) door(w http.ResponseWriter, r *http.Request) (access boxAccess, ha
 		return access, true, b.pairRoute(w, r, address)
 	}
 	if pathname == "/edit" {
-		return access, true, b.editRoute(w, r, address)
+		return access, true, b.editRoute(w, r, address, local)
 	}
 	if local {
 		return boxAccess{local: true}, false, nil
@@ -218,6 +218,10 @@ func (b *Box) door(w http.ResponseWriter, r *http.Request) (access boxAccess, ha
 	if r.Method == http.MethodGet && !strings.HasPrefix(pathname, "/api/") {
 		redirect(w, "/pair")
 		return access, true, nil
+	}
+	// An editor whose session the owner ended, or whose game was removed.
+	if editorToken(r.Header.Get("cookie")) != "" {
+		return access, false, errEditingEnded
 	}
 	return access, false, fail(http.StatusUnauthorized, "Pair this device with the box first.")
 }

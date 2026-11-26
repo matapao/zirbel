@@ -7,6 +7,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"unicode/utf8"
 )
 
 // The box's pairing page (--box), /pair, mirroring pairRoute in
@@ -39,6 +40,7 @@ func (b *Box) pairRoute(w http.ResponseWriter, r *http.Request, address string) 
 		return err
 	}
 	typed := ""
+	editing := editorToken(r.Header.Get("cookie")) != ""
 	token, err := func() (string, error) {
 		form, err := pairForm(r)
 		if err != nil {
@@ -46,10 +48,17 @@ func (b *Box) pairRoute(w http.ResponseWriter, r *http.Request, address string) 
 		}
 		typed = form.Get("code")
 		agent := r.Header.Get("user-agent")
+		var token string
 		if form.Has("claim") {
-			return b.pairing.Claim(agent)
+			token, err = b.pairing.Claim(agent)
+		} else {
+			token, err = b.pairing.Redeem(typed, address, agent)
 		}
-		return b.pairing.Redeem(typed, address, agent)
+		// A device is an owner or an editor, not both: an editor that pairs is an owner from now on.
+		if err == nil && editing {
+			err = b.editors.End(r.Header.Get("cookie"))
+		}
+		return token, err
 	}()
 	if err != nil {
 		var known *HTTPError
@@ -65,6 +74,9 @@ func (b *Box) pairRoute(w http.ResponseWriter, r *http.Request, address string) 
 		return nil
 	}
 	w.Header().Set("set-cookie", sessionCookie+"="+token+"; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000")
+	if editing {
+		w.Header().Add("set-cookie", endEditorCookie)
+	}
 	redirect(w, "/")
 	return nil
 }
@@ -86,7 +98,7 @@ func pairForm(r *http.Request) (url.Values, error) {
 	for key, values := range form {
 		value := values[len(values)-1] // the last one, as Object.fromEntries keeps it
 		switch {
-		case key == "code" && utf16Length(value) <= 40:
+		case key == "code" && utf8.RuneCountInString(value) <= 40: // Zod counts code points
 		case key == "claim" && value == "1":
 		case key == "code":
 			return nil, fail(http.StatusBadRequest, "code · Too big: expected string to have <=40 characters")

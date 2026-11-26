@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"zirbel/contracts"
 )
@@ -18,14 +19,15 @@ import (
 // game's edit code, with a name the owner sees it by. The door
 // (box_routes.go) sends it here before any session is checked, as /pair.
 
-// errEditorOwns: a paired device holds the owner's session, and a device holds one kind at a time.
+// errEditorOwns: the box itself and its paired devices own it, and a device holds one kind of session at a time.
 var errEditorOwns = fail(http.StatusConflict, "This device owns the box and edits every game already. Use another device to edit with a code.")
 
 // editLanding is where a device goes once it edits a game: the editor, which opens that game.
 const editLanding = "/"
 
-// editRoute is the edit page: a code and a name.
-func (b *Box) editRoute(w http.ResponseWriter, r *http.Request, address string) error {
+// editRoute is the edit page: a code and a name. A device that owns the box,
+// the box itself (local) or a paired device, has no need of one.
+func (b *Box) editRoute(w http.ResponseWriter, r *http.Request, address string, local bool) error {
 	if r.Method == http.MethodGet {
 		editPage(w, http.StatusOK, shownEditCode(normalizeEditCode(r.URL.Query().Get("code"))), "", "")
 		return nil
@@ -43,6 +45,9 @@ func (b *Box) editRoute(w http.ResponseWriter, r *http.Request, address string) 
 			return "", err
 		}
 		typed, name = form.Get("code"), form.Get("name")
+		if local {
+			return "", errEditorOwns
+		}
 		if _, owner, err := b.pairing.Session(r.Header.Get("cookie")); err != nil || owner {
 			return "", cmp.Or(err, errEditorOwns)
 		}
@@ -64,8 +69,9 @@ func (b *Box) editRoute(w http.ResponseWriter, r *http.Request, address string) 
 }
 
 // editForm reads the edit form as Node's editForm does: at most 1024
-// characters, a code of up to 40 characters and a name of 1 to 24 once
-// trimmed, and nothing else; Zod's issues, up to three.
+// characters (UTF-16 units, as Node reads the form), a code of up to 40
+// characters and a name of 1 to 24 once trimmed (code points, as Zod counts),
+// and nothing else; Zod's issues, up to three.
 func editForm(r *http.Request) (url.Values, error) {
 	if media, _, _ := mime.ParseMediaType(r.Header.Get("content-type")); media != "application/x-www-form-urlencoded" {
 		return nil, fail(http.StatusUnsupportedMediaType, "Send the edit form.")
@@ -84,7 +90,7 @@ func editForm(r *http.Request) (url.Values, error) {
 	issues := []string{}
 	if !form.Has("code") {
 		issues = append(issues, "code · Invalid input: expected string, received undefined")
-	} else if utf16Length(form.Get("code")) > 40 {
+	} else if utf8.RuneCountInString(form.Get("code")) > 40 {
 		issues = append(issues, "code · Too big: expected string to have <=40 characters")
 	}
 	name := contracts.Trim(form.Get("name"))
@@ -93,7 +99,7 @@ func editForm(r *http.Request) (url.Values, error) {
 		issues = append(issues, "name · Invalid input: expected string, received undefined")
 	case name == "":
 		issues = append(issues, "name · Too small: expected string to have >=1 characters")
-	case utf16Length(name) > editorNameLength:
+	case utf8.RuneCountInString(name) > editorNameLength:
 		issues = append(issues, "name · Too big: expected string to have <=24 characters")
 	}
 	unknown := []string{}
