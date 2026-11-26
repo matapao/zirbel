@@ -7,12 +7,15 @@ import { createQuest, type Quest } from '../games/quest.ts';
 import { drawScene } from './scene.ts';
 import { screenControllers, type Controllers } from './controllers.ts';
 import { fromTv, TV_PAGE } from './tv-return.ts';
+import { bridgeFrame, forgetPlace, handOver, holdsPlace, joinSpace, localSpace, spaceLink, type PageSpace, type Role } from './player-space.ts';
 
 function byId<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
 const room = location.pathname.split('/').at(-1) ?? '';
-// An invitation, or a seat the lobby held for this person (#seat=<ticket>), which goes straight in.
-const ticket = location.hash.startsWith('#seat=') ? location.hash.slice('#seat='.length) : '';
-const invite = ticket ? '' : location.hash.slice(1);
+// A net game's space with its credential (player-space.ts); else an invitation, or a seat the lobby held for this person
+// (#seat=<ticket>), which goes straight in.
+const netLink = spaceLink(location.hash);
+const ticket = !netLink && location.hash.startsWith('#seat=') ? location.hash.slice('#seat='.length) : '';
+const invite = ticket || netLink ? '' : location.hash.slice(1);
 const savedKey = 'zirbel-room:' + room;
 const soloMessage = byId('message');
 const lobby = byId('lobby');
@@ -37,6 +40,11 @@ let quest: Quest | undefined;
 // The seat's own credential, which Show on TV hands to the box's screen, and the page's controllers once its game starts.
 let seatCredential: string | undefined;
 let controllers: Controllers | undefined;
+// A net game's space, which this page holds and shares with the game's frame until endBridge; handedOver once Show on TV
+// gave its member to the TV.
+let space: PageSpace | undefined;
+let endBridge: (() => void) | undefined;
+let handedOver = false;
 
 const keys = new Set<string>();
 const north = ['w', 'arrowup'];
@@ -109,11 +117,14 @@ function startControllers() {
 }
 // Show on TV: the box's screen takes this seat, and this page becomes the game's controller there.
 function showOnTv() {
-  if (seatCredential) controllers?.show('/join/' + room + '#seat=' + seatCredential);
+  const link = space ? handOver(room, space) : seatCredential ? '/join/' + room + '#seat=' + seatCredential : undefined;
+  if (link) controllers?.show(link);
 }
 function onTv(code: string) {
   client?.stop(false);
   remember();
+  // The TV takes this member's place, which this page neither leaves nor keeps.
+  if (space) { handedOver = true; forgetPlace(space.id); space = undefined; }
   showLobby();
   controllers?.close();
   controllers = undefined;
@@ -129,6 +140,7 @@ if (fromTv()) byId<HTMLAnchorElement>('to-lobby').href = TV_PAGE;
 byId('leave').addEventListener('click', () => {
   client?.stop();
   remember();
+  if (space) { forgetPlace(space.id); void space.leave(); space = undefined; }
   if (fromTv()) { location.assign(TV_PAGE); return; }
   showLobby('You left the room.');
 });
@@ -186,6 +198,9 @@ function showLobby(message = '') {
   stateTimer = undefined;
   gamePort?.close();
   gamePort = undefined;
+  // The frame hears the space end before it goes, so its leaving at pagehide doesn't reach the space.
+  endBridge?.();
+  endBridge = undefined;
   authoredFrame?.remove();
   authoredFrame = undefined;
   keys.clear();
@@ -197,7 +212,7 @@ function showLobby(message = '') {
   ready = false;
   game.hidden = true;
   lobby.hidden = false;
-  form.hidden = !invite || Boolean(info?.solo);
+  form.hidden = !(invite || netLink?.invite) || Boolean(info?.solo) || Boolean(space);
   byId('to-lobby').hidden = !ticket;
   soloMessage.textContent = message;
   connection.textContent = '';
@@ -244,14 +259,13 @@ async function showGame() {
     authoredFrame.allow = 'gamepad';
     authoredFrame.referrerPolicy = 'no-referrer';
     startControllers();
-    // A game with its own netcode finds its room on the relay from the address: zirbel-net's launchParams().
-    // A simulated network for testing (zirbel-net's ?net=lag:120,…) goes from the player's address to the game's.
+    // A simulated network for testing (the net module's ?net=lag:120,…,stats) goes from the player's address to the
+    // game's, whose overlay shows it; the simulator itself is under this page's connection.
     const simulated = new URLSearchParams(location.search).get('net');
-    authoredFrame.src = info.manifest.simulation === 'net-v2'
-      ? info.gameUrl + '?room=' + encodeURIComponent(room) + '&key=' + encodeURIComponent(info.gameUrl.split('/')[3] ?? '')
-        + (simulated ? '&net=' + encodeURIComponent(simulated) : '')
-      : info.gameUrl;
+    const net = info.manifest.simulation === 'net-v2';
+    authoredFrame.src = info.gameUrl + (net && simulated ? '?net=' + encodeURIComponent(simulated) : '');
     game.prepend(authoredFrame);
+    if (net) void shareSpace(authoredFrame);
     return;
   }
   switch (info.manifest.template) {
@@ -301,6 +315,38 @@ async function showGame() {
       frame = requestAnimationFrame(render);
     }
   }
+}
+
+/** A game with its own netcode joins this page's space through it: the session's, or alone one of the page's own. */
+async function shareSpace(frame: HTMLIFrameElement) {
+  const shared = space ?? await localSpace().catch(() => undefined);
+  if (!shared || frame !== authoredFrame) return;
+  const end = await bridgeFrame(frame, shared);
+  if (frame === authoredFrame) endBridge = end;
+  else end();
+}
+
+const ENDED: Record<string, string> = { replaced: 'This seat is in use on another screen now.',
+  lost: 'The connection to this session was lost.', 'credential-expired': 'This seat has expired. Join again from the lobby.',
+  refused: 'This seat has expired. Join again from the lobby.', left: 'You left the room.' };
+/** Joins a net game's space, as the link says or as the join form asks, and starts the game in it. */
+async function enterSpace(asked?: { name: string; role: Role }) {
+  if (!netLink) return;
+  connection.textContent = 'Connecting…';
+  const joined = await joinSpace(netLink, asked);
+  space = joined;
+  joined.on('status', (status) => {
+    if (joined === space) connection.textContent = status === 'reconnecting' ? 'Reconnecting…' : '';
+  });
+  joined.on('closed', ({ reason }) => {
+    if (joined !== space || handedOver) return;
+    space = undefined;
+    if (reason !== 'replaced' && reason !== 'lost') forgetPlace(netLink.space);
+    showLobby(ENDED[reason] ?? 'This session has ended.');
+    form.hidden = true;
+  });
+  connection.textContent = '';
+  void showGame();
 }
 
 function refreshQuest() {
@@ -399,8 +445,13 @@ async function reserveSeat(event: SubmitEvent) {
   submit.disabled = true;
   error.textContent = '';
   try {
-    const { ticket } = await fetchRoom<{ ticket: string }>(room, 'reserve', { invite, name: values.get('name'), role: values.get('role') });
-    connect(ticket);
+    const name = values.get('name');
+    if (netLink) await enterSpace({ name: typeof name === 'string' ? name.trim() : '',
+      role: values.get('role') === 'spectator' ? 'observer' : 'participant' });
+    else {
+      const { ticket } = await fetchRoom<{ ticket: string }>(room, 'reserve', { invite, name: values.get('name'), role: values.get('role') });
+      connect(ticket);
+    }
   } catch (reason) { error.textContent = (reason as Error).message; }
   finally { submit.disabled = false; }
 }
@@ -408,13 +459,17 @@ async function reserveSeat(event: SubmitEvent) {
 try {
   const link = ticket || invite;
   let credential = saved() || link;
-  if (!credential) throw new Error('Open the complete invitation link from the room owner.');
-  try { info = await fetchRoom<RoomInfo>(room, 'info', undefined, credential); }
-  catch (error) {
-    if (!link || credential === link) throw ticket ? new Error('This seat has expired. Join again from the lobby.') : error;
-    remember();
-    credential = link;
-    info = await fetchRoom<RoomInfo>(room, 'info', undefined, credential);
+  // A net game's room is for whoever has its space's link.
+  if (netLink) info = await fetchRoom<RoomInfo>(room, 'info', undefined, netLink.space);
+  else {
+    if (!credential) throw new Error('Open the complete invitation link from the room owner.');
+    try { info = await fetchRoom<RoomInfo>(room, 'info', undefined, credential); }
+    catch (error) {
+      if (!link || credential === link) throw ticket ? new Error('This seat has expired. Join again from the lobby.') : error;
+      remember();
+      credential = link;
+      info = await fetchRoom<RoomInfo>(room, 'info', undefined, credential);
+    }
   }
   document.title = info.manifest.title + ' · Zirbel';
   byId('game-title').textContent = info.manifest.title;
@@ -422,8 +477,10 @@ try {
   byId('lobby-description').textContent = info.gameUrl || !info.manifest.template ? '' : templates[info.manifest.template].description;
   byId('badge').textContent = info.code ? 'Code ' + info.code : info.development ? 'Development playtest'
     : info.solo && !ticket ? 'Local playtest' : '';
-  // A seat kept from before, or the one the lobby held.
-  if (credential !== invite) connect(credential);
+  // In a space: an invitation asks for a name first, unless this tab is in it already. Else a seat kept from before, or
+  // the one the lobby held.
+  if (netLink) await (netLink.invite && !holdsPlace(netLink.space) ? Promise.resolve(showLobby()) : enterSpace());
+  else if (credential !== invite) connect(credential);
   else if (info.solo) {
     const { ticket } = await fetchRoom<{ ticket: string }>(room, 'reserve', { invite, name: 'Explorer', role: 'player' });
     connect(ticket);

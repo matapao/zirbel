@@ -3,7 +3,7 @@
 // sandboxed frame and WebSocket. Run with `pnpm test:browser`.
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -13,7 +13,7 @@ import { chromium, type Page } from 'playwright';
 import { importGameFolder } from '../packages/core/game-files.ts';
 import { Projects } from '../packages/core/projects.ts';
 import { Releases } from '../packages/core/releases.ts';
-import { hostsUnderTest, launch, rights, tempDir, triangleGlb } from './helpers.ts';
+import { hostsUnderTest, launch, REAL_SPACES, rights, tempDir, triangleGlb } from './helpers.ts';
 
 const game = `<!doctype html><p id="out">waiting</p><script>
   zirbel.onRoom((room) => { document.getElementById('out').textContent = Object.keys(room.states).length + ' players'; });
@@ -133,30 +133,32 @@ for (const host of hosts) {
   });
 }
 
-// A game with its own netcode: zirbel-net from its host, the room and key from its address, the relay at /mp.
+// A game with its own netcode: the net module from its host, in the space its player page shares with it.
 const netGame = `<!doctype html><p id="out">waiting</p><script type="module">
-  const zn = await import('/zirbel-net.js');
-  const net = zn.connect(zn.launchParams());
+  const zn = await import('/.skalet/net.js');
+  const net = zn.connect({ via: 'parent' });
   const out = document.getElementById('out');
   let heard = '';
   const show = () => { out.textContent = (net.peers.size + 1) + ' players, heard ' + heard; };
-  net.on('open', () => { net.send(zn.ALL, 1, 'hi from ' + net.id); show(); });
-  net.on('peer', (id) => { net.send(id, 1, 'hi from ' + net.id); show(); });
-  net.on('message', (from, type, r) => { heard = r.text(); show(); });
-  net.on('close', (code, message) => { out.textContent = 'closed ' + code + ' ' + message; });
+  net.on('open', () => { net.send(zn.ALL, 16, 'hi from ' + net.id); show(); });
+  net.on('peer', (id) => { net.send(id, 16, 'hi from ' + net.id); show(); });
+  net.on('message', (from, channel, r) => { heard = r.text(); show(); });
+  net.on('close', (reason, message) => { out.textContent = 'closed ' + reason + ' ' + message; });
 </script>`;
+/** Net games play in a space of the real kernel, which carries their messages: run once `pnpm run deps` built it. */
+const realKernel = { skip: existsSync(REAL_SPACES) ? false : 'the spaces kernel is not built: run `pnpm run deps`' };
 
 for (const host of hosts) {
-  test(host.name + ' host: two browsers play a game with its own netcode over the relay', async (t) => {
+  test(host.name + ' host: two browsers play a game with its own netcode in a space', realKernel, async (t) => {
     const root = tempDir(t, 'zirbel-host-net-');
     const projects = new Projects(join(root, 'source'));
-    const project = importGameFolder(projects, { title: 'Relay', files: encoded({ 'index.html': netGame, 'zirbel.json': '{"players":{"max":2}}' }) });
+    const project = importGameFolder(projects, { title: 'Net', files: encoded({ 'index.html': netGame, 'zirbel.json': '{"players":{"max":2}}' }) });
     const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
     const file = join(root, 'release.json');
     writeFileSync(file, JSON.stringify(release));
     const link = await launch(t, host.command, ['--host-only', '--player-port', '0',
       '--data', join(root, 'data'), '--import', file, '--release', release.manifest.releaseId],
-    (line) => typeof line.link === 'string' ? line.link : undefined).ready;
+    (line) => typeof line.link === 'string' ? line.link : undefined, { ZIRBEL_SPACES_BINARY: REAL_SPACES }).ready;
     const browser = await chromium.launch();
     t.after(() => browser.close());
     const failures: string[] = [];
@@ -177,7 +179,8 @@ for (const host of hosts) {
 }
 
 // A game that knows nothing of any host: hooks for who this screen is, who else plays and what they say. Its
-// zirbel.json names the adapter beside it, which the game page loads after the game, and which alone talks to zirbel-net.
+// zirbel.json names the adapter beside it, which the game page loads after the game, and which alone talks to the net
+// module.
 const hookedGame = {
   'index.html': '<!doctype html><p id="out">waiting</p><script type="module" src="./game.js"></script>',
   'game.js': `const out = document.getElementById('out');
@@ -194,15 +197,16 @@ const hookedGame = {
     draw();`,
 };
 const tinyAdapter = `const game = globalThis.gameHooks;
-  const zn = await import('/zirbel-net.js');
-  const net = zn.connect(zn.launchParams());
-  net.on('open', () => { game.me(net.id); for (const id of net.peers.keys()) game.join(id); net.send(zn.ALL, 1, game.input()); });
-  net.on('peer', (id) => { game.join(id); net.send(id, 1, game.input()); });
+  const zn = await import('/.skalet/net.js');
+  const net = zn.connect({ via: 'parent' });
+  net.on('open', () => { game.me(net.id); for (const id of net.peers.keys()) game.join(id); net.send(zn.ALL, 16, game.input()); });
+  net.on('peer', (id) => { game.join(id); net.send(id, 16, game.input()); });
   net.on('leave', (id) => game.leave(id));
   net.on('message', (from, type, r) => game.control(from, r.text()));`;
 
 for (const host of hosts) {
-  test(host.name + ' host: two browsers play a game with no line about Zirbel, through the adapter its zirbel.json names', async (t) => {
+  test(host.name + ' host: two browsers play a game with no line about Zirbel, through the adapter its zirbel.json names', realKernel,
+    async (t) => {
     assert.doesNotMatch(Object.values(hookedGame).join('\n'), /zirbel|location|import/i);
     const root = tempDir(t, 'zirbel-host-adapter-');
     const projects = new Projects(join(root, 'source'));
@@ -213,7 +217,7 @@ for (const host of hosts) {
     writeFileSync(file, JSON.stringify(release));
     const link = await launch(t, host.command, ['--host-only', '--player-port', '0',
       '--data', join(root, 'data'), '--import', file, '--release', release.manifest.releaseId],
-    (line) => typeof line.link === 'string' ? line.link : undefined).ready;
+    (line) => typeof line.link === 'string' ? line.link : undefined, { ZIRBEL_SPACES_BINARY: REAL_SPACES }).ready;
     const browser = await chromium.launch();
     t.after(() => browser.close());
     const failures: string[] = [];
@@ -225,7 +229,7 @@ for (const host of hosts) {
       await page.locator('#join-form input[name="name"]').fill('Player ' + (index + 1));
       await page.locator('#join-form button.primary').click();
     }
-    // Two seats, each screen its own, and each heard the other.
+    // Two members, each screen its own, and each heard the other.
     const seen: string[] = [];
     for (const page of pages) {
       const out = page.frameLocator('iframe').locator('#out').filter({ hasText: /^2 players, me \d, heard hello from \d$/ });

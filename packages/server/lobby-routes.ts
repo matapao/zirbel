@@ -28,15 +28,20 @@ const tvPolicy = (host: string) => PAGE_POLICY.replace("connect-src 'self'", "co
 export type LobbyContext = { lobby: Lobby; files: LobbyFiles; pair?: (host: string) => string; edit?: (host: string) => string;
   link?: (host: string) => string | null };
 
-/** The player page in a room, holding a seat's one-time ticket: it goes straight in. */
-const seatLink = (origin: string, room: { id: string }, ticket: string) => origin + '/join/' + room.id + '#seat=' + ticket;
+/** The player page in a room, holding a seat's one-time ticket (a net game's, its space's and a ticket into it): it goes
+ *  straight in. */
+const seatLink = (origin: string, room: { id: string; space: { id: string } | null }, ticket: string) => origin + '/join/' + room.id +
+  (room.space ? '#skalet.space=' + room.space.id + '&skalet.ticket=' + ticket : '#seat=' + ticket);
+/** /lobby/spaces/<id>: the room of a space, for a link the kernel formed (/join#skalet.space=…), which the lobby page at
+ *  /join goes on from. */
+const SPACE_ROUTE = /^\/lobby\/spaces\/([0-9a-f]{12})$/;
 
 /** Answers a lobby request on a listener for access, or says it is none. */
 export async function lobbyRequest(context: LobbyContext, access: 'local' | 'lan', request: IncomingMessage, response: ServerResponse,
   url: URL) {
   const { pathname } = url;
   const method = request.method;
-  const file = pathname === '/' ? 'lobby.html' : pathname === '/tv' ? 'tv.html' : PAD_PAGE.test(pathname) ? 'pad.html'
+  const file = pathname === '/' || pathname === '/join' ? 'lobby.html' : pathname === '/tv' ? 'tv.html' : PAD_PAGE.test(pathname) ? 'pad.html'
     : ['/lobby.js', '/lobby.css', '/tv.js', '/tv.css', '/pad.js', '/pad.css'].includes(pathname) ? pathname.slice(1) : undefined;
   const entry = file && context.files.get(file);
   if (file && entry && method === 'GET') {
@@ -58,15 +63,20 @@ export async function lobbyRequest(context: LobbyContext, access: 'local' | 'lan
   if (pathname === '/lobby/sessions' && method === 'POST') {
     checkOrigin(request, true);
     const input = lobbyStart.parse(await body(request, 4096));
-    const { room, ticket } = context.lobby.start(access, address, input.release, input.name);
+    const { room, ticket } = await context.lobby.start(access, address, input.release, input.name);
     reply(response, { code: room.code, link: seatLink(url.origin, room, ticket) }, 201);
     return true;
   }
   if (pathname === '/lobby/join' && method === 'POST') {
     checkOrigin(request, true);
     const input = lobbyJoin.parse(await body(request, 4096));
-    const { room, ticket } = context.lobby.join(access, address, input.code, input.name);
+    const { room, ticket } = await context.lobby.join(access, address, input.code, input.name);
     reply(response, { link: seatLink(url.origin, room, ticket) });
+    return true;
+  }
+  const space = SPACE_ROUTE.exec(pathname)?.[1];
+  if (space && method === 'GET') {
+    reply(response, { room: context.lobby.roomOf(access, space) });
     return true;
   }
   throw new ZirbelError(404, 'Lobby route does not exist.');

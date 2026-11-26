@@ -9,7 +9,8 @@ import { qrPicture } from './qr.ts';
 type Game = { release: string; title: string; players: { min: number; max: number }; multiplayer: boolean };
 type Session = { id: string; title: string; players: number; max: number; started: string };
 /** pair and edit: on a box, its pages for those who own it and for those with a game's edit code. */
-type State = { games: Game[]; sessions: Session[]; pair: string | null; edit: string | null };
+/** spaces: games with their own netcode are played together here now (the host's spaces kernel runs). */
+type State = { games: Game[]; sessions: Session[]; pair: string | null; edit: string | null; spaces: boolean };
 
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const nameField = byId<HTMLInputElement>('name');
@@ -86,6 +87,7 @@ function render(state: State) {
     return item;
   }));
   byId('no-games').hidden = state.games.length > 0;
+  byId('no-spaces').hidden = state.spaces;
   const sessions = byId('sessions');
   sessions.replaceChildren(...state.sessions.map((session) => {
     const item = el('li');
@@ -159,6 +161,15 @@ joinForm.addEventListener('submit', (event) => {
     location.assign(playerLink(link, location.href));
   });
 });
+
+// A link the spaces kernel formed names a space alone (/join#skalet.space=…): the lobby finds its room on this listener
+// and goes on to that room's player page, with the same credential.
+const named = location.pathname === '/join' ? new URLSearchParams(location.hash.slice(1)).get('skalet.space') : null;
+if (named && /^[0-9a-f]{12}$/.test(named)) {
+  home.hidden = true;
+  void call<{ room: string }>('spaces/' + named).then(({ room }) => location.replace('/join/' + room + location.search + location.hash),
+    (reason: unknown) => { home.hidden = false; error.textContent = (reason as Error).message; });
+}
 
 setInterval(() => { if (document.visibilityState === 'visible' && started.hidden) void refresh(); }, REFRESH_MS);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void refresh(); });

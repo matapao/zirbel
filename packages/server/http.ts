@@ -1,4 +1,5 @@
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import type { Duplex } from 'node:stream';
 import { networkInterfaces } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -103,6 +104,23 @@ export function listen(server: Server, port: number, host: string) {
   });
 }
 
-export function roomLink(base: string, room: { id: string; invite: string }) {
-  return base + '/join/' + room.id + '#' + room.invite;
+/** A room's invitation: the player page with the room's invitation, or a room's with a space with its space's. */
+export function roomLink(base: string, room: { id: string; invite: string; space: { id: string; invite: string } | null }) {
+  return base + '/join/' + room.id + '#' + (room.space ? 'skalet.space=' + room.space.id + '&skalet.invite=' + room.space.invite : room.invite);
+}
+
+/** A socket of a page in an opaque-origin sandbox says Origin: null, a page of this host its own, a program none. */
+export function upgradeOrigin(request: IncomingMessage) {
+  const { origin } = request.headers;
+  if (origin === undefined || origin === 'null') return true;
+  try { return new URL(origin).host === (request.headers.host ?? '').toLowerCase(); } catch { return false; }
+}
+
+const REASONS = { 400: 'Bad Request', 403: 'Forbidden', 503: 'Service Unavailable' } as const;
+/** Answers an upgrade a listener won't take with an HTTP error, as a request's would be. */
+export function refuseUpgrade(stream: Duplex, status: keyof typeof REASONS, error: string) {
+  const body = JSON.stringify({ error });
+  stream.end('HTTP/1.1 ' + status + ' ' + REASONS[status] + '\r\nconnection: close\r\n' +
+    'content-type: application/json; charset=utf-8\r\nx-content-type-options: nosniff\r\ncontent-length: ' + Buffer.byteLength(body) +
+    '\r\n\r\n' + body);
 }

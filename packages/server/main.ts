@@ -11,7 +11,7 @@ import { attachment, asset, distribution, id, lobbyOffer, PORTABLE_FILE_LIMIT } 
 import { assertCurrent, atomicWrite, mediaMatches, newId, Projects, safeId, ZirbelError } from '../core/projects.ts';
 import { Releases } from '../core/releases.ts';
 import { importGameFolder } from '../core/game-files.ts';
-import { body, bytes, checkOrigin, fail, lanAddresses, listen, reply, requestUrl, secure, staticFile } from './http.ts';
+import { body, bytes, checkOrigin, fail, lanAddresses, listen, refuseUpgrade, reply, requestUrl, secure, staticFile } from './http.ts';
 import { ChatRuns } from './chat-runs.ts';
 import { chatRequest, projectChat, type ChatContext } from './chat-routes.ts';
 import { accountDirectory } from './account.ts';
@@ -28,7 +28,7 @@ import { modelId, processorId, type Processors } from './processors.ts';
 import { Mcp, stdioMcp } from './mcp.ts';
 import { readGuides } from './mcp-guides.ts';
 import { Pairing } from './box-pairing.ts';
-import { boxDoor, boxHealth, boxHosts, boxRequest, onBoxNetwork, type Access, type BoxContext } from './box-routes.ts';
+import { boxDoor, boxHealth, boxHosts, boxRequest, isLoopback, onBoxNetwork, type Access, type BoxContext } from './box-routes.ts';
 import { boxCapabilities, BoxHarnesses, BoxSettings } from './box-settings.ts';
 import { ownLoopback } from './loopback-owner.ts';
 import { BoxControllers } from './box-controllers.ts';
@@ -40,13 +40,14 @@ import { authorOf } from './authors.ts';
 import { gitRequest, writeHooks } from './git-http.ts';
 import { gitRoutes } from './git-routes.ts';
 import { GitTokens } from './git-tokens.ts';
+import { isSpacesPath, proxySpaces, proxySpacesUpgrade } from './spaces-proxy.ts';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     data: { type: 'string' }, port: { type: 'string' }, 'player-port': { type: 'string' },
     'lan': { type: 'boolean' }, 'enable-mcp': { type: 'boolean' }, box: { type: 'boolean' },
-    'player-host': { type: 'string' }, 'pads-socket': { type: 'string' },
+    'player-host': { type: 'string' }, 'pads-socket': { type: 'string' }, 'spaces-binary': { type: 'string' },
     release: { type: 'string', multiple: true }, import: { type: 'string', multiple: true },
     open: { type: 'boolean' }, help: { type: 'boolean' },
   },
@@ -92,6 +93,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
   // with a game's edit code redeem it at its /edit.
   const editorAt = (host: string) => 'http://' + host + (editorPort === 80 ? '' : ':' + editorPort);
   const players = new Players(rooms, releases, { playerPort, lanHost,
+    spacesBinary: values['spaces-binary'] || process.env.ZIRBEL_SPACES_BINARY || undefined,
     qr: (link) => QRCode.toDataURL(link, { margin: 2, width: 240 }),
     box: boxMode ? { reach: { hosts: boxHosts, network: onBoxNetwork },
       pair: (host) => editorAt(host) + '/pair', edit: (host) => editorAt(host) + '/edit' } : undefined });
@@ -186,6 +188,13 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
           const opened = await boxDoor(box, request, response, url);
           if (!opened) return;
           access = opened;
+        }
+        // The spaces kernel's paths, for the owner's pages (never an editor's of one game): the editor listener of
+        // Zirbel's skalet.json, whose audience is the owner.
+        if (isSpacesPath(url.pathname)) {
+          if (access.editor) throw new ZirbelError(403, 'This is for the box\'s owners.');
+          proxySpaces(() => players.spaces.target, 'editor', request, response);
+          return;
         }
         // On a box, the player is reached on the host name the editor was.
         const playerHost = box ? url.hostname : undefined;
@@ -361,7 +370,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
             if (!lanHost && !lanAddresses().length) throw new ZirbelError(409, 'Connect the host to your local network to share a development room.');
             await players.startLan();
             projects.read(projectId);
-            reply(response, await players.describe(rooms.create(release, false, 'lan', true), playerHost), 201);
+            reply(response, await players.describe(await rooms.withSpace(rooms.create(release, false, 'lan', true)), playerHost), 201);
             return;
           }
           if (action === 'playtest' && method === 'POST') {
@@ -427,6 +436,16 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
         response.destroy(error instanceof Error ? error : undefined);
       });
     });
+    // The spaces kernel's socket, for this device's own pages: a box's network reaches the editor with a session's cookie,
+    // which only its requests carry through the door.
+    editor.on('upgrade', (request, stream, head) => {
+      const local = !box || (isLoopback(request.socket.remoteAddress) && ownLoopback(request.socket));
+      try {
+        const url = requestUrl(request, editorPort, box ? boxHosts() : ['127.0.0.1', 'localhost']);
+        if (url.pathname !== '/.skalet/spaces' || !local) { refuseUpgrade(stream, 403, 'This socket is for this device\'s own pages.'); return; }
+        proxySpacesUpgrade(() => players.spaces.target, 'editor', request, stream, head);
+      } catch { stream.destroy(); }
+    });
     // Long enough for a push of a game's history over a slow network (git-http.ts); headers still come within 10 s.
     editor.requestTimeout = 300_000;
     editor.headersTimeout = 10_000;
@@ -435,6 +454,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
       if (!box || error.code !== 'EAFNOSUPPORT') throw error;
       return listen(editor!, port, '0.0.0.0');
     });
+    await players.startSpaces();
     const local = box ? await players.openLocal(0, boxEditorOrigins, { hosts: boxHosts, network: onBoxNetwork })
       : await players.openLocal(0, [editorOrigin(), 'http://localhost:' + editorPort, ]);
     // A box's lobby is on its LAN listener, where its door sends the devices that aren't paired.
@@ -455,7 +475,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
 /** Runs the command line: the editor, `--help` or the stdio MCP bridge. */
 export async function main(options: EditorOptions = {}) {
   try {
-    if (values.help) console.log('Zirbel\n  start: [--data DIR] [--port PORT] [--open] [--enable-mcp] [--box] [--pads-socket PATH]\n  host: --host-only [--lan] [--player-port PORT] [--player-host HOST] [--pads-socket PATH] [--import FILE] [--release ID]\n  mcp: set ZIRBEL_MCP_TOKEN and optional ZIRBEL_MCP_URL');
+    if (values.help) console.log('Zirbel\n  start: [--data DIR] [--port PORT] [--open] [--enable-mcp] [--box] [--pads-socket PATH] [--spaces-binary PATH]\n  host: --host-only [--lan] [--player-port PORT] [--player-host HOST] [--pads-socket PATH] [--spaces-binary PATH] [--import FILE] [--release ID]\n  mcp: set ZIRBEL_MCP_TOKEN and optional ZIRBEL_MCP_URL');
     else if (positionals[0] === 'mcp') await stdioMcp(process.env.ZIRBEL_MCP_URL ?? 'http://127.0.0.1:4173/mcp', z.string().min(1).parse(process.env.ZIRBEL_MCP_TOKEN));
     else if (positionals.length) throw new Error('Unknown command. Use --help.');
     else await start(options);

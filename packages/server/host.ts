@@ -14,6 +14,7 @@ const { values } = parseArgs({
   options: {
     'host-only': { type: 'boolean' }, data: { type: 'string' }, lan: { type: 'boolean' },
     'player-port': { type: 'string' }, 'player-host': { type: 'string' }, 'pads-socket': { type: 'string' },
+    'spaces-binary': { type: 'string' },
     release: { type: 'string', multiple: true }, import: { type: 'string', multiple: true },
   },
 });
@@ -24,7 +25,8 @@ async function start() {
   const lanHost = readLanHost(values['player-host'] ?? process.env.ZIRBEL_LAN_HOST);
   const boot = newId();
   const releases = new Releases(new Projects(root), fileURLToPath(new URL('./web/', import.meta.url)));
-  const players = new Players(new Rooms(), releases, { playerPort, lanHost });
+  const players = new Players(new Rooms(), releases, { playerPort, lanHost,
+    spacesBinary: values['spaces-binary'] || process.env.ZIRBEL_SPACES_BINARY || undefined });
   const claim = claimDirectory(root, { pid: process.pid, port: 0, boot, editor: false });
   if (!claim.owner) throw new Error('This project directory is owned by process ' + claim.pid + '.');
   let stopping = false;
@@ -36,6 +38,7 @@ async function start() {
   };
   try {
     importReleases(releases, values.import ?? []);
+    await players.startSpaces();
     const local = await players.openLocal(values.lan ? 0 : playerPort);
     if (values.lan) await players.startLan();
     // Where the box's controller service brings its gamepads (pads-socket.ts).

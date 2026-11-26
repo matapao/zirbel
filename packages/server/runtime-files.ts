@@ -35,8 +35,8 @@ export function prepareRuntime(runtime: ReadonlyMap<string, Buffer>) {
   return entries;
 }
 
-// A file at a release's own address never changes there; one at a fixed address (zirbel-net's client) is checked
-// against its etag on each use, so a box that is updated hands every game the new one.
+// A file at a release's own address never changes there; one at a fixed address (the lobby's page) is checked against
+// its etag on each use, so a box that is updated hands every page the new one.
 export function sendImmutable(request: IncomingMessage, response: ServerResponse, type: string, entry: RuntimeEntry,
   cache = IMMUTABLE) {
   const headers = { 'content-type': type, 'cache-control': cache, etag: entry.etag, vary: 'accept-encoding' };
@@ -76,26 +76,9 @@ export function threeAddons(webRoot: string): Addons {
   };
 }
 
-// zirbel-net's files, the host's and not a release's: its client (packages/net), bundled by the build, which games with
-// their own netcode import from /zirbel-net.js on whichever listener serves them; and the skill that teaches agents to
-// make a game multiplayer with it (skills/zirbel-multiplayer), which agents fetch from /zirbel-net/SKILL.md.
-export type NetFiles = { client: RuntimeEntry; skill: RuntimeEntry };
-export function netFiles(webRoot: string): NetFiles {
-  const entry = (name: string) => {
-    let body;
-    try {
-      body = readFileSync(join(webRoot, name));
-    } catch {
-      throw new Error('The player runtime is missing ' + name + '; run `pnpm build`.');
-    }
-    return runtimeEntry(name, body);
-  };
-  return { client: entry('zirbel-net.js'), skill: entry('zirbel-net/SKILL.md') };
-}
-
 /** The lobby's page and the files it loads (public/lobby.html, packages/web/lobby.ts), served on every player listener
  *  at / and beside it, the TV page's (public/tv.html, packages/web/tv.ts) at /tv, and the pad page's (public/pad.html,
- *  packages/web/pad.ts) at /pad. Like zirbel-net's client they are the host's own, not a release's. */
+ *  packages/web/pad.ts) at /pad. They are the host's own, not a release's. */
 const LOBBY_FILES = ['lobby.html', 'lobby.js', 'lobby.css', 'tv.html', 'tv.js', 'tv.css', 'pad.html', 'pad.js', 'pad.css'] as const;
 export type LobbyFiles = ReadonlyMap<string, RuntimeEntry>;
 export function lobbyFiles(webRoot: string): LobbyFiles {

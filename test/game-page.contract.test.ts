@@ -47,7 +47,9 @@ for (const host of hostsUnderTest()) {
     for (const { name, release } of games) {
       const room = rooms.find(({ manifest }) => manifest.releaseId === release.manifest.releaseId)!;
       const [roomId, invite] = room.link.split('/join/')[1]!.split('#') as [string, string];
-      const { gameUrl } = await (await fetch(player + '/rooms/' + roomId + '/info', { headers: { authorization: 'Bearer ' + invite } }))
+      // A net game's room is in a space, for whoever has its link: its space's id.
+      const credential = new URLSearchParams(invite).get('skalet.space') ?? invite;
+      const { gameUrl } = await (await fetch(player + '/rooms/' + roomId + '/info', { headers: { authorization: 'Bearer ' + credential } }))
         .json() as { gameUrl: string };
       const page = await fetch(player + gameUrl);
       const runtime = player + '/runtime/' + roomId + '/';

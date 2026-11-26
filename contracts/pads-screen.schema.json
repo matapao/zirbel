@@ -86,7 +86,7 @@
         "link": {
           "type": "string",
           "maxLength": 256,
-          "pattern": "^\\/join\\/[a-z0-9]{1,64}(?:#[A-Za-z0-9_=-]{1,128})?$"
+          "pattern": "^\\/join\\/[a-z0-9]{1,64}(?:#[A-Za-z0-9_.&=-]{1,180})?$"
         }
       },
       "required": [

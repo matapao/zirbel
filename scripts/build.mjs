@@ -38,9 +38,8 @@ await rm('dist', { recursive: true, force: true });
 await mkdir('dist/web', { recursive: true });
 await cp('public', 'dist/web', { recursive: true });
 await Promise.all([
-  // The skill that teaches agents to make a game multiplayer with zirbel-net: every player listener serves it as
-  // /zirbel-net/SKILL.md, beside the client.
-  cp('skills/zirbel-multiplayer/SKILL.md', 'dist/web/zirbel-net/SKILL.md'),
+  // Zirbel's manifest for the spaces kernel it runs: its listeners and its spaces (packages/server/spaces.ts).
+  cp('skalet.json', 'dist/web/skalet.json'),
   mcpGuides('dist/web/mcp-guides'),
   cp('node_modules/three/LICENSE', 'dist/web/three-license.txt'),
   cp('node_modules/zod/LICENSE', 'dist/web/zod-license.txt'),
@@ -49,14 +48,13 @@ await Promise.all([
 
 // The guides the project MCP server gives agents (packages/server/mcp-guides.ts), which both hosts serve as these bytes:
 // Zirbel's own from packages/server/guides; the multiplayer skill as it is, followed by guides/multiplayer.md, which
-// says how to follow it over MCP; and zirbel-net's README as the client's API.
+// says how to follow it over MCP; and guides/net-api.md, the net module's API.
 async function mcpGuides(to) {
   const own = 'packages/server/guides/';
   await mkdir(to, { recursive: true });
-  for (const name of ['overview', 'game-format', 'files', 'revisions']) await cp(own + name + '.md', to + '/' + name + '.md');
+  for (const name of ['overview', 'game-format', 'files', 'revisions', 'net-api']) await cp(own + name + '.md', to + '/' + name + '.md');
   const skill = await readFile('skills/zirbel-multiplayer/SKILL.md', 'utf8');
   await writeFile(to + '/multiplayer.md', skill + '\n' + await readFile(own + 'multiplayer.md', 'utf8'));
-  await cp('packages/net/README.md', to + '/net-api.md');
 }
 
 // three.js as one package, from the pinned node_modules/three: its module build, and its addons with the decoders
@@ -90,15 +88,8 @@ await Promise.all([
     entryPoints: ['packages/web/game-sdk.ts'], outfile: 'dist/web/game-sdk.js',
     bundle: true, format: 'iife', platform: 'browser', target: 'es2022', minify: true,
   }),
-  // zirbel-net, the earlier Zirbel's multiplayer client (packages/net): every player listener serves it as
-  // /zirbel-net.js to games with their own netcode. It is the host's file, not part of a release's runtime.
-  build({
-    entryPoints: ['packages/net/index.ts'], outfile: 'dist/web/zirbel-net.js',
-    bundle: true, format: 'esm', platform: 'browser', target: 'es2022', minify: true,
-    banner: { js: '/*! zirbel-net, MIT License, Copyright (c) 2026 The zirbel authors */' },
-  }),
-  // The lobby page every player listener serves at /. It is the host's own, like zirbel-net's client, and is built
-  // apart from the player runtime so the releases' chunks/ stay as they are.
+  // The lobby page every player listener serves at /. It is the host's own, and is built apart from the player runtime
+  // so the releases' chunks/ stay as they are.
   build({
     entryPoints: ['packages/web/lobby.ts'], outfile: 'dist/web/lobby.js',
     bundle: true, format: 'esm', platform: 'browser', target: 'es2022', minify: true,

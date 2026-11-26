@@ -84,13 +84,12 @@ test('an agent learns at initialize what its grant allows, and reads every guide
     assert.deepEqual(content, { uri: guide.uri, mimeType: 'text/markdown',
       text: readFileSync('dist/web/mcp-guides/' + guide.name + '.md', 'utf8') });
   }
-  // The multiplayer guide is the skill as it is, then how to follow it here; the API guide is zirbel-net's README.
+  // The multiplayer guide is the skill as it is, then how to follow it here; the API guide is the net module's.
   const guide = readGuides('dist/web');
   const skill = readFileSync('skills/zirbel-multiplayer/SKILL.md', 'utf8');
   assert.equal(guide.get('zirbel://guide/multiplayer'), skill + '\n' + readFileSync('packages/server/guides/multiplayer.md', 'utf8'));
   assert.match(guide.get('zirbel://guide/multiplayer')!.slice(skill.length), /zirbel:\/\/guide\/net-api/);
-  assert.equal(guide.get('zirbel://guide/net-api'), readFileSync('packages/net/README.md', 'utf8'));
-  for (const name of ['overview', 'game-format', 'files', 'revisions'])
+  for (const name of ['overview', 'game-format', 'files', 'revisions', 'net-api'])
     assert.equal(guide.get('zirbel://guide/' + name), readFileSync('packages/server/guides/' + name + '.md', 'utf8'));
   for (const uri of ['zirbel://guide/nope', 'zirbel://guide/', 'zirbel://guide/overview.md', 5, undefined])
     assert.deepEqual(send('resources/read', proposing, { uri }), { jsonrpc: '2.0', id: 1, error: { code: -32002, message: 'Resource not found.' } });

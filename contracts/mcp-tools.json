@@ -36,14 +36,14 @@
       "uri": "zirbel://guide/multiplayer",
       "name": "multiplayer",
       "title": "Multiplayer",
-      "description": "The skill for making a game multiplayer with a thin adapter over zirbel-net, and how to do it over this connection.",
+      "description": "The skill for making a game multiplayer with a thin adapter over the net module’s sync(), and how to do it over this connection.",
       "mimeType": "text/markdown"
     },
     {
       "uri": "zirbel://guide/net-api",
       "name": "net-api",
-      "title": "zirbel-net API",
-      "description": "The zirbel-net client’s API: connecting, events, sending, and playing alone.",
+      "title": "Net module API",
+      "description": "The net module’s API: sync() and its modes and hooks, connect() for a game’s own netcode, events, sending, and playing alone.",
       "mimeType": "text/markdown"
     }
   ],

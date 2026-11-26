@@ -1,0 +1,23 @@
+{
+  "$id": "https://zirbel.app/contracts/spaces-opened.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "space": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{12}$"
+    },
+    "link": {
+      "type": "string",
+      "maxLength": 2048
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[2-9A-HJ-NP-Z]{4}$"
+    }
+  },
+  "required": [
+    "space",
+    "link"
+  ]
+}

@@ -6,11 +6,12 @@ export const THREE_ADDONS = 'three/addons/';
 
 // This response is navigable directly as well as embedded, so its HTTP sandbox
 // must enforce the same opaque origin as the player's iframe attribute.
-// base is the document's own address (/game/<room>/<key>/, a net game's /game/@<room>/<key>/): a game imported as a built folder
-// loads its files from beside it, and only those. Every game gets the same policy: WebAssembly,
-// workers and loaders reading data: and blob: URLs, and no other origin anywhere. A game with its own netcode
-// (net-v2) also imports zirbel-net's client from its host and opens the host's relay socket, /mp; one that names an
-// adapter (one of its files, so base allows it) loads it as a module after its own document, which is otherwise as it is.
+// base is the document's own address (/game/<room>/<key>/): a game imported as a built folder loads its files from
+// beside it, and only those. Every game gets the same policy: WebAssembly, workers and loaders reading data: and blob:
+// URLs, and no other origin anywhere. A game with its own netcode (net-v2) also imports the spaces kernel's modules
+// from its host (/.skalet/net.js, /.skalet/spaces.js), and may reach its socket, /.skalet/spaces, though it joins the
+// space its player page shares with it and holds no credential of its own; one that names an adapter (one of its files,
+// so base allows it) loads it as a module after its own document, which is otherwise as it is.
 export function gamePage(release: Release, runtime: string, ancestors: string, base: string) {
   const assets = Object.fromEntries(release.manifest.assets.map((asset) =>
     [asset.id, 'data:' + asset.media + ';base64,' + release.assets[asset.hash]]));
@@ -21,11 +22,11 @@ export function gamePage(release: Release, runtime: string, ancestors: string, b
   const policy = [
     'sandbox allow-scripts allow-pointer-lock', "default-src 'none'",
     "script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + ' ' + runtime + 'game-sdk.js ' + runtime + 'three.module.js ' + addons +
-      (net ? ' ' + host + '/zirbel-net.js' : ''),
+      (net ? ' ' + host + '/.skalet/net.js ' + host + '/.skalet/spaces.js' : ''),
     "style-src 'unsafe-inline' " + base, 'img-src data: blob: ' + base, 'media-src data: blob: ' + base, 'font-src data: ' + base,
     // Loaders turn embedded data into blob: and data: URLs and read them back, and fetch the decoders
     // the addons ship with (Draco, Basis); none of it reaches the network.
-    'connect-src ' + base + ' ' + addons + ' data: blob:' + (net ? ' ' + host.replace(/^http/, 'ws') + '/mp' : ''),
+    'connect-src ' + base + ' ' + addons + ' data: blob:' + (net ? ' ' + host.replace(/^http/, 'ws') + '/.skalet/spaces' : ''),
     'worker-src ' + base + ' blob:',
     "frame-src 'none'", "form-action 'none'", "base-uri 'none'",
     'frame-ancestors ' + ancestors,

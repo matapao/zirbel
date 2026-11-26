@@ -61,7 +61,7 @@ test('the owner offers one release per game, kept in lobby.json', (t) => {
   }
 });
 
-test('the lobby lists offered games by title and its listener’s sessions newest first, without codes', (t) => {
+test('the lobby lists offered games by title and its listener’s sessions newest first, without codes', async (t) => {
   const { lobby, rooms, games } = lobbyFor(t);
   for (const game of [games.tiles, games.shared, games.alone]) lobby.offer(game.releaseId, true);
   assert.deepEqual(lobby.state('lan').games, [
@@ -69,10 +69,10 @@ test('the lobby lists offered games by title and its listener’s sessions newes
     { release: games.shared.releaseId, title: 'Shared', players: { min: 1, max: 2 }, multiplayer: true },
     { release: games.tiles.releaseId, title: 'Tessellate', players: { min: 1, max: 2 }, multiplayer: true },
   ]);
-  const first = lobby.start('lan', '192.168.1.20', games.shared.releaseId, 'Ada');
-  const second = lobby.start('lan', '192.168.1.21', games.tiles.releaseId, 'Bo');
-  const solo = lobby.start('lan', '192.168.1.22', games.alone.releaseId, 'Cy');
-  const elsewhere = lobby.start('local', '127.0.0.1', games.shared.releaseId, 'Di');
+  const first = await lobby.start('lan', '192.168.1.20', games.shared.releaseId, 'Ada');
+  const second = await lobby.start('lan', '192.168.1.21', games.tiles.releaseId, 'Bo');
+  const solo = await lobby.start('lan', '192.168.1.22', games.alone.releaseId, 'Cy');
+  const elsewhere = await lobby.start('local', '127.0.0.1', games.shared.releaseId, 'Di');
   // An owner's LAN room is a session too; a room only on loopback isn't, nor is a solo one.
   const owned = rooms.create(first.room.release, false, 'lan');
   rooms.create(first.room.release, false, 'local');
@@ -100,70 +100,70 @@ test('games are ordered by title, case aside and then by case', (t) => {
   assert.deepEqual(lobby.state('lan').games.map(({ title }) => title), ['alpha', 'Bravo', 'bravo', 'Charlie']);
 });
 
-test('a session’s link seats its starter, and its code seats players, then spectators', (t) => {
+test('a session’s link seats its starter, and its code seats players, then spectators', async (t) => {
   const { lobby, games } = lobbyFor(t);
   lobby.offer(games.shared.releaseId, true);
-  const { room, ticket } = lobby.start('lan', '192.168.1.20', games.shared.releaseId, 'Ada');
+  const { room, ticket } = await lobby.start('lan', '192.168.1.20', games.shared.releaseId, 'Ada');
   assert.equal(room.mayView(ticket), true);
   const ada = joinRoom(room, ticket);
   assert.deepEqual([ada.welcome.seat.name, ada.welcome.seat.role], ['Ada', 'player']);
   const code = room.code!;
-  const bo = lobby.join('lan', '192.168.1.21', code.toLowerCase().slice(0, 2) + '-' + code.toLowerCase().slice(2), 'Bo');
+  const bo = await lobby.join('lan', '192.168.1.21', code.toLowerCase().slice(0, 2) + '-' + code.toLowerCase().slice(2), 'Bo');
   assert.equal(bo.room, room);
   assert.equal(joinRoom(room, bo.ticket).welcome.seat.role, 'player');
   assert.equal(lobby.state('lan').sessions[0]!.players, 2);
-  const eve = lobby.join('lan', '192.168.1.22', ' ' + code + ' ', 'Eve');
+  const eve = await lobby.join('lan', '192.168.1.22', ' ' + code + ' ', 'Eve');
   assert.equal(joinRoom(room, eve.ticket).welcome.seat.role, 'spectator');
   // A ticket is good once; the invitation is not needed and not handed out.
   assert.throws(() => joinRoom(room, ticket));
-  for (let i = 0; i < 3; i++) lobby.join('lan', '192.168.1.23', code, 'S' + i);
-  assert.throws(() => lobby.join('lan', '192.168.1.23', code, 'Full'), /spectator seats are full/);
+  for (let i = 0; i < 3; i++) await lobby.join('lan', '192.168.1.23', code, 'S' + i);
+  await assert.rejects(() => lobby.join('lan', '192.168.1.23', code, 'Full'), /spectator seats are full/);
   // On the other listener, the code is no session's.
-  assert.throws(() => lobby.join('local', '127.0.0.1', code, 'Di'), /No session has that code/);
-  assert.throws(() => lobby.start('lan', '192.168.1.20', games.tiles.releaseId, 'Ada'), /not in the lobby/);
+  await assert.rejects(() => lobby.join('local', '127.0.0.1', code, 'Di'), /No session has that code/);
+  await assert.rejects(() => lobby.start('lan', '192.168.1.20', games.tiles.releaseId, 'Ada'), /not in the lobby/);
 });
 
-test('the lobby holds sixteen sessions, three of them from one address, the host’s own aside', (t) => {
+test('the lobby holds sixteen sessions, three of them from one address, the host’s own aside', async (t) => {
   const { lobby, rooms, games } = lobbyFor(t);
   lobby.offer(games.shared.releaseId, true);
   lobby.offer(games.alone.releaseId, true);
   for (let i = 0; i < SESSIONS_PER_ADDRESS; i++)
-    lobby.start('lan', i % 2 ? '::ffff:192.168.1.20' : '192.168.1.20', i ? games.alone.releaseId : games.shared.releaseId, 'Ada');
-  assert.throws(() => lobby.start('lan', '192.168.1.20', games.shared.releaseId, 'Ada'), (error: Error & { status?: number }) =>
+    await lobby.start('lan', i % 2 ? '::ffff:192.168.1.20' : '192.168.1.20', i ? games.alone.releaseId : games.shared.releaseId, 'Ada');
+  await assert.rejects(() => lobby.start('lan', '192.168.1.20', games.shared.releaseId, 'Ada'), (error: Error & { status?: number }) =>
     error.status === 429 && error.message === 'You have three sessions open. Join one, or wait until one ends.');
   const first = rooms.open().find((room) => room.startedBy === '192.168.1.20')!;
   rooms.close(first.id);
-  lobby.start('lan', '192.168.1.20', games.shared.releaseId, 'Ada');
+  await lobby.start('lan', '192.168.1.20', games.shared.releaseId, 'Ada');
   // Rooms the owner opens don't count.
   rooms.create(first.release, false, 'lan');
-  for (let i = SESSIONS_PER_ADDRESS; i < LOBBY_SESSIONS; i++) lobby.start('local', '127.0.0.1', games.shared.releaseId, 'Box');
-  assert.throws(() => lobby.start('lan', '10.0.0.9', games.shared.releaseId, 'Late'), (error: Error & { status?: number }) =>
+  for (let i = SESSIONS_PER_ADDRESS; i < LOBBY_SESSIONS; i++) await lobby.start('local', '127.0.0.1', games.shared.releaseId, 'Box');
+  await assert.rejects(() => lobby.start('lan', '10.0.0.9', games.shared.releaseId, 'Late'), (error: Error & { status?: number }) =>
     error.status === 429 && error.message === 'The lobby is full. Join a session, or try again when one ends.');
 });
 
-test('ten wrong codes in a minute stop an address for the rest of that minute', (t) => {
+test('ten wrong codes in a minute stop an address for the rest of that minute', async (t) => {
   let now = 1_000_000;
   const { lobby, games } = lobbyFor(t, () => now);
   lobby.offer(games.shared.releaseId, true);
-  const { room } = lobby.start('lan', '192.168.1.20', games.shared.releaseId, 'Ada');
+  const { room } = await lobby.start('lan', '192.168.1.20', games.shared.releaseId, 'Ada');
   const wrong = room.code === 'ZZZZ' ? 'YYYY' : 'ZZZZ';
   for (let i = 0; i < WRONG_CODES; i++) {
     now += 1000;
-    assert.throws(() => lobby.join('lan', '192.168.1.30', i % 2 ? wrong : 'not a code', 'Mal'), /No session has that code/);
+    await assert.rejects(() => lobby.join('lan', '192.168.1.30', i % 2 ? wrong : 'not a code', 'Mal'), /No session has that code/);
   }
-  assert.throws(() => lobby.join('lan', '::ffff:192.168.1.30', room.code!, 'Mal'), /Too many wrong codes/);
+  await assert.rejects(() => lobby.join('lan', '::ffff:192.168.1.30', room.code!, 'Mal'), /Too many wrong codes/);
   // Another address is unaffected, and so is this one once its minute is over.
-  assert.equal(lobby.join('lan', '192.168.1.31', room.code!, 'Bo').room, room);
+  assert.equal((await lobby.join('lan', '192.168.1.31', room.code!, 'Bo')).room, room);
   // Its minute began at its first wrong code.
   now = 1_000_000 + 1000 + 60_000;
-  assert.throws(() => lobby.join('lan', '192.168.1.30', wrong, 'Mal'), /No session has that code/);
-  assert.equal(lobby.join('lan', '192.168.1.30', room.code!, 'Mal').room, room);
+  await assert.rejects(() => lobby.join('lan', '192.168.1.30', wrong, 'Mal'), /No session has that code/);
+  assert.equal((await lobby.join('lan', '192.168.1.30', room.code!, 'Mal')).room, room);
 });
 
-test('a lobby session closes once nobody has been in it for twenty minutes; an owner’s room waits for its invitation', (t) => {
+test('a lobby session closes once nobody has been in it for twenty minutes; an owner’s room waits for its invitation', async (t) => {
   const { lobby, rooms, games } = lobbyFor(t);
   lobby.offer(games.shared.releaseId, true);
-  const { room } = lobby.start('lan', '192.168.1.20', games.shared.releaseId, 'Ada');
+  const { room } = await lobby.start('lan', '192.168.1.20', games.shared.releaseId, 'Ada');
   const owned = rooms.create(room.release, false, 'lan');
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 21 * 60_000 });
   assert.equal(room.step(), false);

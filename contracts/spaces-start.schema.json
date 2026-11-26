@@ -1,0 +1,30 @@
+{
+  "$id": "https://zirbel.app/contracts/spaces-start.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "spaces": {
+      "type": "string",
+      "pattern": "^http:\\/\\/127\\.0\\.0\\.1:\\d{1,5}$"
+    },
+    "socket": {
+      "type": "string",
+      "pattern": "^(?:unix:\\/[^\\n]{1,1000}|tcp:127\\.0\\.0\\.1:\\d{1,5})$"
+    },
+    "token": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{16,128}$"
+    },
+    "pid": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "spaces",
+    "socket",
+    "token",
+    "pid"
+  ]
+}

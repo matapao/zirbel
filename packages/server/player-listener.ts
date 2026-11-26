@@ -12,8 +12,8 @@ import { GAME_FILE_TYPES } from '../sdk/game.ts';
 import { body, bytes, checkOrigin, contentType, fail, lanAddresses, listen, reply, requestUrl, secure, typeFor } from './http.ts';
 import { lobbyRequest, type LobbyContext } from './lobby-routes.ts';
 import { padsSockets } from './pads-socket.ts';
-import { relaySockets } from './relay-socket.ts';
-import { acceptsGzip, prepareRuntime, sendImmutable, type Addons, type NetFiles } from './runtime-files.ts';
+import { acceptsGzip, prepareRuntime, sendImmutable, type Addons } from './runtime-files.ts';
+import { isSpacesPath, proxySpaces, proxySpacesUpgrade, type SpacesTarget } from './spaces-proxy.ts';
 
 const privateAddress = /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|169\.254\.|127\.)/;
 
@@ -22,10 +22,8 @@ const gzipAsync = promisify(gzip);
 // The game page embeds its assets (up to tens of MB), so build and gzip it once
 // per room and origin rather than on every load.
 type GamePage = { policy: string; html: string; gzip: Promise<Buffer> };
-/** A game's document, its files beside it. A game with its own netcode is at /game/@<room>/<key>/: in the shape zirbel-net
- *  gives a game's folder on its host, /<game>/@<version>/, which such games look for before they turn their netcode on. */
-export const gamePath = (room: Room) => '/game/' + (isNet(room) ? '@' : '') + room.id + '/' + room.documentKey + '/';
-const isNet = (room: Room) => room.release.manifest.simulation === 'net-v2';
+/** A game's document, its files beside it. */
+export const gamePath = (room: Room) => '/game/' + room.id + '/' + room.documentKey + '/';
 // A built game's files, decoded once per room from the release they came in.
 const gameFiles = new WeakMap<Room, Map<string, Buffer>>();
 function gameFile(room: Room, path: string) {
@@ -62,9 +60,10 @@ const reserveSchema = z.strictObject({
  *  (network), and embedded by the editor on the host the device reached it by (editorOrigins by host name). */
 export type PlayerReach = { hosts: () => string[]; network: (address: string) => boolean };
 
-export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, Buffer>, addons: Addons, net: NetFiles, config: {
+/** spaces: where /.skalet/* goes, the spaces kernel's address while Zirbel runs one (spaces-proxy.ts). */
+export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, Buffer>, addons: Addons, config: {
   port: number; bind: string; lan: boolean; editorOrigins?: string[] | ((host: string) => string[]); extraHosts?: string[];
-  reach?: PlayerReach; lobby: LobbyContext; pads: Pads;
+  reach?: PlayerReach; lobby: LobbyContext; pads: Pads; spaces: SpacesTarget;
 }) {
   let port: number;
   const hosts = () => [...config.reach?.hosts() ?? ['localhost', '127.0.0.1', ...(config.lan ? lanAddresses() : [])],
@@ -89,22 +88,10 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
     try {
       if (!isLocalNetwork(request)) throw new ZirbelError(403, 'LAN access requires a local network address.');
       const url = requestUrl(request, port, hosts());
-      const [, route, segment, ...parts] = url.pathname.split('/');
-      // /game/@<room>/<key>/ is a net game's address (gamePath), and only a net game's.
-      const netAddress = route === 'game' && segment !== undefined && segment.startsWith('@');
-      const roomId = netAddress ? segment.slice(1) : segment;
+      const [, route, roomId, ...parts] = url.pathname.split('/');
       if (request.method === 'GET' && url.pathname === '/health') { reply(response, { status: 'ok', role: 'player' }); return; }
-      if (request.method === 'GET' && url.pathname === '/zirbel-net.js') {
-        // Games import it as a module from their opaque origin: a CORS request.
-        response.setHeader('access-control-allow-origin', '*');
-        sendImmutable(request, response, 'text/javascript; charset=utf-8', net.client, 'no-cache');
-        return;
-      }
-      // The skill that teaches an agent to make a game multiplayer here, for agents that reach this host.
-      if (request.method === 'GET' && url.pathname === '/zirbel-net/SKILL.md') {
-        sendImmutable(request, response, 'text/markdown; charset=utf-8', net.skill, 'no-cache');
-        return;
-      }
+      // The spaces kernel's: the modules pages and games import, and its routes.
+      if (isSpacesPath(url.pathname)) { proxySpaces(config.spaces, 'player', request, response); return; }
       if (await lobbyRequest(config.lobby, config.lan ? 'lan' : 'local', request, response, url)) return;
       if (!roomId) throw new ZirbelError(404, 'Open the invitation link from the host.');
       const room = rooms.get(roomId);
@@ -115,7 +102,7 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
         // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
         " connect-src 'self' ws://" + url.host + "; frame-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors " + frame;
       response.setHeader('content-security-policy', playerPolicy);
-      if (route === 'game' && request.method === 'GET' && room.release.game && parts[0] === room.documentKey && netAddress === isNet(room)) {
+      if (route === 'game' && request.method === 'GET' && room.release.game && parts[0] === room.documentKey) {
         const ancestors = ["'self'", ...editorOrigins(url.hostname)].join(' ');
         const page = cachedGamePage(room, url.origin, ancestors);
         // A file opened on its own stays in the game's sandbox too.
@@ -173,7 +160,6 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
   // 24 rooms with up to eight seats each, plus room for page loads and handshakes.
   player.maxConnections = 256;
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 16_384, perMessageDeflate: false, autoPong: false });
-  const relay = relaySockets(rooms, config.lan ? 'lan' : 'local');
   const pads = padsSockets(config.pads, config.lan ? 'lan' : 'local');
   const handshakes = new Set<WebSocket>();
   const waitingForPong = new WeakSet<WebSocket>();
@@ -181,7 +167,7 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
     try {
       if (!isLocalNetwork(request)) throw new ZirbelError(403, 'LAN access requires a local network address.');
       const url = requestUrl(request, port, hosts());
-      if (url.pathname === '/mp') { relay.upgrade(request, stream, head); return; }
+      if (url.pathname === '/.skalet/spaces') { proxySpacesUpgrade(config.spaces, 'player', request, stream, head); return; }
       if (url.pathname === '/pads') { pads.upgrade(request, stream, head, url); return; }
       const match = /^\/rooms\/([a-z0-9]+)\/socket$/.exec(url.pathname);
       if (!match?.[1]) throw new ZirbelError(404, 'Room socket does not exist.');
@@ -254,7 +240,6 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
     port, server: player,
     close() {
       clearInterval(heartbeat);
-      relay.close();
       pads.close();
       for (const socket of sockets.clients) socket.terminate();
       sockets.close();

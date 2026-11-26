@@ -93,7 +93,7 @@ function sources() {
     if (!text.test(f) || !existsSync(path.join(root, f))) continue;
     readFileSync(path.join(root, f), 'utf8').split('\n').forEach((line, i) => {
       if (!HIDDEN.test(line)) return;
-      const chars = [...line];
+      const chars = Array.from(line);
       const at = chars.findIndex((ch, j) => HIDDEN.test(ch) && !emojiPart(chars, j));
       if (at >= 0) problems.push(`${f}:${i + 1} has U+${chars[at].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
     });

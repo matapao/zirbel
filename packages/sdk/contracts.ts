@@ -192,7 +192,7 @@ export const padsScreenMessage = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('rumble'), slot: padPlace, duration: z.number().min(0).max(5000),
     strong: z.number().min(0).max(1), weak: z.number().min(0).max(1) }),
   // Show on TV: a player page of this listener, as a path, for the box's own screen to open.
-  z.strictObject({ type: z.literal('show'), link: z.string().max(256).regex(/^\/join\/[a-z0-9]{1,64}(?:#[A-Za-z0-9_=-]{1,128})?$/) }),
+  z.strictObject({ type: z.literal('show'), link: z.string().max(256).regex(/^\/join\/[a-z0-9]{1,64}(?:#[A-Za-z0-9_.&=-]{1,180})?$/) }),
   z.strictObject({ type: z.literal('move'), from: padPlace, to: padPlace }),
   // What each place drives, as the game names it: all of them, the places left out having none.
   z.strictObject({ type: z.literal('labels'), labels: z.array(z.strictObject({ place: padPlace, name: z.string().min(1).max(24),
@@ -226,6 +226,24 @@ export const controllersView = z.strictObject({
   found: z.array(z.strictObject({ address: bluetoothAddress, name: controllerName })).max(32),
   scanning: z.boolean(), bluetooth: z.boolean(), pairing: bluetoothAddress.nullable(), error: z.string().max(400).nullable(),
 });
+
+// The spaces kernel (packages/server/spaces.ts): the line its child prints first, and what its local socket answers
+// Zirbel's calls with. Its objects may say more than Zirbel reads. A space's id is 12 hex digits, its credentials the
+// kernel's secrets, its code the lobby's letters.
+const spaceId = z.string().regex(/^[0-9a-f]{12}$/);
+const spaceSecret = z.string().regex(/^[A-Za-z0-9_-]{16,128}$/);
+const spaceCode = z.string().regex(/^[2-9A-HJ-NP-Z]{4}$/);
+export const spacesStart = z.object({
+  spaces: z.string().regex(/^http:\/\/127\.0\.0\.1:\d{1,5}$/),
+  socket: z.string().regex(/^(?:unix:\/[^\n]{1,1000}|tcp:127\.0\.0\.1:\d{1,5})$/),
+  token: spaceSecret, pid: z.number().int().positive(),
+});
+export const spacesOpened = z.object({ space: spaceId, link: z.string().max(2048), code: spaceCode.optional() });
+export const spacesTicket = z.object({ ticket: spaceSecret });
+export const spacesList = z.array(z.object({
+  space: spaceId, listener: z.string().max(32), code: spaceCode.optional(),
+  members: z.array(z.object({ role: z.enum(['participant', 'observer']), connected: z.boolean(), away: z.boolean() })).max(300),
+})).max(64);
 
 export type SceneObject = z.infer<typeof sceneObject>;
 export type Scene = z.infer<typeof scene>;

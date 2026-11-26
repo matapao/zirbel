@@ -10,7 +10,7 @@ import { loopback } from '../core/lobby.ts';
 import { PADS_CLOSE, type Access, type Pads, type PadsLink } from '../core/pads.ts';
 import { padsPadMessage, padsScreenMessage, padsServiceMessage } from '../sdk/contracts.ts';
 import { MAX_PAD_FRAME } from '../sdk/pads.ts';
-import { refuseUpgrade, relayOrigin } from './relay-socket.ts';
+import { refuseUpgrade, upgradeOrigin } from './http.ts';
 
 /** The largest message on /pads: a control message's 1 KB (a pad frame is far smaller). */
 const MESSAGE = 1024;
@@ -107,7 +107,7 @@ export function padsSockets(pads: Pads, access: Access) {
   return {
     upgrade(request: IncomingMessage, stream: Duplex, head: Buffer, url: URL) {
       // Pages of this listener open it; a game's opaque-origin frame never does.
-      if (request.headers.origin === 'null' || !relayOrigin(request)) { refuseUpgrade(stream, 403, 'Cross-origin requests are denied.'); return; }
+      if (request.headers.origin === 'null' || !upgradeOrigin(request)) { refuseUpgrade(stream, 403, 'Cross-origin requests are denied.'); return; }
       const role = url.searchParams.get('role');
       if (role !== 'screen' && role !== 'pad') { refuseUpgrade(stream, 400, 'Open the pads socket as a screen or a pad.'); return; }
       sockets.handleUpgrade(request, stream, head, (socket) => {

@@ -155,12 +155,12 @@ test('a net game names its adapter in zirbel.json, one of its own scripts, and o
   // Its release keeps it, in the order both hosts hash; its page loads it last, and is otherwise the page without it.
   const release = releases.package(project.id, 'main', rights, false);
   assert.deepEqual(Object.keys(release.game!), ['html', 'maxPlayers', 'net', 'adapter', 'files']);
-  const runtime = 'http://h/runtime/r/', base = 'http://h/game/@r/key/';
+  const runtime = 'http://h/runtime/r/', base = 'http://h/game/r/key/';
   const page = gamePage(release, runtime, "'self'", base);
   const without = structuredClone(release);
   delete without.game!.adapter;
   const plain = gamePage(without, runtime, "'self'", base);
-  assert.equal(page.html, plain.html + '<script type="module" src="http://h/game/@r/key/net/adapter.js"></script>');
+  assert.equal(page.html, plain.html + '<script type="module" src="http://h/game/r/key/net/adapter.js"></script>');
   assert.ok(plain.html.endsWith(release.game!.html.replace(/^<!doctype html>/, '')));
   assert.deepEqual([page.policy, plain.policy], [sandboxPolicy(runtime, base, "'self'", 'http://h'), sandboxPolicy(runtime, base, "'self'", 'http://h')]);
 });

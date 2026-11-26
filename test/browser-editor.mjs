@@ -43,7 +43,7 @@ export async function openEditor(t, run, extra = []) {
   const data = await mkdtemp(join(tmpdir(), 'zirbel-browser-'));
   // The threads' working folders, apart from the projects as the account folder is.
   const account = await mkdtemp(join(tmpdir(), 'zirbel-browser-account-'));
-  const harnessHost = createServer(async (req, res) => {
+  const harnessHost = createServer((req, res) => void (async () => {
     res.setHeader('content-type', 'application/json');
     if (req.url === '/access') {
       res.end(JSON.stringify({ app: 'zirbel', processors: [{ id: 'codex', name: 'Test harness' }] }));
@@ -55,7 +55,7 @@ export async function openEditor(t, run, extra = []) {
     const context = JSON.parse(body.prompt.slice(body.prompt.lastIndexOf('\n') + 1));
     // The run as the harness gets it: its thread folder (cwd), and the session it resumes, if it does.
     await run(context, res, body);
-  });
+  })());
   let host, browser;
   async function stopHost(signal = 'SIGTERM') {
     if (!host || host.exitCode !== null || host.signalCode !== null) return;

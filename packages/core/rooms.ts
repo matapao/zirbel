@@ -5,7 +5,6 @@ import { boundedJson } from '../sdk/game.ts';
 import type { z } from 'zod';
 import { newCode } from './lobby.ts';
 import { newId, ZirbelError } from './projects.ts';
-import { Relay } from './relay.ts';
 
 export const secret = () => randomBytes(24).toString('base64url');
 // Room secrets travel over the LAN; compare them in constant time.
@@ -15,6 +14,17 @@ const INVITE = 4 * 60 * 60 * 1000;
 const IDLE = 20 * 60 * 1000;
 /** How long a seat the lobby holds for someone waits for them: they may read out the code before they go in. */
 const LOBBY_TICKET = 5 * 60 * 1000;
+
+/** What a net game's room needs of the spaces kernel (packages/server/spaces.ts gives it): a space of its own, a
+ *  one-time ticket into it, and its end. A space's code is its session's. */
+export interface SpaceKernel {
+  readonly available: boolean;
+  open(options: { participants: number; code: boolean }): Promise<{ space: string; invite: string; code?: string }>;
+  ticket(space: string, name: string, role: 'participant' | 'observer'): Promise<string>;
+  close(space: string): void;
+}
+/** A game with its own netcode, which plays over a space of the spaces kernel. */
+export const isNet = (release: Release) => release.manifest.simulation === 'net-v2';
 
 export type Peer = {
   send(message: ServerMessage): void;
@@ -56,8 +66,11 @@ export class Room {
   /** The lobby's name for this room: for its list alone, never enough to join. */
   readonly session = randomBytes(6).toString('hex');
   readonly simulation: Simulation | null;
-  /** A net-v2 room's relay, at /mp: the game's own netcode carries its play. */
-  readonly relay: Relay | null;
+  /** A net game's space, which its players are members of and its own netcode plays over: its id, and the invitation
+   *  in its link. A net room has none alone, or when no spaces kernel runs. */
+  space: { readonly id: string; readonly invite: string } | null = null;
+  /** The space's participants and whether any is connected, as the kernel last listed them. */
+  members = { participants: 0, connected: false };
   readonly seats = new Map<string, Seat>();
   private pending = new Map<string, { name: string; role: SeatInfo['role']; expires: number }>();
   private tickNumber = 0;
@@ -67,29 +80,30 @@ export class Room {
   /** code: the short code a session is joined by, from the lobby; startedBy: the address that started it there. */
   constructor(
     readonly release: Release, readonly solo: boolean, readonly access: 'local' | 'lan',
-    readonly development = false, readonly code: string | null = null, readonly startedBy?: string,
+    readonly development = false, public code: string | null = null, readonly startedBy?: string,
   ) {
     const kind = release.manifest.simulation;
     this.simulation = kind === 'mosslight-v1' ? mosslight(legacyScene(release)) :
       kind === 'tessellate-v1' ? tessellate(solo) : kind === 'shared-state-v1' ? sharedState() : null;
-    this.relay = kind === 'net-v2' ? new Relay(this.capacity('player'), () => { this.activity = Date.now(); }) : null;
   }
 
   summary() {
     const seats = [...this.seats.values()].map((seat) => seat.info);
     return {
       id: this.id, manifest: this.release.manifest, solo: this.solo, development: this.development, access: this.access, seats,
-      status: this.closed ? 'closed' : seats.some((seat) => seat.connected) ? 'active' : 'waiting',
+      status: this.closed ? 'closed' : seats.some((seat) => seat.connected) || this.members.connected ? 'active' : 'waiting',
       ...(this.code ? { code: this.code } : {}),
     };
   }
 
   /** The player seats taken now, by players connected or still within their grace. */
-  get players() { return this.used('player'); }
+  get players() { return this.space ? this.members.participants : this.used('player'); }
 
+  /** An invitation, a held seat or a seat's own, or for a room with a space that space's id, which is in every link. */
   mayView(credential: string) {
     this.prune();
     return !this.closed && ((same(credential, this.invite) && Date.now() < this.inviteExpires) ||
+      (this.space !== null && same(credential, this.space.id)) ||
       this.pending.has(credential) || [...this.seats.values()].some((seat) => same(seat.resume, credential)));
   }
 
@@ -225,6 +239,8 @@ export class Room {
 
   step() {
     this.prune();
+    // A room with a space lives as long as its space: the kernel ends one nobody plays in (Players' sweep).
+    if (this.space) return !this.closed;
     // A shared room stays open as long as its invitation is valid, so a link
     // printed by a headless host still works after a quiet spell. One from the lobby is joined by its code instead.
     const now = Date.now();
@@ -236,7 +252,6 @@ export class Room {
 
   close() {
     this.closed = true;
-    this.relay?.close();
     for (const seat of this.seats.values()) {
       seat.peer?.send({ type: 'closed', message: 'The owner ended this room.' });
       seat.peer?.close(1000);
@@ -248,6 +263,8 @@ export class Room {
 
 export class Rooms {
   private rooms = new Map<string, Room>();
+  /** The spaces kernel, which a net game's room plays over while it runs (hosting.ts sets it). */
+  kernel?: SpaceKernel;
   private timer = setInterval(() => {
     for (const room of this.rooms.values()) if (!room.step()) this.close(room.id);
   }, 50).unref();
@@ -265,13 +282,51 @@ export class Rooms {
       this.close(idle.id);
     }
     if (solo && access === 'lan' && !lobby) throw new ZirbelError(400, 'Solo playtests use the local player service.');
-    const code = !solo && release.manifest.simulation !== null && (lobby || access === 'lan')
+    // A net game's code is its space's (withSpace).
+    const code = !solo && release.manifest.simulation !== null && !isNet(release) && (lobby || access === 'lan')
       ? newCode((taken) => [...this.rooms.values()].some((room) => room.code === taken)) : null;
     // The player serves runtime files from the host's own verified build, so a room
     // does not keep the release's embedded copy (about 3 MB per room).
     const room = new Room({ ...release, files: {} }, solo, access, development, code, startedBy);
     this.rooms.set(room.id, room);
     return room;
+  }
+
+  /** Opens a space for a net game's shared room, while the kernel runs, with a code where the room would have one: the
+   *  room plays over it, and its code is the session's. A room the kernel can't give one is closed. A space whose code
+   *  another room has (the kernel draws its own) is given back for another. */
+  async withSpace(room: Room) {
+    const kernel = this.kernel;
+    if (room.solo || !isNet(room.release) || room.space || !kernel?.available) return room;
+    const code = room.startedBy !== undefined || room.access === 'lan';
+    try {
+      for (let tries = 0; ; tries++) {
+        const opened = await kernel.open({ participants: room.release.manifest.players.max, code });
+        if (opened.code && tries < 3 && this.open().some((other) => other.code === opened.code)) { kernel.close(opened.space); continue; }
+        if (!this.rooms.has(room.id)) { kernel.close(opened.space); throw new ZirbelError(404, 'This room has closed.'); }
+        room.space = { id: opened.space, invite: opened.invite };
+        room.code = opened.code ?? null;
+        return room;
+      }
+    } catch (error) {
+      this.close(room.id);
+      if (error instanceof ZirbelError) throw error;
+      throw new ZirbelError(503, 'Multiplayer isn\'t available on this host now. Try again soon.');
+    }
+  }
+
+  /** A one-time ticket into a room's space for someone: a player's place while one is free, else an observer's. */
+  async spaceTicket(room: Room, name: string, role?: 'participant' | 'observer') {
+    const kernel = this.kernel;
+    if (!room.space || !kernel) throw new ZirbelError(503, 'Multiplayer isn\'t available on this host now.');
+    for (const asked of role ? [role] : ['participant', 'observer'] as const) {
+      try { return await kernel.ticket(room.space.id, name, asked); } catch (error) {
+        const why = (error as { code?: unknown }).code;
+        if (why === 'unavailable') throw new ZirbelError(503, 'Multiplayer isn\'t available on this host now.');
+        if (why !== 'full') throw new ZirbelError(410, 'This session has ended.');
+      }
+    }
+    throw new ZirbelError(409, role === 'participant' ? 'All player seats are reserved.' : 'This session is full.');
   }
 
   get(id: string) {
@@ -289,8 +344,21 @@ export class Rooms {
   open() { return [...this.rooms.values()]; }
 
   close(id: string) {
-    this.rooms.get(id)?.close();
+    const room = this.rooms.get(id);
+    room?.close();
+    if (room?.space) this.kernel?.close(room.space.id);
     this.rooms.delete(id);
+  }
+
+  /** The spaces kernel listed its spaces (Players' sweep): a room's members as it counts them, and the end of every room
+   *  whose space it no longer has. gone: the kernel went, with every space. */
+  spaces(listed: ReadonlyMap<string, { participants: number; connected: boolean }> | 'gone') {
+    for (const room of this.open()) {
+      if (!room.space) continue;
+      const members = listed === 'gone' ? undefined : listed.get(room.space.id);
+      if (members) room.members = members;
+      else this.close(room.id);
+    }
   }
 
   closeProject(projectId: string) {

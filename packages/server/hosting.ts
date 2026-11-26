@@ -1,5 +1,6 @@
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { isIP } from 'node:net';
+import { join } from 'node:path';
 import { PORTABLE_FILE_LIMIT, type Release } from '../sdk/contracts.ts';
 import { Lobby } from '../core/lobby.ts';
 import { Pads } from '../core/pads.ts';
@@ -10,7 +11,8 @@ import { lanAddresses, roomLink } from './http.ts';
 import type { LobbyContext } from './lobby-routes.ts';
 import { padsService } from './pads-socket.ts';
 import { playerListener, type PlayerReach } from './player-listener.ts';
-import { lobbyFiles, netFiles, threeAddons, type Addons, type NetFiles } from './runtime-files.ts';
+import { lobbyFiles, threeAddons, type Addons } from './runtime-files.ts';
+import { Spaces, spacesBinary } from './spaces.ts';
 
 // Shared by the editor and the headless host. Keep editor-only code (harnesses,
 // MCP) out of this file so `--host-only` loads only what players need.
@@ -75,6 +77,9 @@ const sharedAddress = (host: string) => !loopbackName(host) && isIP(host.replace
  *  the pairing page and the edit page the lobby links to, on the host name a device reached it by. */
 type BoxPlayers = { reach: PlayerReach; pair: (host: string) => string; edit: (host: string) => string };
 
+/** How often the spaces kernel's spaces are listed: their members for the lobby, and the rooms whose space ended. */
+const SWEEP = 2000;
+
 // Owns the loopback and LAN player listeners, the rooms they serve and the lobby on each.
 export class Players {
   local?: Listener;
@@ -85,17 +90,24 @@ export class Players {
   readonly pads = new Pads();
   private readonly padsSweep = setInterval(() => this.pads.sweep(), 1000).unref();
   private padsLocal?: Promise<{ close(): void } | undefined>;
+  /** The spaces kernel, which games with their own netcode play over: the listeners pass /.skalet/* to it. */
+  readonly spaces: Spaces;
+  private readonly sweep = setInterval(() => void this.listSpaces(), SWEEP).unref();
 
   // Read from the build beside the release runtime, and shared by both listeners.
   private readonly addons: Addons;
-  private readonly net: NetFiles;
   private readonly lobbyContext: LobbyContext;
 
-  // qr renders a LAN link for the editor; the headless host prints links only.
+  // qr renders a LAN link for the editor; the headless host prints links only. spacesBinary: the kernel's, as named
+  // (--spaces-binary, ZIRBEL_SPACES_BINARY).
   constructor(readonly rooms: Rooms, private releases: Releases,
-    private options: { playerPort: number; lanHost?: string; qr?: (link: string) => Promise<string>; box?: BoxPlayers }) {
+    private options: { playerPort: number; lanHost?: string; qr?: (link: string) => Promise<string>; box?: BoxPlayers;
+      spacesBinary?: string }) {
     this.addons = threeAddons(releases.webRoot);
-    this.net = netFiles(releases.webRoot);
+    this.spaces = new Spaces({ binary: spacesBinary(options.spacesBinary, join(releases.webRoot, '..')),
+      manifest: join(releases.webRoot, 'skalet.json') });
+    rooms.kernel = this.spaces;
+    this.spaces.onReset(() => rooms.spaces('gone'));
     this.lobby = new Lobby(rooms, releases);
     this.lobbyContext = { lobby: this.lobby, files: lobbyFiles(releases.webRoot), pair: options.box?.pair, edit: options.box?.edit,
       link: (host) => this.lobbyLink(host) };
@@ -103,14 +115,22 @@ export class Players {
 
   get lanHost() { return this.options.lanHost; }
 
+  /** Starts the spaces kernel, or reaches the host's; without one, games with their own netcode play alone. */
+  startSpaces() { return this.spaces.start(); }
+
+  private async listSpaces() {
+    if (!this.spaces.available || !this.rooms.open().some((room) => room.space)) return;
+    try { this.rooms.spaces(await this.spaces.list()); } catch { /* listed again on the next sweep */ }
+  }
+
   /** The LAN listener's port, once it runs. */
   get lanPort() { return this.lan?.port; }
 
   /** The player for the editor's own playtests: on loopback, or on a box (reach) on every interface, for the box's
    *  network, embedded by the editor on the host name the device reached it by. */
   async openLocal(port: number, editorOrigins: string[] | ((host: string) => string[]) = [], reach?: PlayerReach) {
-    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons, this.net,
-      { bind, lan: false, port, editorOrigins, reach, lobby: this.lobbyContext, pads: this.pads });
+    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons,
+      { bind, lan: false, port, editorOrigins, reach, lobby: this.lobbyContext, pads: this.pads, spaces: () => this.spaces.target });
     this.local = await (reach ? everyInterface(open) : open('127.0.0.1'));
     return this.local;
   }
@@ -119,8 +139,9 @@ export class Players {
   startLan() {
     if (this.lan) return Promise.resolve(this.lan);
     const { playerPort, lanHost, box } = this.options;
-    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons, this.net, { bind, lan: true,
-      port: playerPort, extraHosts: lanHost ? [lanHost] : [], reach: box?.reach, lobby: this.lobbyContext, pads: this.pads });
+    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons, { bind, lan: true,
+      port: playerPort, extraHosts: lanHost ? [lanHost] : [], reach: box?.reach, lobby: this.lobbyContext, pads: this.pads,
+      spaces: () => this.spaces.target });
     this.startingLan ??= (box ? everyInterface(open) : open('0.0.0.0')).then((active) => (this.lan = active))
       .finally(() => { this.startingLan = undefined; });
     return this.startingLan;
@@ -165,7 +186,7 @@ export class Players {
     if (!release.manifest.permissions.play)
       throw new ZirbelError(403, 'The creator has disabled play for this release.');
     if (share) await this.startLan();
-    return this.describe(this.rooms.create(release, false, share ? 'lan' : 'local'), host);
+    return this.describe(await this.rooms.withSpace(this.rooms.create(release, false, share ? 'lan' : 'local')), host);
   }
 
   /** Listens for the box's controller service at path (--pads-socket). A box comes up without its gamepads rather than
@@ -181,9 +202,11 @@ export class Players {
   async close() {
     await Promise.allSettled([this.startingLan]);
     clearInterval(this.padsSweep);
+    clearInterval(this.sweep);
     (await this.padsLocal)?.close();
     this.rooms.dispose();
     this.local?.close();
     this.lan?.close();
+    await this.spaces.stop();
   }
 }

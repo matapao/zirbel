@@ -4,7 +4,7 @@
 // routeWebSocket), which says exactly what the pages send, then end to end over the Node host. Run with
 // `pnpm test:browser`.
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { AxeBuilder } from '@axe-core/playwright';
@@ -14,7 +14,7 @@ import { Projects } from '../packages/core/projects.ts';
 import { Releases } from '../packages/core/releases.ts';
 import { decodePad, encodePad } from '../packages/sdk/pads.ts';
 import { lanAddresses } from '../packages/server/http.ts';
-import { hostsUnderTest, launch, rights, tempDir } from './helpers.ts';
+import { hostsUnderTest, launch, REAL_SPACES, rights, tempDir } from './helpers.ts';
 
 const node = [process.execPath, 'dist/server.mjs'];
 const game = `<!doctype html><pre id="log"></pre><p id="pads"></p><script>
@@ -326,5 +326,48 @@ for (const host of hostsUnderTest()) test('over the ' + host.name + ' host, a ph
   await laptop.keyboard.up('Space');
   // The laptop's screen ended with its game, and its phone heard.
   await phone.getByText('The screen closed.').waitFor();
+  assert.deepEqual(failures, []);
+});
+
+// Show on TV of a game with its own netcode: the TV takes the laptop's member of the game's space, its number and all,
+// from the member's own resume the laptop hands it; the laptop becomes its controller.
+const netGame = `<!doctype html><p id="out">waiting</p><script type="module">
+  const zn = await import('/.skalet/net.js');
+  const net = zn.connect({ via: 'parent' });
+  net.on('open', ({ id }) => { document.getElementById('out').textContent = 'member ' + id; });
+</script>`;
+for (const host of hostsUnderTest()) test('over the ' + host.name + ' host, Show on TV hands a net game\'s member to the TV',
+  { timeout: 90_000, skip: existsSync(REAL_SPACES) ? false : 'the spaces kernel is not built: run `pnpm run deps`' }, async (t) => {
+  const address = lanAddresses()[0];
+  if (!address) { t.skip('no LAN address to reach the listener from elsewhere than loopback'); return; }
+  const root = tempDir(t, 'zirbel-pads-net-');
+  const projects = new Projects(join(root, 'source'));
+  const project = importGameFolder(projects, { title: 'Net', files: encoded({ 'index.html': netGame, 'zirbel.json': '{"players":{"max":2}}' }) });
+  const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
+  writeFileSync(join(root, 'release.json'), JSON.stringify(release));
+  const link = new URL(await launch(t, host.command, ['--host-only', '--lan', '--player-port', '0', '--data', join(root, 'data'),
+    '--import', join(root, 'release.json'), '--release', release.manifest.releaseId],
+  (line) => typeof line.link === 'string' ? line.link : undefined, { ZIRBEL_SPACES_BINARY: REAL_SPACES }).ready);
+  const browser = await chromium.launch();
+  t.after(() => browser.close());
+  const failures: string[] = [];
+  const enter = async (origin: string, name: string, member: string) => {
+    const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
+    page.on('pageerror', (error) => failures.push(error.message));
+    page.on('console', (message) => { if (/Content Security Policy|Refused to/.test(message.text())) failures.push(message.text()); });
+    await page.goto(origin + link.pathname + link.hash);
+    await page.locator('#join-form input[name="name"]').fill(name);
+    await page.locator('#join-form button.primary').click();
+    await page.frameLocator('iframe').locator('#out').filter({ hasText: member }).waitFor({ timeout: 15_000 });
+    return page;
+  };
+  const laptop = await enter('http://' + address + ':' + link.port, 'Ada', 'member 1');
+  // A player page from loopback is the box's own screen, standing in for the TV.
+  const tv = await enter('http://127.0.0.1:' + link.port, 'TV', 'member 2');
+  await laptop.getByRole('button', { name: 'Controllers' }).click();
+  await laptop.locator('#controllers-panel').getByRole('button', { name: 'Show on TV' }).click();
+  await laptop.getByRole('heading', { name: 'Your game is on the TV' }).waitFor();
+  await tv.frameLocator('iframe').locator('#out').filter({ hasText: 'member 1' }).waitFor({ timeout: 15_000 });
+  assert.match(tv.url(), /#skalet\.space=[0-9a-f]{12}$/);
   assert.deepEqual(failures, []);
 });

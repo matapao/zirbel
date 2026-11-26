@@ -1,6 +1,6 @@
 // What the project MCP server tells an agent about working with Zirbel, so the agent needs no skill of its own: a short
 // orientation when it connects (initialize's instructions), and guides it reads as resources. The guides' text is in
-// files: Zirbel's own in packages/server/guides, and the multiplayer skill and zirbel-net's README as they are. The
+// files: Zirbel's own in packages/server/guides (net-api.md the net module's API), and the multiplayer skill as it is. The
 // build puts them together in <web>/mcp-guides/<name>.md (scripts/build.mjs), and both hosts serve those bytes; this
 // catalogue goes to the Go host in contracts/mcp-tools.json.
 import { readFileSync } from 'node:fs';
@@ -16,8 +16,8 @@ export const guideResources = [
   guide('game-format', 'Game format', 'A game as a folder: index.html and the files beside it, zirbel.json, players, controllers and keys, the sandbox it runs in and window.zirbel.'),
   guide('files', 'Reading and writing files', 'How to download the game’s files and stage changes to them with read_file and write_files.'),
   guide('revisions', 'Revisions and proposals', 'History, branches, proposals and changes applied straight in, and what to do when the branch has moved on.'),
-  guide('multiplayer', 'Multiplayer', 'The skill for making a game multiplayer with a thin adapter over zirbel-net, and how to do it over this connection.'),
-  guide('net-api', 'zirbel-net API', 'The zirbel-net client’s API: connecting, events, sending, and playing alone.'),
+  guide('multiplayer', 'Multiplayer', 'The skill for making a game multiplayer with a thin adapter over the net module’s sync(), and how to do it over this connection.'),
+  guide('net-api', 'Net module API', 'The net module’s API: sync() and its modes and hooks, connect() for a game’s own netcode, events, sending, and playing alone.'),
 ];
 
 const orientation = 'Zirbel is a local editor, player and host for browser games. This connection reaches one game, the ' +

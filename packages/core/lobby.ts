@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { lobbyFile, type Manifest } from '../sdk/contracts.ts';
 import { atomicWrite, ZirbelError } from './projects.ts';
 import type { Releases } from './releases.ts';
-import type { Room, Rooms } from './rooms.ts';
+import { isNet, type Room, type Rooms } from './rooms.ts';
 
 /** A code's letters: no 0, O, 1 or I, which read as one another. */
 export const CODE_LETTERS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -106,25 +106,35 @@ export class Lobby {
     return { offered: [...next] };
   }
 
+  /** Whether games with their own netcode are played together here now: while the spaces kernel runs. */
+  private get spaces() { return Boolean(this.rooms.kernel?.available); }
+
+  /** A release is played together: one with a simulation, and one with its own netcode while the kernel runs. */
+  private together(manifest: Manifest) {
+    return manifest.simulation !== null && (manifest.simulation !== 'net-v2' || this.spaces);
+  }
+
   /** What the lobby shows on a listener: the offered games by title, and that listener's sessions with a code, newest
-   *  first. Neither codes nor seats' names are in it. */
+   *  first, and whether games with their own netcode are played together here now (spaces). Neither codes nor seats'
+   *  names are in it. */
   state(access: Room['access']) {
     const games = this.offered().flatMap((release) => {
       let manifest: Manifest;
       try { manifest = this.manifest(release); } catch { return []; }
       if (!manifest.permissions.play) return [];
       return [{ release, title: manifest.title, players: { min: manifest.players.min, max: manifest.players.max },
-        multiplayer: manifest.simulation !== null }];
+        multiplayer: this.together(manifest) }];
     }).sort((a, b) => byTitle(a.title, b.title));
     const sessions = this.rooms.open().filter((room) => room.code && room.access === access).reverse().map((room) => ({
       id: room.session, title: room.release.manifest.title, players: room.players, max: room.release.manifest.players.max,
       started: new Date(room.started).toISOString(),
     }));
-    return { games, sessions };
+    return { games, sessions, spaces: this.spaces };
   }
 
-  /** Starts a session of an offered release for the person at address: its room, with a seat held for them. */
-  start(access: Room['access'], address: string, releaseId: string, name: string) {
+  /** Starts a session of an offered release for the person at address: its room, with a seat held for them (for a net
+   *  game, a ticket into its space). */
+  async start(access: Room['access'], address: string, releaseId: string, name: string) {
     if (!this.offers.includes(releaseId)) throw new ZirbelError(404, 'That game is not in the lobby.');
     const from = plainAddress(address);
     const open = this.rooms.open().filter((room) => room.startedBy !== undefined);
@@ -134,13 +144,13 @@ export class Lobby {
     if (!loopback(from) && open.filter((room) => room.startedBy === from).length >= SESSIONS_PER_ADDRESS)
       throw new ZirbelError(429, 'You have three sessions open. Join one, or wait until one ends.');
     const release = this.releases.read(releaseId);
-    const room = this.rooms.create(release, release.manifest.simulation === null, access, false, from);
-    return { room, ticket: room.seat(name, 'player') };
+    const room = await this.rooms.withSpace(this.rooms.create(release, !this.together(release.manifest), access, false, from));
+    return { room, ticket: room.space ? await this.rooms.spaceTicket(room, name, 'participant') : room.seat(name, 'player') };
   }
 
   /** Seats the person at address in the open session with this code, on this listener: a player's seat while there is
-   *  one, else a spectator's. */
-  join(access: Room['access'], address: string, input: string, name: string) {
+   *  one, else a spectator's; in a net game's, a ticket into its space, a player's while there is room, else an observer's. */
+  async join(access: Room['access'], address: string, input: string, name: string) {
     if (this.tries.blocked(address)) throw new ZirbelError(429, 'Too many wrong codes. Wait a minute and try again.');
     const code = readCode(input);
     const room = code ? this.rooms.open().find((item) => item.code === code && item.access === access) : undefined;
@@ -148,7 +158,14 @@ export class Lobby {
       this.tries.miss(address);
       throw new ZirbelError(404, 'No session has that code.');
     }
-    return { room, ticket: room.seat(name) };
+    return { room, ticket: room.space ? await this.rooms.spaceTicket(room, name) : room.seat(name) };
+  }
+
+  /** The room a space is of, on this listener: for a link the kernel formed, which names the space alone. */
+  roomOf(access: Room['access'], space: string) {
+    const room = this.rooms.open().find((item) => item.space?.id === space && item.access === access && isNet(item.release));
+    if (!room) throw new ZirbelError(404, 'This session has ended.');
+    return room.id;
   }
 
   // A release never changes under its id, so its manifest is read once.

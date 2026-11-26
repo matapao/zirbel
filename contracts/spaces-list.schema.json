@@ -1,0 +1,55 @@
+{
+  "$id": "https://zirbel.app/contracts/spaces-list.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "maxItems": 64,
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "space": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{12}$"
+      },
+      "listener": {
+        "type": "string",
+        "maxLength": 32
+      },
+      "code": {
+        "type": "string",
+        "pattern": "^[2-9A-HJ-NP-Z]{4}$"
+      },
+      "members": {
+        "maxItems": 300,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "type": "string",
+              "enum": [
+                "participant",
+                "observer"
+              ]
+            },
+            "connected": {
+              "type": "boolean"
+            },
+            "away": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "role",
+            "connected",
+            "away"
+          ]
+        }
+      }
+    },
+    "required": [
+      "space",
+      "listener",
+      "members"
+    ]
+  }
+}
