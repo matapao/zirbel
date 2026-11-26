@@ -38,6 +38,9 @@ test('a box asks how to use it once, turns on agent access, and pairs another de
   };
   await settings();
   assert.equal(await dialog.getByRole('checkbox', { name: 'Let agents on your network use this box over MCP' }).isChecked(), true);
+  // No controllers service runs beside this editor: its Controllers say so.
+  await dialog.getByRole('heading', { name: 'Controllers' }).waitFor();
+  assert.ok(await dialog.getByText('The box’s controller service isn’t running.').isVisible());
   assert.equal(await dialog.getByRole('checkbox', { name: 'Run harnesses on this box' }).isChecked(), true);
   await dialog.getByRole('button', { name: 'Pair another device' }).click();
   const code = (await dialog.locator('.sign-in-code').textContent()) ?? '';

@@ -249,6 +249,7 @@ dialog::backdrop{background:#090c0cc9;backdrop-filter:blur(3px)}
 #dialog-body{display:grid;gap:.72rem}
 #dialog-body h3{margin:.4rem 0 0;font-size:.85rem;color:var(--quiet);letter-spacing:.04em;text-transform:uppercase}
 #dialog-body p{color:var(--quiet);line-height:1.43;margin:.2rem 0}
+#dialog-body p.error{color:var(--danger)}
 #dialog-body form:not([method=dialog]){display:grid;gap:.55rem}
 #dialog-body fieldset,.item{display:grid;gap:.4rem;border:1px solid var(--line);border-radius:.6rem;padding:.65rem}
 #dialog-body label{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}

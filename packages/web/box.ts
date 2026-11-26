@@ -1,9 +1,10 @@
 // A Zirbel box in the workspace (box mode): the first-run choice of how to use it, and Box settings with its two
-// switches, agent access over MCP, its paired devices, pairing another device, the lobby players open, its own Wi-Fi
-// and its Wi-Fi setup.
+// switches, agent access over MCP, its paired devices, pairing another device, the lobby players open, its own Wi-Fi,
+// its Wi-Fi setup and its controllers (box-controllers.ts).
 import { action, api, apiWith, attempt, dialog, el, inform, link, openDialog, option } from './editor-ui.ts';
 import { ws, type BoxHealth } from './state.ts';
 import { lobbyAddress, lobbyLink } from './lobby-address.ts';
+import { controllersSection } from './box-controllers.ts';
 
 /** What the box's dialogs call in the rest of the workspace, set as it starts (chat.ts imports this module). */
 const hooks = { openHarnesses: () => Promise.resolve(), refreshProcessors: () => Promise.resolve() };
@@ -183,7 +184,7 @@ function ownWifi(box: BoxHealth, { ownNetwork, network }: OwnWifi) {
 }
 
 /** Box settings: the two switches, agent access, paired devices, pairing another device, the lobby's address for
- *  players, the box's own Wi-Fi and the Wi-Fi setup. */
+ *  players, the box's own Wi-Fi, the Wi-Fi setup and the box's controllers. */
 export async function openBoxSettings() {
   const box = ws.health.box;
   if (!box) return;
@@ -239,4 +240,5 @@ export async function openBoxSettings() {
     await api('box/setup', { requested: true });
     inform('The box opens its Wi-Fi setup: on this device, join the Wi-Fi “Zirbel setup …”, then choose a network or keep the box on its own Wi-Fi.');
   }));
+  body.append(el('h3', 'Controllers'), await controllersSection());
 }
