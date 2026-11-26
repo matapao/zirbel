@@ -238,6 +238,9 @@ test('the pad page is a phone\'s controller: its code, its place, its fingers, a
   assert.deepEqual(pad.sent.find((message) => (message as { type?: string }).type === 'place'), { type: 'place', place: 3 });
   pad.socket.send(JSON.stringify({ type: 'pad', slot: 3, place: 3, screen: 'one', resume: 'r-phone', label: null }));
   await place.filter({ hasText: /^P4$/ }).waitFor();
+  await place.click();
+  await page.locator('#place-list').getByRole('button', { name: 'P5' }).click();
+  await page.getByText('P5 isn’t free.').waitFor();
 
   // A dropped connection joins again with the same code, back at its place.
   await pad.socket.close({ code: 1011 });

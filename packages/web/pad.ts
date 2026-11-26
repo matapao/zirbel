@@ -112,8 +112,7 @@ function onState(code: string, state: LinkState) {
     join.hidden = true;
     pad.hidden = false;
     status.textContent = '';
-    if (moving !== undefined && moving !== state.place) status.textContent = 'P' + (moving + 1) + ' isn’t free.';
-    moving = undefined;
+    if (moving === state.place) moving = undefined;
     showPlace(state.place, state.label);
   } else end(code, state.message, state.retry);
 }
@@ -154,6 +153,12 @@ for (let at = 0; at < MAX_PLACES; at++) {
     if (at === place) return;
     moving = at;
     link?.move(at);
+    // The host moves a pad only to a free place, and says nothing when it doesn't.
+    window.setTimeout(() => {
+      if (moving !== at) return;
+      moving = undefined;
+      status.textContent = 'P' + (at + 1) + ' isn’t free.';
+    }, 1500);
   });
   placeList.append(button);
 }
