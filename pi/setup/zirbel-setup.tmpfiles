@@ -1,2 +1,8 @@
-# Where the editor (user zirbel) asks for Wi-Fi setup: installed as /usr/lib/tmpfiles.d/zirbel-setup.conf.
+# Installed as /usr/lib/tmpfiles.d/zirbel-setup.conf. Where the editor (user zirbel) asks for Wi-Fi setup:
 d /run/zirbel-setup 0770 root zirbel -
+# The box's own Wi-Fi's name and password, made once by the setup service (root) and read by the editor (group zirbel),
+# no one else: the folder's setgid bit gives each new file its group.
+d /var/lib/zirbel-setup 2750 root zirbel -
+# The setup hotspot's DNS, written while the hotspot runs (network.py): one a power cut left goes at boot, before
+# NetworkManager starts the box's own Wi-Fi with it.
+r /etc/NetworkManager/dnsmasq-shared.d/zirbel-setup.conf

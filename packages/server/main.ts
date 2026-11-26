@@ -125,7 +125,8 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
       harnesses = switched;
       box = { pairing: new Pairing(join(account, 'box')), settings, harnesses: switched, capabilities, port: () => editorPort,
         turns: () => chat.count, qr: (link) => QRCode.toDataURL(link, { margin: 2, width: 240 }),
-        setupRequest: process.env.ZIRBEL_SETUP_REQUEST || '/run/zirbel-setup/request' };
+        setupRequest: process.env.ZIRBEL_SETUP_REQUEST || '/run/zirbel-setup/request',
+        ownNetwork: process.env.ZIRBEL_OWN_NETWORK || '/var/lib/zirbel-setup/own-network.json' };
     } else harnesses = harnessesFor(root);
     closeHarnesses = async () => { await harnesses.close?.(); };
     closeTurns = () => chat.close();

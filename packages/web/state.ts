@@ -7,7 +7,7 @@ import type { modelPicker } from './model-picker.ts';
 
 /** What /api/health says of a box (box mode): its switches, whether harnesses can run on it, and its memory. */
 export type BoxHealth = {
-  harnesses: boolean; externalMcp: boolean; onboarded: boolean; setupRequested: boolean;
+  harnesses: boolean; externalMcp: boolean; onboarded: boolean; setupRequested: boolean; ownNetwork: boolean;
   canRunHarnesses: boolean; harnessesUnavailable?: string; memoryMB: number; name: string;
 };
 

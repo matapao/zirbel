@@ -1,5 +1,6 @@
 """The setup hotspot's page, for a phone without Bluetooth setup: the networks the box sees, a password, and the pairing
-code to open once the phone is back on that network.
+code to open once the phone is back on that network; or, beside them, the box's own Wi-Fi (own_network.py), with its
+name and password to join it by.
 
 A phone that joins the open "Zirbel setup" network finds this page by its captive-portal check: every name resolves to
 the box, and every request to port 80 reaches this server, so any address shows the page. It is plain HTML with no
@@ -12,19 +13,23 @@ from __future__ import annotations
 import html
 import secrets
 import threading
+import urllib.parse
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 from urllib.parse import parse_qs
 
 from improv import PASSWORD_BYTES, SSID_BYTES, Network
+from own_network import Credentials
 
 FORM_BYTES = 4096
 PORT = 8081
+# The box's address on its own Wi-Fi (network.py), which every device there can open.
+OWN_ADDRESS = "10.42.0.1"
 
 STYLE = (
     "body{font:17px/1.4 system-ui,sans-serif;margin:0;padding:24px;background:#141717;color:#f2f2ef}"
-    "main{max-width:28em;margin:auto}h1{font-size:1.4em}label{display:block;margin:.6em 0}"
+    "main{max-width:28em;margin:auto}h1{font-size:1.4em}h2{font-size:1.1em;margin-top:2em}label{display:block;margin:.6em 0}"
     "input[type=password],input[type=text]{width:100%;box-sizing:border-box;padding:.6em;font:inherit;border-radius:6px;"
     "border:1px solid #556;background:#1f2424;color:inherit}button{font:inherit;padding:.7em 1.2em;border-radius:6px;"
     "border:0;background:#7bc8a4;color:#102018;margin-top:1em}.error{color:#ffb4a8}.code{font-size:1.6em;"
@@ -81,6 +86,15 @@ def _hex_key(password: bytes) -> bool:
     return len(password) == PASSWORD_BYTES and all(chr(byte) in "0123456789abcdefABCDEF" for byte in password)
 
 
+def at(url: str, address: str | None) -> str:
+    """The link at the box's own address on the network, which every device can open, where the box knows it."""
+    if not address:
+        return url
+    parts = urllib.parse.urlsplit(url)
+    host = f"[{address}]" if ":" in address else address
+    return urllib.parse.urlunsplit(parts._replace(netloc=host + (f":{parts.port}" if parts.port else "")))
+
+
 def _page(title: str, body: str) -> bytes:
     return (
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
@@ -89,8 +103,9 @@ def _page(title: str, body: str) -> bytes:
     ).encode("utf-8")
 
 
-def choose_page(box: str, networks: list[Network], error: str = "") -> bytes:
-    """The page to choose a network on, with the last attempt's error when there was one."""
+def choose_page(box: str, networks: list[Network], error: str = "", own: bool = False) -> bytes:
+    """The page to choose a network on, with the last attempt's error when there was one, and where the box can make
+    its own Wi-Fi (own), that beside the networks."""
     rows = []
     for index, network in enumerate(networks):
         lock = "" if network.auth == "NO" else " 🔒"
@@ -104,12 +119,20 @@ def choose_page(box: str, networks: list[Network], error: str = "") -> bytes:
         " aria-label='Network name'></label>"
     )
     failed = f"<p class=error role=alert>{html.escape(error)}</p>" if error else ""
+    offer = (
+        "<h2>Or the box's own Wi-Fi</h2><p>No router, or none to use? The box makes a Wi-Fi of its own, with a "
+        "password, which phones, tablets and computers join to play. There is no internet on it.</p>"
+        "<form method=post action=/own><input type=hidden name=own value=1>"
+        "<button type=submit>Make the box's own Wi-Fi</button></form>"
+        if own
+        else ""
+    )
     return _page(
         "Set up " + box,
         f"<h1>Set up {html.escape(box)}</h1>{failed}<p>Choose the Wi-Fi network the box should join.</p>"
         f"<form method=post action=/join>{''.join(rows)}<label>Password"
         "<input type=password name=password autocomplete=off></label>"
-        "<button type=submit>Join</button></form>",
+        f"<button type=submit>Join</button></form>{offer}",
     )
 
 
@@ -157,9 +180,51 @@ def joining_page(box: str, network: str, pairing: Pairing | None, token: str = "
     )
 
 
+def own_page(box: str, own: Credentials, pairing: Pairing | None, token: str = "") -> bytes:
+    """The box's own Wi-Fi, before the box makes it (token, for Make it now) and as it does: its name and password, then
+    the pairing link at the box's address there, which every device on it can open. As with joining, the phone loses
+    this page when the box makes the network, so the box makes it only when the person taps Make it now, or after
+    CONFIRM_SECONDS."""
+    name = html.escape(own.name)
+    join = (
+        f"<p>Network: <b>{name}</b></p><p>Password:</p><p class=code>{html.escape(own.password)}</p>"
+        "<p><small>Phones, tablets and computers join the same network to play. There is no internet on it.</small></p>"
+    )
+    if pairing:
+        link = at(pairing.url, OWN_ADDRESS)
+        anchor = f"<a href='{html.escape(link, quote=True)}'>{html.escape(link)}</a>"
+        local = html.escape(pairing.url.split("?", 1)[0])
+        if pairing.claim:
+            finish = (f"<p>Then open {anchor} (or <b>{local}</b>) and tap Claim this box.</p>"
+                      "<p><small>No device has paired with this box yet, so there is no code and no hurry.</small></p>")
+        else:
+            finish = (f"<p>Then open {anchor} and tap Pair this device. Or open <b>{local}</b> and enter the code</p>"
+                      f"<p class=code>{html.escape(pairing.code)}</p><small>The code works once, for 10 minutes. A device "
+                      "already paired with the box can make a new one in Box settings.</small>")
+    else:
+        finish = f"<p>Then open <b>http://{OWN_ADDRESS}</b> (or <b>http://zirbel.local</b>).</p>"
+    after = "<p><small>If the box can't make it, the Zirbel setup network comes back with what went wrong.</small></p>"
+    if token:
+        return _page(
+            "Ready to make " + own.name,
+            f"<h1>{html.escape(box)} is ready to make its own Wi-Fi</h1>"
+            "<p>Note what comes next: when the box makes it, this setup network and this page go away. Then join "
+            f"the box's own Wi-Fi on this phone:</p>{join}{finish}"
+            f"<form method=post action=/go><input type=hidden name=token value={html.escape(token, quote=True)}>"
+            f"<button type=submit>Make {name} now</button></form>"
+            "<p><a href=/>Choose a network instead</a></p>" + after,
+        )
+    return _page(
+        "Making " + own.name,
+        f"<h1>{html.escape(box)} is making its own Wi-Fi</h1>"
+        f"<p>This setup network goes away now. Join the box's own Wi-Fi on this phone:</p>{join}{finish}" + after,
+    )
+
+
 class Portal:
     """The page's server, on the hotspot's own address only. `pair` gets a pairing link before the box leaves the
-    hotspot, and `join` is called once the page has gone out, so the phone has it before the network changes."""
+    hotspot, and `join` is called once the page has gone out, so the phone has it before the network changes. Where the
+    box can make its own Wi-Fi (`own`, its name and password), the page offers it, and `make` is called as `join` is."""
 
     def __init__(
         self,
@@ -168,15 +233,23 @@ class Portal:
         pair: Callable[[], Pairing | None],
         join: Callable[[Choice], None],
         used: Callable[[], None] = lambda: None,
+        own: Credentials | None = None,
+        make: Callable[[], None] = lambda: None,
     ):
         self.box, self.networks, self.pair, self.join, self.used = box, networks, pair, join, used
+        self.own, self.make = own, make
         self.error = ""
         self._server: ThreadingHTTPServer | None = None
-        # The network chosen and not yet joined: its choice, its page's link, the token Join now carries, its timer.
-        self._pending: tuple[Choice, Pairing | None, str, threading.Timer] | None = None
+        # What was chosen and not yet done: a network to join or the box's own Wi-Fi, its page's link, the token its
+        # Join now or Make it now carries, its timer.
+        self._pending: tuple[Choice | Credentials, Pairing | None, str, threading.Timer] | None = None
         self._lock = threading.Lock()
 
-    def _hold(self, choice: Choice, pairing: Pairing | None) -> str:
+    def choose(self, error: str | None = None) -> bytes:
+        """The page to choose on, with what went wrong last, or with this error."""
+        return choose_page(self.box, self.networks(), self.error if error is None else error, own=self.own is not None)
+
+    def _hold(self, choice: Choice | Credentials, pairing: Pairing | None) -> str:
         token = secrets.token_urlsafe(16)
         timer = threading.Timer(CONFIRM_SECONDS, self._go, args=(token,))
         timer.daemon = True
@@ -187,8 +260,9 @@ class Portal:
         timer.start()
         return token
 
-    def _go(self, token: str) -> tuple[Choice, Pairing | None] | None:
-        """The chosen network, joined once: for the token of the choice still held, by Join now or its timer."""
+    def _go(self, token: str) -> tuple[Choice | Credentials, Pairing | None] | None:
+        """The choice, done once: the network joined or the box's own Wi-Fi made, for the token of the choice still
+        held, by Join now (Make it now) or its timer."""
         with self._lock:
             if not self._pending or not secrets.compare_digest(self._pending[2], token):
                 return None
@@ -196,7 +270,10 @@ class Portal:
             self._pending = None
         timer.cancel()
         self.error = ""
-        threading.Timer(1.5, self.join, args=(choice,)).start()
+        if isinstance(choice, Choice):
+            threading.Timer(1.5, self.join, args=(choice,)).start()
+        else:
+            threading.Timer(1.5, self.make).start()
         return choice, pairing
 
     def start(self, address: str, port: int = PORT) -> None:
@@ -222,7 +299,7 @@ class Portal:
 
             def do_GET(self) -> None:  # noqa: N802 - the base class's name
                 portal.used()
-                self._send(200, choose_page(portal.box, portal.networks(), portal.error))
+                self._send(200, portal.choose())
 
             def do_POST(self) -> None:  # noqa: N802 - the base class's name
                 portal.used()
@@ -231,19 +308,27 @@ class Portal:
                     fields = parse_qs(self.rfile.read(length).decode("ascii", errors="replace"))
                     held = portal._go((fields.get("token") or [""])[0])
                     if not held:
-                        self._send(400, choose_page(portal.box, portal.networks(), "Choose the network again."))
+                        self._send(400, portal.choose(error="Choose the network again."))
                         return
                     choice, pairing = held
-                    self._send(200, joining_page(portal.box, choice.ssid.decode("utf-8", errors="replace"), pairing))
+                    if isinstance(choice, Choice):
+                        self._send(200, joining_page(portal.box, choice.ssid.decode("utf-8", errors="replace"), pairing))
+                    else:
+                        self._send(200, own_page(portal.box, choice, pairing))
+                    return
+                if self.path == "/own" and portal.own and 0 < length <= FORM_BYTES:
+                    self.rfile.read(length)  # the form says only that it is this one
+                    pairing = portal.pair()
+                    self._send(200, own_page(portal.box, portal.own, pairing, portal._hold(portal.own, pairing)))
                     return
                 if self.path != "/join" or not 0 < length <= FORM_BYTES:
-                    self._send(400, choose_page(portal.box, portal.networks(), "That form could not be read."))
+                    self._send(400, portal.choose(error="That form could not be read."))
                     return
                 try:
                     choice = parse(self.rfile.read(length))
                 except (FormError, UnicodeDecodeError) as error:
                     message = str(error) if isinstance(error, FormError) else "That form could not be read."
-                    self._send(400, choose_page(portal.box, portal.networks(), message))
+                    self._send(400, portal.choose(error=message))
                     return
                 name = choice.ssid.decode("utf-8", errors="replace")
                 pairing = portal.pair()

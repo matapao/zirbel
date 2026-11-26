@@ -1,7 +1,7 @@
-# The Zirbel box's Wi-Fi setup, over Bluetooth and a setup hotspot. It runs at boot, when the network goes away
-# (90-zirbel-setup, NetworkManager's dispatcher) and when the editor asks to change the Wi-Fi (zirbel-setup.path),
-# waits a minute for a network, and exits as soon as the box has one: nothing of it stays running on a box that is set
-# up. A box without a Wi-Fi radio never starts it.
+# The Zirbel box's Wi-Fi setup, over Bluetooth and a setup hotspot, and the box's own Wi-Fi. It runs at boot, when the
+# network goes away (90-zirbel-setup, NetworkManager's dispatcher) and when the editor asks to change the Wi-Fi or
+# switches the box's own (zirbel-setup.path), waits a minute for a network, and exits as soon as the box has one:
+# nothing of it stays running on a box that is set up. A box without a Wi-Fi radio never starts it.
 [Unit]
 Description=Zirbel box Wi-Fi setup
 After=NetworkManager.service bluetooth.service
@@ -15,6 +15,8 @@ Type=simple
 ExecStartPre=/usr/sbin/nft destroy table inet zirbel_setup
 ExecStart=/usr/bin/python3 -E -s /opt/zirbel/pi/setup/zirbel_setup.py
 ExecStopPost=/usr/sbin/nft destroy table inet zirbel_setup
+# Nor does its DNS, which resolves every name to the box (network.py): the box's own Wi-Fi would open the editor.
+ExecStopPost=/bin/rm -f /etc/NetworkManager/dnsmasq-shared.d/zirbel-setup.conf
 Restart=on-failure
 RestartSec=10
 # Root for NetworkManager, BlueZ and nftables, with only the network capabilities nftables needs.
@@ -23,7 +25,8 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=strict
-ReadWritePaths=-/run/zirbel-setup
+# The editor's requests, the box's own Wi-Fi's name and password (zirbel-setup.tmpfiles), the hotspot's DNS.
+ReadWritePaths=-/run/zirbel-setup -/var/lib/zirbel-setup -/etc/NetworkManager/dnsmasq-shared.d
 ProtectKernelModules=yes
 ProtectControlGroups=yes
 LockPersonality=yes

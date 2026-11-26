@@ -1,8 +1,10 @@
-"""What the setup service asks the box's own editor, over loopback: a pairing link for the device being set up, and
-whether the person asked to change the Wi-Fi.
+"""What the setup service asks the box's own editor, over loopback: a pairing link for the device being set up, whether
+the person asked to change the Wi-Fi, and whether the box makes its own (own_network.py).
 
 The editor's "Change Wi-Fi" sets its setupRequested, and a request file in /run/zirbel-setup starts this service (a path
-unit watches it); when setup is over the service removes the file and clears the editor's setting.
+unit watches it); when setup is over the service removes the file and clears the editor's setting. Switching the box's
+own Wi-Fi sets the editor's ownNetwork and leaves another file there (network_wake), which starts this service too; the
+service removes it, then makes the Wi-Fi follow the setting. Setup changes the setting itself as it changes the Wi-Fi.
 """
 
 from __future__ import annotations
@@ -10,11 +12,11 @@ from __future__ import annotations
 import json
 import os
 import time
-import urllib.parse
+import urllib.error
 import urllib.request
 from pathlib import Path
 
-from portal import Pairing
+from portal import Pairing, at  # noqa: F401 - at is the setup's too
 
 EDITOR = os.environ.get("ZIRBEL_EDITOR_URL", "http://127.0.0.1").rstrip("/")
 REQUEST = Path(os.environ.get("ZIRBEL_SETUP_REQUEST", "/run/zirbel-setup/request"))
@@ -58,25 +60,56 @@ def _claimable() -> bool:
     return bool(isinstance(status, dict) and status.get("claimable") is True)
 
 
-def at(url: str, address: str | None) -> str:
-    """The link at the box's own address on the network, which every device can open, where the box knows it."""
-    if not address:
-        return url
-    parts = urllib.parse.urlsplit(url)
-    host = f"[{address}]" if ":" in address else address
-    return urllib.parse.urlunsplit(parts._replace(netloc=host + (f":{parts.port}" if parts.port else "")))
+def _settings() -> dict | None:
+    """The editor's switches, from its status, or None when it doesn't answer."""
+    try:
+        status = _call("GET", "/api/box/status", timeout=3.0)
+    except (OSError, ValueError):
+        return None
+    settings = status.get("settings") if isinstance(status, dict) else None
+    return settings if isinstance(settings, dict) else None
 
 
 def requested() -> bool:
     """Whether the person asked to change the Wi-Fi: the request file, or the editor's setting for it."""
     if REQUEST.exists():
         return True
+    settings = _settings()
+    return bool(settings and settings.get("setupRequested") is True)
+
+
+def network_wake() -> Path:
+    """The file the editor leaves when its ownNetwork setting changes, beside the request file."""
+    return REQUEST.with_name("network")
+
+
+def own_network() -> bool | None:
+    """Whether the box makes its own Wi-Fi, by the editor's setting: None when the editor doesn't say."""
+    value = (_settings() or {}).get("ownNetwork")
+    return value if isinstance(value, bool) else None
+
+
+def set_own_network(on: bool, attempts: int = 3) -> bool:
+    """Sets the editor's ownNetwork, as setup changes the Wi-Fi: whether the editor took it. One that is restarting is
+    asked again; one that refuses is not."""
+    for attempt in range(attempts):
+        try:
+            reply = _call("PUT", "/api/box/settings", {"ownNetwork": on})
+            return isinstance(reply, dict) and reply.get("ownNetwork") is on
+        except urllib.error.HTTPError as error:
+            error.close()
+            return False
+        except (OSError, ValueError):
+            if attempt + 1 < attempts:
+                time.sleep(2)
+    return False
+
+
+def clear_network_wake() -> None:
     try:
-        status = _call("GET", "/api/box/status", timeout=3.0)
-    except (OSError, ValueError):
-        return False
-    settings = status.get("settings") if isinstance(status, dict) else None
-    return bool(isinstance(settings, dict) and settings.get("setupRequested") is True)
+        network_wake().unlink()
+    except FileNotFoundError:
+        pass
 
 
 def clear_request() -> None:

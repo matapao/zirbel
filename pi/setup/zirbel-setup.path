@@ -1,10 +1,11 @@
-# Starts the Wi-Fi setup when the editor asks to change the Wi-Fi: it leaves /run/zirbel-setup/request, which the setup
-# removes when it is over.
+# Starts the Wi-Fi setup when the editor asks to change the Wi-Fi, or switches the box's own: it leaves
+# /run/zirbel-setup/request or /run/zirbel-setup/network, which the setup removes when it is over, or as it starts.
 [Unit]
 Description=Zirbel box Wi-Fi setup, when the editor asks for it
 
 [Path]
 PathExists=/run/zirbel-setup/request
+PathExists=/run/zirbel-setup/network
 Unit=zirbel-setup.service
 
 [Install]

@@ -1,5 +1,7 @@
 """The Zirbel box's Wi-Fi setup: over Bluetooth with Improv Wi-Fi, and an open setup hotspot with a page for phones
 without Web Bluetooth. It runs as root (zirbel-setup.service), only while needed (policy.py), and exits when it isn't.
+It is also what makes the box's own Wi-Fi (own_network.py), and takes it away: as it starts, and when the editor's
+setting for it changes, the Wi-Fi follows that setting; the setup page makes it too, and joining a network ends it.
 
 A box without a Wi-Fi radio has nothing to set up here: it is set up over Ethernet, where the editor pairs the first
 device itself. Joining and scanning wait on the radio, so they run in a worker thread with a D-Bus connection of their
@@ -18,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import editor  # noqa: E402 - the modules beside this one
 import improv  # noqa: E402
+import own_network  # noqa: E402
 import policy  # noqa: E402
 from portal import Choice, Pairing, Portal  # noqa: E402
 
@@ -25,6 +28,8 @@ LED = Path("/sys/class/leds/ACT/trigger")
 TICK_SECONDS = 5
 # At boot the box's Bluetooth controller comes up a few seconds after this service may: it is looked for this long.
 BLUETOOTH_WAIT_SECONDS = 120
+# And its address, for the name of the box's own Wi-Fi, which is made once: this long.
+BLUETOOTH_ADDRESS_WAIT_SECONDS = 20
 
 
 def log(message: str) -> None:
@@ -59,11 +64,62 @@ def mac_suffix(address: str) -> str:
     return address.replace(":", "")[-4:].upper()
 
 
+def box_suffix(bus, nm, radios: policy.Radios, wait: float = 0.0) -> str:
+    """The end of the box's Bluetooth address, or of its Wi-Fi's where it has no Bluetooth or none answers within wait
+    seconds, which names it in setup and names its own Wi-Fi."""
+    address = ""
+    if radios.bluetooth:
+        import bluetooth
+
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                address = bluetooth.address(bus)
+            except Exception:  # noqa: BLE001 - a controller that doesn't answer is no Bluetooth
+                address = ""
+            if address or time.monotonic() >= deadline:
+                break
+            time.sleep(1)
+    iface = nm.interface()
+    try:
+        address = address or (Path(f"/sys/class/net/{iface}/address").read_text() if iface else "")
+    except OSError:
+        pass
+    return mac_suffix(address) or "0000"
+
+
+def own_credentials(bus, nm, radios: policy.Radios) -> own_network.Credentials | None:
+    """The box's own Wi-Fi's name and password, made the first time (None where they can't be kept). They are named as
+    the setup hotspot is, by the box's Bluetooth address, which at boot may come a little after this service starts:
+    made once, they wait for it a while."""
+    kept = own_network.read()
+    if kept:
+        return kept
+    try:
+        return own_network.credentials(box_suffix(bus, nm, radios, wait=BLUETOOTH_ADDRESS_WAIT_SECONDS))
+    except OSError as error:
+        log(f"The box's own Wi-Fi has no name and password to keep: {error}")
+        return None
+
+
+def follow_setting(nm, own: own_network.Credentials | None, before_up=lambda: None) -> str:
+    """The Wi-Fi as the editor's ownNetwork setting has it. The wake goes first, so that a change made meanwhile wakes
+    the service again."""
+    editor.clear_network_wake()
+    step = own_network.apply(nm, editor.own_network(), own, before_up)
+    if step:
+        log({own_network.UP: "The box's own Wi-Fi is up.", own_network.DOWN: "The box's own Wi-Fi is gone.",
+             own_network.FAILED: "The box's own Wi-Fi did not start."}[step])
+    return step
+
+
 class Setup:
-    def __init__(self, bus, nm, radios: policy.Radios, requested: bool, after_boot: bool = False):
+    def __init__(self, bus, nm, radios: policy.Radios, requested: bool, own: own_network.Credentials | None,
+                 after_boot: bool = False):
         from gi.repository import GLib
 
         self.GLib, self.bus, self.nm, self.radios, self.requested = GLib, bus, nm, radios, requested
+        self.own = own
         # A box with a network, in the minutes after power-on: Bluetooth setup only, so its network stays up.
         self.after_boot = after_boot
         self.loop = GLib.MainLoop()
@@ -78,26 +134,14 @@ class Setup:
         self.bluetooth_starting = False  # its registration asked of BlueZ, the answer not yet in
         self.bluetooth_radios: policy.Radios | None = None
         self.bluetooth_error = ""
-        address = ""
-        if radios.bluetooth:
-            import bluetooth
-
-            try:
-                address = bluetooth.address(bus)
-            except Exception:  # noqa: BLE001 - a controller that doesn't answer is no Bluetooth
-                address = ""
-        iface = nm.interface()
-        try:
-            address = address or (Path(f"/sys/class/net/{iface}/address").read_text() if iface else "")
-        except OSError:
-            pass
-        suffix = mac_suffix(address) or "0000"
+        suffix = box_suffix(bus, nm, radios)
         self.box, self.hotspot_ssid = f"Zirbel-{suffix}", f"Zirbel setup {suffix}"
         info = improv.DeviceInfo("Zirbel setup", "1", policy.model_name(), self.box, *os_release())
         capabilities = improv.CAN_DEVICE_INFO | improv.CAN_SCAN | (improv.CAN_IDENTIFY if LED.exists() else 0)
         self.service = improv.Service(info=info, capabilities=capabilities, join=self._join_from_bluetooth,
                                       identify=self._identify, scan=self._scan_for_bluetooth)
-        self.portal = Portal(self.box, lambda: self.networks, self._pair_for_portal, self._join_from_portal, self._used)
+        self.portal = Portal(self.box, lambda: self.networks, self._pair_for_portal, self._join_from_portal, self._used,
+                             own=own, make=self._own_from_portal)
 
     def _used(self, bluetooth: bool = False) -> None:
         self.last_use = time.monotonic()
@@ -169,13 +213,19 @@ class Setup:
         if self.hotspot:
             nm.hotspot_down(self.hotspot)
             self.hotspot = None
-        # Whether or not a hotspot is known to be up: the network the box joins must reach it.
+        # Whether or not a hotspot is known to be up: the network the box joins must reach it, and the box's own Wi-Fi
+        # must not resolve every name to the box.
         network.firewall(None)
+        network.wildcard_dns(False)
 
     def _tick(self) -> bool:
         if self.bluetooth is None and time.monotonic() - self.started < BLUETOOTH_WAIT_SECONDS:
             self._start_bluetooth()
         if self.busy:
+            return True
+        if editor.network_wake().exists():
+            # The box's own Wi-Fi was switched in the editor while setup runs.
+            self._in_worker(self._switch_own)
             return True
         online = self.nm.online()
         self.requested = self.requested or editor.REQUEST.exists()
@@ -234,6 +284,11 @@ class Setup:
         if not joined:
             self.GLib.idle_add(self._failed, ssid, "")
             return
+        # Joining a network ends the box's own Wi-Fi, which would otherwise come back first after a reboot.
+        if nm.own_network_down() or editor.own_network():
+            log("The box's own Wi-Fi is gone: the box joined a network.")
+            editor.set_own_network(False)
+            editor.clear_network_wake()  # this is that change
         pairing = pairing or editor.pairing()
         # The Bluetooth client opens the link once the box is on the network: at the box's own address, which every
         # device resolves, where .local names fail on some.
@@ -251,6 +306,37 @@ class Setup:
     def _pair_for_portal(self) -> Pairing | None:
         self.portal_pairing = editor.pairing(attempts=2)
         return self.portal_pairing
+
+    def _own_from_portal(self) -> None:
+        # From the portal's own thread, as a join: the work starts on the main loop.
+        self.GLib.idle_add(self._in_worker, self._make_own)
+
+    def _make_own(self, nm) -> None:
+        """The box's own Wi-Fi, chosen on the setup page: the editor's setting first, which the Wi-Fi follows from then
+        on, then the network in place of the hotspot. The setting goes back if the network doesn't start."""
+        if not editor.set_own_network(True):
+            self.GLib.idle_add(self._failed, b"", "The box's editor didn't answer. Try again in a minute.")
+            return
+        editor.clear_network_wake()  # this is that change
+        made = own_network.apply(nm, True, self.own, before_up=lambda: self._hotspot_down(nm))
+        if made in (own_network.UP, own_network.KEEP):
+            self.GLib.idle_add(self._made_own)
+            return
+        editor.set_own_network(False)
+        editor.clear_network_wake()
+        self.GLib.idle_add(self._failed, b"", "The box couldn't make its own Wi-Fi. Try again, or choose a network.")
+
+    def _switch_own(self, nm) -> None:
+        """The editor's setting changed while setup runs: the Wi-Fi follows it, the hotspot giving way to the network."""
+        step = follow_setting(nm, self.own, before_up=lambda: self._hotspot_down(nm))
+        self.GLib.idle_add(self._made_own if step == own_network.UP else self._done)
+
+    def _made_own(self) -> bool:
+        log("The box makes its own Wi-Fi.")
+        self.busy = False
+        self.provisioned = True
+        self.GLib.timeout_add_seconds(1, self._finish)
+        return False
 
     def _joined(self, url: str) -> bool:
         log("Joined the network.")
@@ -312,6 +398,7 @@ class Setup:
         import network
 
         network.firewall(None)
+        network.wildcard_dns(False)
         if self.requested:
             editor.clear_request()
         self.loop.quit()
@@ -323,6 +410,7 @@ def main() -> int:
     if not radios.wifi:
         log("No Wi-Fi radio: nothing to set up here.")
         editor.clear_request()
+        editor.clear_network_wake()
         return 0
     # Only now the D-Bus modules: a box with nothing to set up never loads them.
     import dbus
@@ -334,11 +422,15 @@ def main() -> int:
     bus = dbus.SystemBus()
     nm = network.NetworkManager(bus)
     nm.enable_wifi()
+    network.wildcard_dns(False)  # a hotspot that went without this service taking it down
+    own = own_credentials(bus, nm, radios)
+    # Woken for the box's own Wi-Fi, or at boot: the Wi-Fi as the editor's setting has it, before anything else.
+    follow_setting(nm, own)
     online, requested = wait_for_network(nm, editor.requested())
     after_boot = online and not requested and radios.bluetooth and policy.after_boot(time.monotonic())
     if online and not requested and not after_boot:
         return 0
-    Setup(bus, nm, radios, requested, after_boot=after_boot).run()
+    Setup(bus, nm, radios, requested, own, after_boot=after_boot).run()
     return 0
 
 
