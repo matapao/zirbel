@@ -84,6 +84,7 @@ type Scene struct {
 type Game struct {
 	HTML            string            `json:"html"`
 	MaxPlayers      int               `json:"maxPlayers"`
+	Net             bool              `json:"net,omitempty"` // only true: the game brings its own netcode (zirbel-net)
 	RegisterObjects *bool             `json:"registerObjects,omitempty"`
 	Files           map[string]string `json:"files,omitempty"` // a built game's files by path, beside index.html
 }
@@ -157,9 +158,15 @@ func ParseRelease(data []byte) (*Release, error) {
 		if _, entry := game.Files["index.html"]; entry || len(game.Files) > maxGameFiles {
 			return nil, fail(http.StatusBadRequest, "game.files · Provide up to 1000 files besides index.html.")
 		}
+		if err := withinPlayers(game); err != nil {
+			return nil, err
+		}
 	}
 	if m := release.Manifest; m.Players.Min > m.Players.Max {
 		return nil, fail(http.StatusBadRequest, "manifest.players · min exceeds max")
+	}
+	if m := release.Manifest; m.Players.Max > sharedPlayers && !isNet(m.Simulation) {
+		return nil, fail(http.StatusBadRequest, "manifest.players.max · A release for more than 4 players needs net.")
 	}
 	if release.Scene != nil {
 		seen := map[string]bool{}
@@ -194,6 +201,9 @@ var templates = map[string]settings{
 // authored game declares its own players, a scene project runs its template.
 func runtimeSettings(template string, game *Game) (settings, error) {
 	if game != nil {
+		if game.Net {
+			return settings{ptr(netSimulation), game.MaxPlayers, "multiplayer"}, nil
+		}
 		if game.MaxPlayers > 1 {
 			return settings{ptr("shared-state-v1"), game.MaxPlayers, "multiplayer"}, nil
 		}

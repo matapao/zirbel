@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 )
@@ -43,13 +44,20 @@ func gamePage(release *Release, runtime, ancestors, base string) (policy, html s
 		assets[asset.ID] = "data:" + asset.Media + ";base64," + release.Assets[asset.Hash]
 	}
 	addons := runtime + threeAddons
+	scripts := "script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + " " + runtime + "game-sdk.js " + runtime + "three.module.js " + addons
+	// Loaders turn embedded data into blob: and data: URLs and read them back, and fetch the decoders
+	// the addons ship with (Draco, Basis); none of it reaches the network.
+	connects := "connect-src " + base + " " + addons + " data: blob:"
+	// A game with its own netcode also loads zirbel-net and reaches the relay, both on this listener.
+	if isNet(release.Manifest.Simulation) {
+		origin, relay := netOrigins(base)
+		scripts += " " + origin + "/zirbel-net.js"
+		connects += " " + relay + "/mp"
+	}
 	policy = strings.Join([]string{
-		"sandbox allow-scripts", "default-src 'none'",
-		"script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + " " + runtime + "game-sdk.js " + runtime + "three.module.js " + addons,
+		"sandbox allow-scripts", "default-src 'none'", scripts,
 		"style-src 'unsafe-inline' " + base, "img-src data: blob: " + base, "media-src data: blob: " + base, "font-src data: " + base,
-		// Loaders turn embedded data into blob: and data: URLs and read them back, and fetch the decoders
-		// the addons ship with (Draco, Basis); none of it reaches the network.
-		"connect-src " + base + " " + addons + " data: blob:", "worker-src " + base + " blob:",
+		connects, "worker-src " + base + " blob:",
 		"frame-src 'none'", "form-action 'none'", "base-uri 'none'", "frame-ancestors " + ancestors,
 	}, "; ")
 	registration := ""
@@ -63,6 +71,20 @@ func gamePage(release *Release, runtime, ancestors, base string) (policy, html s
 		`<script type="application/json" id="zirbel-assets"` + registration + `>` + scriptJSON(assets) + `</script>` +
 		`<script crossorigin="anonymous" src="` + runtime + `game-sdk.js"></script>`
 	return policy, "<!doctype html>" + bootstrap + doctype.ReplaceAllString(release.Game.HTML, "")
+}
+
+// netOrigins are the origin of the game page's base and that origin's
+// WebSocket twin (http: to ws:, https: to wss:).
+func netOrigins(base string) (origin, relay string) {
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return "", ""
+	}
+	origin = parsed.Scheme + "://" + parsed.Host
+	if rest, ok := strings.CutPrefix(origin, "http"); ok {
+		relay = "ws" + rest
+	}
+	return origin, relay
 }
 
 // serveGame serves the game document, or the built game's file at file.

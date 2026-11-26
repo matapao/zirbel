@@ -2,11 +2,16 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"math"
 	"net/http"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"zirbel/contracts"
 )
 
 // Games imported as a built folder, mirroring packages/core/game-files.ts:
@@ -32,6 +37,61 @@ var gameFileTypes = map[string]string{
 
 // maxGameFiles mirrors MAX_GAME_FILES: files besides index.html.
 const maxGameFiles = 1000
+
+// sharedPlayers and netPlayersMax mirror SHARED_PLAYERS and NET_PLAYERS in
+// packages/sdk/game.ts: the most players of a game sharing state, and of a game
+// with its own netcode (net), which plays over the relay (relay.go) and
+// releases with netSimulation.
+const (
+	sharedPlayers = 4
+	netPlayersMax = 16
+	netSimulation = "net-v2"
+)
+
+func isNet(simulation *string) bool { return simulation != nil && *simulation == netSimulation }
+
+// withinPlayers is gameDocument's refinement: more than 4 players only with net.
+func withinPlayers(game *Game) error {
+	if game.MaxPlayers > sharedPlayers && !game.Net {
+		return fail(http.StatusBadRequest, "game.maxPlayers · A game for more than 4 players needs net.")
+	}
+	return nil
+}
+
+// manifestBase64 is the longest zirbel.json netPlayers reads: 64 KB as base64.
+const manifestBase64 = (65_536 + 2) / 3 * 4
+
+// netPlayers mirrors netPlayers in packages/core/game-files.ts. A built folder
+// can carry zirbel.json, the earlier Zirbel's description of a game: an integer
+// players.max above 1 there says the game brings its own netcode, for up to 16
+// players. Anything else (missing, too long, not JSON, not an integer) leaves a
+// game for one.
+func netPlayers(encoded string, present bool) int {
+	if !present || len(encoded) > manifestBase64 {
+		return 1
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return 1
+	}
+	// Decode keeps the last of duplicate keys, as JSON.parse does.
+	parsed, err := contracts.Decode(data)
+	if err != nil {
+		return 1
+	}
+	manifest, _ := parsed.(map[string]any)
+	players, _ := manifest["players"].(map[string]any)
+	number, ok := players["max"].(json.Number)
+	if !ok {
+		return 1
+	}
+	// JSON.parse reads every number as a double: 3.0 is 3, and 1e400 is Infinity.
+	max, err := strconv.ParseFloat(string(number), 64)
+	if err != nil || math.IsInf(max, 0) || max != math.Trunc(max) || max <= 1 {
+		return 1
+	}
+	return int(math.Min(max, netPlayersMax))
+}
 
 func gameFileType(name string) string {
 	if kind, ok := gameFileTypes[strings.TrimPrefix(path.Ext(name), ".")]; ok {
@@ -126,5 +186,8 @@ func (s *Projects) ImportGameFolder(data []byte) (*Project, error) {
 			return nil, err
 		}
 	}
-	return s.createRevision(title, initialRevision{game: &Game{HTML: html, MaxPlayers: 1, Files: stored}, label: "Imported game folder"})
+	manifest, described := input.Files["zirbel.json"]
+	players := netPlayers(manifest, described)
+	game := &Game{HTML: html, MaxPlayers: players, Net: players > 1, Files: stored}
+	return s.createRevision(title, initialRevision{game: game, label: "Imported game folder"})
 }
