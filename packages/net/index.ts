@@ -28,5 +28,5 @@ export { channels, type ChannelListener, type ChannelOptions, type Channels } fr
 export type { Hooks, ModeName, PlayOptions, Session, SessionEvents } from './hooks.ts';
 export { netParams, netsim, type NetOptions, type NetSim, type SimSocket } from './netsim.ts';
 export { overlay } from './overlay.ts';
-export { json, pack, type Codec } from './pack.ts';
+export { json, pack, pack32, type Codec } from './pack.ts';
 export { play } from './play.ts';

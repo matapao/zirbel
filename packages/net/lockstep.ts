@@ -16,6 +16,7 @@ import { Reader, Writer } from './codec.ts';
 import { T, type Ctx, type Mode } from './hooks.ts';
 import { pack } from './pack.ts';
 import { ALL, HOST } from './protocol.ts';
+import { Ticks } from './ticks.ts';
 import { Assembler, sendChunks } from './transfer.ts';
 
 type Change = [tick: number, seat: number, kind: number];
@@ -34,8 +35,7 @@ const isEnvelope = (e: Partial<Envelope> | null): e is Envelope =>
 export class Lockstep implements Mode {
   #tick = 0;
   #delay = 0;
-  #acc = 0;
-  readonly #tickMs: number;
+  readonly #t: Ticks;
   readonly #check: number;
   /** The players, each with the first tick it plays. */
   #members = new Map<number, number>([[1, 0]]);
@@ -59,7 +59,7 @@ export class Lockstep implements Mode {
   constructor(c: Ctx) {
     this.#c = c;
     const tick = c.o.tick ?? 20;
-    this.#tickMs = 1000 / tick;
+    this.#t = new Ticks(tick);
     this.#check = c.o.check ?? Math.round(tick);
   }
 
@@ -131,13 +131,15 @@ export class Lockstep implements Mode {
 
   frame(_now: number, dt: number): void {
     if (!this.#loaded) return;
-    this.#acc = Math.min(this.#acc + dt, this.#tickMs * 8);
-    for (let n = 0; this.#acc >= this.#tickMs && n < 8; n++) {
+    const t = this.#t;
+    t.add(dt);
+    for (let n = 0; t.due && n < 8; n++) {
       this.#effect(this.#tick);
       if (!this.#ready(this.#tick)) break;
-      this.#acc -= this.#tickMs;
+      t.take();
       this.#step();
     }
+    this.#c.game.draw?.(t.alpha);
   }
 
   offline(): void {
@@ -191,7 +193,7 @@ export class Lockstep implements Mode {
     }
     const got = this.#inputs.get(t);
     for (const seat of [...this.#members.keys()].sort((a, b) => a - b)) game.control?.(seat, got?.get(seat) ?? null);
-    game.step?.(this.#tickMs / 1000);
+    game.step?.(this.#t.ms / 1000);
     this.#inputs.delete(t);
     this.#tick = t + 1;
     if (net && this.#check > 0 && t % this.#check === 0 && game.checksum) {
@@ -291,6 +293,6 @@ export class Lockstep implements Mode {
     for (const t of this.#inputs.keys()) if (t < e.t) this.#inputs.delete(t);
     for (const [t, s, b] of e.i) if (!this.#inputs.get(t)?.has(s)) this.#put(t, s, codec.input.read(new Reader(b)));
     this.#loaded = true;
-    this.#acc = 0;
+    this.#t.reset();
   }
 }

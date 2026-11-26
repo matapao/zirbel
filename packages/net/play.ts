@@ -2,7 +2,7 @@
  * play(): makes a game multiplayer through its hooks. The game starts alone at once; when the page was opened in a
  * room, play() connects, and once seated runs a mode against the hooks: the host runs the game, the others follow
  * it, a new host carries on from the last state it has. When no seat comes in time, the room refuses this screen
- * or ends, the game plays on alone.
+ * or ends, the game plays on alone. A page that goes away (pagehide) leaves the room.
  *
  *   const { play } = await import('/zirbel-net.js');
  *   play(globalThis.gameHooks, { mode: 'predict' });
@@ -18,7 +18,7 @@ import { Lockstep } from './lockstep.ts';
 import { Log } from './log.ts';
 import { netParams, netsim, troubled, type SimSocket } from './netsim.ts';
 import { overlay } from './overlay.ts';
-import { json, pack } from './pack.ts';
+import { json, pack, pack32 } from './pack.ts';
 import { SERVER } from './protocol.ts';
 import { Snapshots } from './snapshot.ts';
 
@@ -28,16 +28,19 @@ export function play(game: Hooks, options: PlayOptions = {}): Session {
   return new Play(game, options);
 }
 
-/** Calls fn every animation frame, and every 100 ms in a hidden page, which gets none. */
+/**
+ * Calls fn every animation frame with the frame's own time, and every 100 ms in a hidden page, which gets none. The
+ * frame's time, not the moment its callback runs: frames at an even rate then get their ticks evenly.
+ */
 function loop(fn: (now: number) => void): () => void {
-  const raf = (env as { requestAnimationFrame?: (f: () => void) => unknown }).requestAnimationFrame;
+  const raf = (env as { requestAnimationFrame?: (f: (time: number) => void) => unknown }).requestAnimationFrame;
   let on = true, gen = 0, timer: unknown = null;
-  const run = (g: number) => (): void => {
+  const run = (g: number) => (time?: number): void => {
     if (!on || g !== gen) return;
     gen++;
     env.clearTimeout(timer);
     try {
-      fn(clock());
+      fn(typeof time === 'number' ? time : clock());
     } catch (error) {
       report(error);
     }
@@ -67,6 +70,7 @@ class Play extends Emitter<SessionEvents> implements Session, Ctx {
   #seated = false;
   #timer: unknown = null;
   #hide: (() => void) | null = null;
+  #unhook: (() => void) | null = null;
   readonly #end: () => void;
   #last = clock();
 
@@ -74,15 +78,16 @@ class Play extends Emitter<SessionEvents> implements Session, Ctx {
     super();
     this.mode = o.mode ?? 'snapshot';
     if (!MODES.includes(this.mode)) throw new RangeError('zirbel-net: play() modes are ' + MODES.join(', '));
-    const base = o.json ? json : pack;
-    this.codec = { state: o.codecs?.state ?? base, input: o.codecs?.input ?? base, action: o.codecs?.action ?? base };
+    const base = o.json ? json : pack, drawn = o.f32 && !o.json && (this.mode === 'snapshot' || this.mode === 'predict') ? pack32 : base;
+    this.codec = { state: o.codecs?.state ?? drawn, input: o.codecs?.input ?? drawn, action: o.codecs?.action ?? base };
     this.ready = new Promise((resolve) => { this.#settle = resolve; });
     game.me?.(1);
     this.#m = this.mode === 'lockstep' ? new Lockstep(this) : this.mode === 'actions' || this.mode === 'events'
       ? new Log(this, this.mode === 'events') : new Snapshots(this, this.mode === 'predict');
     this.#end = loop((now) => {
-      const dt = Math.min(now - this.#last, 1000);
-      this.#last = now;
+      // A timer's frame in a hidden page can run after the next frame began.
+      const dt = Math.min(Math.max(now - this.#last, 0), 1000);
+      this.#last = Math.max(this.#last, now);
       this.#m.frame(now, dt);
     });
     this.#join();
@@ -146,6 +151,13 @@ class Play extends Emitter<SessionEvents> implements Session, Ctx {
       this.#settle(false);
       return;
     }
+    if (!o.keepSeat) {
+      // Leaves at once: in a sandboxed frame the page comes back on a new seat anyway, and an away seat would keep
+      // its player in the game for 15 seconds, and the host role for 2.5.
+      const bye = (): void => this.leave();
+      env.addEventListener?.('pagehide', bye);
+      this.#unhook = () => env.removeEventListener?.('pagehide', bye);
+    }
     const names = o.channels ?? [];
     if (names.length) {
       const ch = (this.#ch = channels(net, names, { first: CHANNELS, codec: this.codec.action }));
@@ -190,6 +202,8 @@ class Play extends Emitter<SessionEvents> implements Session, Ctx {
       this.#seated = false;
       this.#hide?.();
       this.#hide = null;
+      this.#unhook?.();
+      this.#unhook = null;
       this.#settle(false);
       this.emit('offline', code, message);
     });

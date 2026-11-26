@@ -1,8 +1,8 @@
-// The parts of zirbel-net play() is built from, on their own: the pack and json codecs, named channels, the network
-// simulator and its ?net= switch, and the stats overlay.
+// The parts of zirbel-net play() is built from, on their own: the pack, pack32 and json codecs, named channels, the
+// network simulator and its ?net= switch, and the stats overlay.
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import { ALL, channels, connect, json, netParams, netsim, overlay, pack, play, Reader, Writer, type Connection } from '../packages/net/index.ts';
+import { ALL, channels, connect, json, netParams, netsim, overlay, pack, pack32, play, Reader, Writer, type Connection } from '../packages/net/index.ts';
 import { dots, KEY, memoryRelay, ROOM, until, wait } from './net-fixture.ts';
 
 const roundTrip = (codec: typeof pack, value: unknown) => {
@@ -61,6 +61,25 @@ test('pack keeps every value exactly, small ones small, and never throws on byte
   // json: what JSON keeps; text that is not JSON reads as null.
   assert.deepEqual(roundTrip(json, { x: [1, 'a'], u: undefined }).value, { x: [1, 'a'] });
   assert.equal(json.read(new Reader(new Writer().str('{nope').view())), null);
+});
+
+test('pack32 sends numbers that aren\'t whole as 32-bit floats, and play() with f32 sends states and inputs so', async (t) => {
+  const value = { x: 0.1, y: [-2.5, 1e-9, Number.NaN, -Infinity], n: 3, big: 2 ** 40, s: 'a', b: true };
+  const exact = roundTrip(pack, value), small = roundTrip(pack32, value);
+  assert.deepStrictEqual(exact.value, value);
+  assert.deepStrictEqual(small.value, { ...value, x: Math.fround(0.1), y: [-2.5, Math.fround(1e-9), Number.NaN, -Infinity] });
+  assert.equal(exact.size - small.size, 12);
+
+  const room = memoryRelay();
+  const a = dots({ stepping: false }), b = dots({ stepping: false });
+  a.world.get(1)!.x = 0.1;
+  const A = play(a.hooks, { connect: room.options(), f32: true });
+  const B = play(b.hooks, { connect: room.options(), f32: true });
+  t.after(() => { A.stop(); B.stop(); });
+  await Promise.all([A.ready, B.ready]);
+  b.local = { dx: 0.3, dy: 1 };
+  await until(() => (b.world.get(1)?.x ?? 0) !== 0 && (a.world.get(2)?.input?.dx ?? 0) !== 0, 2000, 'a state and an input');
+  assert.deepEqual([b.world.get(1)!.x, a.world.get(2)!.input, a.world.get(1)!.x], [Math.fround(0.1), { dx: Math.fround(0.3), dy: 1 }, 0.1]);
 });
 
 function pair(t: TestContext) {
@@ -146,6 +165,21 @@ test('the simulator delays both ways, keeps frames in order, and drops only unre
   // The client's own pings and pongs are never dropped, and its round trip shows the lag.
   await until(() => b.rtt >= 150, 3000, 'the round trip with the lag: ' + b.rtt);
   assert.equal(b.connected, true);
+});
+
+test('the simulator closes at once, after what it still holds: a clean leave stays one as a page unloads', async (t) => {
+  const room = memoryRelay();
+  const a = connect(room.options()), b = connect(room.options({ WebSocket: netsim({ lag: 400 }, room.WebSocket) }));
+  t.after(() => { a.close(); b.close(); });
+  await Promise.all([a, b].map((net) => new Promise<void>((done) => net.on('open', () => done()))));
+  const heard: string[] = [];
+  a.on('message', (_from, _type, r) => heard.push(r.text())).on('leave', (id) => heard.push('leave ' + id)).on('away', (id) => heard.push('away ' + id));
+  const began = performance.now();
+  b.send(ALL, 1, 'last words');
+  b.close();
+  await until(() => heard.length === 2, 2000, 'the leave');
+  assert.deepEqual(heard, ['last words', 'leave 2']);
+  assert.ok(performance.now() - began < 100, 'took ' + (performance.now() - began) + ' ms, not the 200 ms lag on the way up');
 });
 
 test('the simulator\'s bandwidth cap queues frames, and the client drops its unreliable data behind the queue', async (t) => {

@@ -62,7 +62,8 @@ for (const host of hosts) {
 
 // The lobby on a phone-sized page: one person starts a session of the game the owner offers (lobby.json, as the editor
 // keeps it) and reads its code out, or shows its QR code; another types it in, in lower case with a dash, and both play
-// in one room. A phone that scans the QR code finds the code filled in.
+// in one room. A phone that scans the QR code finds the code filled in. A lobby opened with ?net= (a simulated network,
+// for testing) carries it on the player links it goes to.
 for (const host of hosts) {
   test(host.name + ' host: one browser starts a session in the lobby and another joins it with its code', async (t) => {
     const root = tempDir(t, 'zirbel-host-lobby-');
@@ -85,7 +86,7 @@ for (const host of hosts) {
       page.on('pageerror', (error) => failures.push(error.message));
       page.on('console', (message) => { if (/Content Security Policy|Refused to/.test(message.text())) failures.push(message.text()); });
     }
-    await first.goto(player + '/');
+    await first.goto(player + '/?net=stats');
     await first.getByLabel('Your name').fill('Ada');
     await first.getByRole('button', { name: 'Start session of Lobby game' }).click();
     await first.getByRole('heading', { name: 'Your session is ready' }).waitFor();
@@ -99,6 +100,7 @@ for (const host of hosts) {
     const invitation = await first.locator('#session-link').getAttribute('href') ?? '';
     assert.deepEqual([invitation, await first.locator('#session-link').textContent()], [player + '/?code=' + code, invitation]);
     assert.deepEqual(await accessibility(first), []);
+    assert.match(await first.getByRole('link', { name: 'Go in' }).getAttribute('href') ?? '', /\/join\/[^?#]+\?net=stats#seat=/);
     await first.getByRole('link', { name: 'Go in' }).click();
 
     // A phone that scans it opens the lobby with the code filled in, at the name; and invites others to the lobby.
@@ -116,7 +118,7 @@ for (const host of hosts) {
     await invite.click();
     assert.equal(await scanned.locator('#invite').isHidden(), true);
 
-    await second.goto(player + '/');
+    await second.goto(player + '/?net=lag:20');
     await second.locator('#sessions li').filter({ hasText: 'Lobby game' }).waitFor();
     assert.equal(await second.locator('main').textContent().then((text) => text?.includes(code)), false);
     assert.deepEqual(await accessibility(second), []);
@@ -126,6 +128,7 @@ for (const host of hosts) {
     for (const page of [first, second])
       await page.frameLocator('iframe').locator('#out').filter({ hasText: '2 players' }).waitFor({ timeout: 15_000 });
     assert.equal(await second.locator('#badge').textContent(), 'Code ' + code);
+    assert.match(second.url(), /\/join\/[^?#]+\?net=lag%3A20#/);
     assert.deepEqual(failures, []);
   });
 }

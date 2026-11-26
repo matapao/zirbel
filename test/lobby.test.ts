@@ -1,6 +1,6 @@
 // The lobby (packages/core/lobby.ts): its codes, the offers it keeps in lobby.json, what it lists, the sessions it
-// starts and their limits, the seats it hands out by code and its count of wrong codes; and its address for other
-// devices (packages/server/hosting.ts).
+// starts and their limits, the seats it hands out by code and its count of wrong codes; its address for other
+// devices (packages/server/hosting.ts); and the page's links into a game (packages/web/lobby-link.ts).
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,6 +8,7 @@ import { test, type TestContext } from 'node:test';
 import { CODE_LETTERS, LOBBY_SESSIONS, Lobby, newCode, readCode, SESSIONS_PER_ADDRESS, WRONG_CODES } from '../packages/core/lobby.ts';
 import { Rooms } from '../packages/core/rooms.ts';
 import { Players } from '../packages/server/hosting.ts';
+import { playerLink } from '../packages/web/lobby-link.ts';
 import { install, joinRoom, legacyProject, rights } from './helpers.ts';
 
 function lobbyFor(t: TestContext, now = Date.now) {
@@ -183,4 +184,15 @@ test('the lobby’s address for other devices is on the LAN listener, by a name 
   for (const [reached, address] of [['192.168.1.2', '192.168.1.2'], ['zirbel.local', 'games.lan'], ['[fd00::2]', '[fd00::2]'],
     [undefined, 'games.lan'], ['127.0.0.1', 'games.lan'], ['127.1.2.3', 'games.lan'], ['localhost', 'games.lan'], ['[::1]', 'games.lan']])
     assert.equal(players.lobbyLink(reached), 'http://' + address + ':' + port + '/', String(reached));
+});
+
+test('the lobby page goes only to its own listener’s /join/ links, with the ?net= of its own address on them', () => {
+  const lobby = 'http://192.168.1.2:4174/?code=AB&net=lag:120,jitter:30,stats';
+  // Before the #, which holds the seat's ticket: the player page reads it there and hands it on to the game's frame.
+  const link = playerLink('/join/r1#seat=t1', lobby);
+  assert.equal(link, 'http://192.168.1.2:4174/join/r1?net=lag%3A120%2Cjitter%3A30%2Cstats#seat=t1');
+  assert.equal(new URL(link).searchParams.get('net'), 'lag:120,jitter:30,stats');
+  assert.equal(playerLink('http://192.168.1.2:4174/join/r1#seat=t1', 'http://192.168.1.2:4174/'), 'http://192.168.1.2:4174/join/r1#seat=t1');
+  for (const elsewhere of ['http://elsewhere.test/join/r1#seat=t1', '/lobby/state', '//192.168.1.3:4174/join/r1'])
+    assert.throws(() => playerLink(elsewhere, lobby), /unexpected link/, elsewhere);
 });

@@ -1,7 +1,9 @@
 // The lobby page (public/lobby.html) every player listener serves at /: the games the owner offers, a code to join a
 // session with, and the sessions being played. Mostly used on phones. It talks to its own listener's /lobby/ alone, and
-// goes only to the player links that listener hands back. Its QR codes hold its own address: the lobby's, to invite
-// others, and with ?code= a session's, which opens the lobby with that code filled in.
+// goes only to the player links that listener hands back, with its own ?net= on them (lobby-link.ts). Its QR codes
+// hold its own address: the lobby's, to invite others, and with ?code= a session's, which opens the lobby with that
+// code filled in.
+import { playerLink } from './lobby-link.ts';
 import { qrPicture } from './qr.ts';
 
 type Game = { release: string; title: string; players: { min: number; max: number }; multiplayer: boolean };
@@ -42,13 +44,6 @@ async function call<T>(path: string, value?: object): Promise<T> {
   const result = await response.json().catch(() => ({})) as { error?: unknown };
   if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : 'The lobby could not do that. Try again.');
   return result as T;
-}
-
-/** A player link from this listener, and none from anywhere else. */
-function playerLink(link: string) {
-  const url = new URL(link, location.href);
-  if (url.origin !== location.origin || !url.pathname.startsWith('/join/')) throw new Error('The lobby answered with an unexpected link.');
-  return url.href;
 }
 
 function playerName() {
@@ -124,7 +119,7 @@ async function showAddress(address: string, frame: string, anchor: string, alt: 
 
 async function start(game: Game) {
   const { code, link } = await call<{ code: string | null; link: string }>('sessions', { release: game.release, name: playerName() });
-  const target = playerLink(link);
+  const target = playerLink(link, location.href);
   if (!code) { location.assign(target); return; }
   byId('code').textContent = code;
   byId('code').setAttribute('aria-label', 'Code ' + code.split('').join(' '));
@@ -161,7 +156,7 @@ joinForm.addEventListener('submit', (event) => {
   void attempt(button, async () => {
     const code = joinCode.value;
     const { link } = await call<{ link: string }>('join', { code, name: playerName() });
-    location.assign(playerLink(link));
+    location.assign(playerLink(link, location.href));
   });
 });
 

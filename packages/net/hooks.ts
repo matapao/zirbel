@@ -20,25 +20,36 @@ export interface Hooks {
    */
   join?(id: number): void;
   leave?(id: number): void;
-  /** snapshot, predict and events: true where this screen runs the game (alone, or the room's host), false where it only shows what arrives. */
+  /**
+   * snapshot, predict and events: true where this screen runs the game (alone, or the room's host), false where it
+   * only shows what arrives (predict: and moves its own player through predict()).
+   */
   simulate?(on: boolean): void;
   /**
    * The state. snapshot and predict: entities by a key that stays the same ({ p1: {…}, rock7: {…} }), each sent
    * only when it changed. actions, events and lockstep: everything a newcomer needs, sent once (events: also a Uint8Array).
    */
   snapshot?(): unknown;
-  /** Replaces the state with one snapshot() gave. */
+  /** Replaces the state with one snapshot() gave. predict: with everything predict() reads. */
   restore?(state: unknown): void;
-  /** snapshot and predict: one entity between two states, t from 0 to 1, for smooth drawing. */
+  /**
+   * snapshot and predict: one entity between two states, t from 0 to 1, for smooth drawing. predict: also this
+   * screen's own player between its last two ticks, at the alpha draw() gets.
+   */
   blend?(a: unknown, b: unknown, t: number, key: string): unknown;
   /** snapshot and predict: whether seat gets this entity at all. Default: every seat gets everything. */
   interest?(seat: number, key: string, entity: unknown): boolean;
-  /** snapshot, predict and lockstep: the local player's input right now. */
+  /** snapshot, predict and lockstep: the local player's input right now, sampled each tick: read the devices here. */
   input?(): unknown;
   /** Steers player id with an input from the next step on; null means no input. */
   control?(id: number, input: unknown): void;
   /** predict and lockstep (snapshot too, when given): advances the game by one tick of dt seconds. */
   step?(dt: number): void;
+  /**
+   * Where play() steps the game (alone, on the host, every seat in lockstep): each frame after its ticks. alpha,
+   * 0 to 1, is how far the frame is from the last tick to the next, for drawing between the two.
+   */
+  draw?(alpha: number): void;
   /** predict: moves this screen's own player one tick with its own input, on top of the host's latest state. */
   predict?(input: unknown, dt: number): void;
   /** predict: the key of player id's entity in snapshot(). Default 'p' + id. */
@@ -68,12 +79,19 @@ export interface PlayOptions {
   readonly check?: number;
   /** JSON text instead of binary. */
   readonly json?: boolean;
+  /** snapshot and predict: numbers that aren't whole go as 32-bit floats in states and inputs (pack32). */
+  readonly f32?: boolean;
   /** Your own codecs for states (and their entities), inputs, and actions. */
   readonly codecs?: { readonly state?: Codec; readonly input?: Codec; readonly action?: Codec };
   /** The game's own message names, for session.send(), stream() and the message event. */
   readonly channels?: readonly string[];
   /** ms to wait for a seat before playing alone. Default 10000. */
   readonly timeout?: number;
+  /**
+   * true: a page that goes away keeps its seat for 15 seconds, as a dropped link does, for a page that can resume
+   * it. By default play() leaves the room at pagehide: a game's sandboxed frame comes back on a new seat anyway.
+   */
+  readonly keepSeat?: boolean;
   /** The network simulator and stats overlay, as in ?net=: 'lag:120,jitter:30,loss:5,kbps:256,stats'. The address adds to it. */
   readonly net?: string | NetOptions;
   /** What connect() gets over launchParams(). With room set, play() connects even without ?room= in the address. */

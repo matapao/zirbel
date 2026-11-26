@@ -2,7 +2,8 @@
  * snapshot and predict: the host steps the game and sends each seat what changed, entity by entity, since the
  * last state that seat confirmed (and everything when it has confirmed none, or every so often). The others send
  * their input and draw the host's states a little in the past. predict also moves this screen's own player at
- * once, and replays the inputs the host hasn't applied yet on top of each state it sends.
+ * once, and replays the inputs the host hasn't applied yet on top of each state it sends. The host applies each
+ * seat's inputs one a tick, two while more than DEPTH wait; with none waiting, the player keeps its last input.
  *
  *   STATE  host to seat   u8 flags (1 changes since a base, 2 inputs applied), u16 seq, [u16 base], f64 time,
  *                         [u16 last input applied], varint n, n x (str key, bytes entity), varint m, m x str key gone
@@ -12,11 +13,19 @@ import { Reader, Writer } from './codec.ts';
 import { T, type Ctx, type Mode } from './hooks.ts';
 import { Interp, type Sample } from './interp.ts';
 import { HOST, seqNewer } from './protocol.ts';
+import { Ticks } from './ticks.ts';
 
 /** States kept on both sides, and how far back a confirmed state may be to send changes against it. */
 const RING = 64, WINDOW = 32;
 /** predict: the newest inputs each message repeats, in case one is lost. */
 const REPEAT = 6;
+/**
+ * predict: ms of its inputs a seat keeps until the host has applied them. More than the relay waits before an
+ * away host's role moves on (2.5 s), so this screen's own player drives on until then.
+ */
+const KEEP_MS = 4000;
+/** On the host, a seat's inputs waiting: above DEPTH two go a tick, and past BURST all but the newest DEPTH are skipped. */
+const DEPTH = 2, BURST = 8;
 
 interface Ent {
   readonly b: Uint8Array;
@@ -45,10 +54,10 @@ function same(a: Uint8Array, w: Writer): boolean {
 
 export class Snapshots implements Mode {
   readonly #stepping: boolean;
-  readonly #tickMs: number;
+  readonly #t: Ticks;
   readonly #every: number;
   readonly #per: number;
-  #acc = 0;
+  readonly #keep: number;
   #since = 0;
   #ticks = 0;
   /** The host this screen follows (its own seat when it leads), and whether it leads. */
@@ -67,6 +76,8 @@ export class Snapshots implements Mode {
   readonly #past = new Interp<World>(RING);
   #inSeq = 0;
   #pending: { q: number; v: unknown; b: Uint8Array }[] = [];
+  /** predict: this screen's own player after its last two ticks (a, b), on the newest state seq, up to input q. */
+  #mine: { seq: number; q: number; a: unknown; b: unknown } | null = null;
   /** Seats that left the room, whose players a state from before may still hold. */
   readonly #left = new Set<number>();
   readonly #w = new Writer(1024);
@@ -78,9 +89,10 @@ export class Snapshots implements Mode {
     this.#c = c;
     this.#predicting = predicting;
     this.#stepping = predicting || !!c.game.step;
-    this.#tickMs = 1000 / (c.o.tick ?? (predicting ? 60 : 30));
+    this.#t = new Ticks(c.o.tick ?? (predicting ? 60 : 30));
     this.#every = 1000 / (c.o.rate ?? 20);
-    this.#per = Math.max(1, Math.round(this.#every / this.#tickMs));
+    this.#per = Math.max(1, Math.round(this.#every / this.#t.ms));
+    this.#keep = Math.ceil(KEEP_MS / this.#t.ms);
     c.game.simulate?.(true);
   }
 
@@ -116,6 +128,7 @@ export class Snapshots implements Mode {
       this.#world = null;
       this.#past.clear();
     }
+    this.#mine = null;
     this.#leading = host;
     game.simulate?.(host);
   }
@@ -138,15 +151,17 @@ export class Snapshots implements Mode {
   }
 
   frame(_now: number, dt: number): void {
+    const t = this.#t;
     if (this.#stepping || !this.#leading) {
-      this.#acc = Math.min(this.#acc + dt, this.#tickMs * 8);
-      while (this.#acc >= this.#tickMs) {
-        this.#acc -= this.#tickMs;
+      t.add(dt);
+      while (t.due) {
+        t.take();
         this.#tick();
       }
     }
-    if (!this.#leading) this.#draw();
-    else if (!this.#stepping && (this.#since += dt) >= this.#every) {
+    if (!this.#leading) this.#draw(t.alpha);
+    else if (this.#stepping) this.#c.game.draw?.(t.alpha);
+    else if ((this.#since += dt) >= this.#every) {
       this.#since = Math.min(this.#since - this.#every, this.#every);
       this.#send();
     }
@@ -157,6 +172,7 @@ export class Snapshots implements Mode {
     if (!this.#leading) this.#carryOn(gone);
     else for (const id of gone) game.leave?.(id);
     this.#pending = [];
+    this.#mine = null;
     this.#seats.clear();
     this.#hostId = 0;
     this.#leading = true;
@@ -167,16 +183,18 @@ export class Snapshots implements Mode {
     const { game, net, me } = this.#c;
     if (this.#leading) {
       for (const [id, s] of this.#seats) {
-        // Inputs that pile up (a burst after a stall) are skipped, so the seat's lag doesn't grow.
-        if (s.queue.length > 8) s.queue.splice(0, s.queue.length - 2);
-        const x = s.queue.shift();
-        if (x) {
-          s.applied = x[0];
-          game.control?.(id, x[1]);
+        // Inputs that pile up (at the start, or in a burst after a stall) go two a tick, or are skipped, so the
+        // seat's lag doesn't stay. With none waiting, its player keeps the last input it had.
+        const q = s.queue;
+        if (q.length > BURST) q.splice(0, q.length - DEPTH);
+        for (let n = q.length > DEPTH ? 2 : 1; n > 0 && q.length; n--) {
+          const [seq, v] = q.shift()!;
+          s.applied = seq;
+          game.control?.(id, v);
         }
       }
       if (game.input) game.control?.(me, game.input());
-      game.step?.(this.#tickMs / 1000);
+      game.step?.(this.#t.ms / 1000);
       if (net && ++this.#ticks >= this.#per) {
         this.#ticks = 0;
         this.#send();
@@ -190,7 +208,7 @@ export class Snapshots implements Mode {
     if (this.#predicting) {
       codec.write(this.#w.reset(), game.input ? game.input() : null);
       this.#pending.push({ q, v: codec.read(this.#rd.set(this.#w.view())), b: this.#w.view().slice() });
-      if (this.#pending.length > 120) this.#pending.shift();
+      if (this.#pending.length > this.#keep) this.#pending.shift();
       const from = Math.max(0, this.#pending.length - REPEAT);
       m.u16(this.#pending[from]!.q).u8(this.#pending.length - from);
       for (let i = from; i < this.#pending.length; i++) m.raw(this.#pending[i]!.b);
@@ -284,15 +302,21 @@ export class Snapshots implements Mode {
     }
   }
 
-  /** Restores the newest state in, then takes out the players who aren't in the room any more. */
+  /**
+   * Restores the newest state in, with this screen's own player where it predicted it, then takes out the players
+   * who aren't in the room any more.
+   */
   #carryOn(gone: number[]): void {
     if (!this.#world) return;
-    this.#show(values(this.#world), true);
-    for (const id of new Set([...this.#left, ...gone])) this.#c.game.leave?.(id);
+    const game = this.#c.game, view = values(this.#world), m = this.#mine?.seq === this.#newest ? this.#mine : null;
+    if (this.#predicting && m) view.set(this.#key(), m.b);
+    game.restore?.(Object.fromEntries(view));
+    if (this.#predicting && !m) for (const p of this.#pending) game.predict?.(p.v, this.#t.ms / 1000);
+    for (const id of new Set([...this.#left, ...gone])) game.leave?.(id);
   }
 
   /** Each frame while following: the others in the past (blended when the game can), this screen's own player now. */
-  #draw(): void {
+  #draw(alpha: number): void {
     const { game, net } = this.#c;
     if (!net || !this.#world || !game.restore) return;
     if (!game.blend && !this.#predicting) {
@@ -301,7 +325,9 @@ export class Snapshots implements Mode {
       return;
     }
     const at = game.blend ? this.#past.sample(net.now() - (this.#c.o.smooth ?? 1.5 * this.#every + 2 * net.jitter)) : null;
-    this.#show(at ? this.#blend(at) : values(this.#world), false);
+    const view = at ? this.#blend(at) : values(this.#world);
+    if (this.#predicting) this.#own(view, alpha);
+    else game.restore(Object.fromEntries(view));
   }
 
   #blend(at: Sample<World>): Map<string, unknown> {
@@ -313,14 +339,52 @@ export class Snapshots implements Mode {
     return out;
   }
 
-  /** Restores view with this screen's own player as the newest state has it, then replays the inputs not yet applied. */
-  #show(view: Map<string, unknown>, newest: boolean): void {
+  #key(): string {
     const { game, me } = this.#c;
-    if (this.#predicting && this.#world && !newest) {
-      const k = game.player ? game.player(me) : 'p' + me, own = this.#world.get(k);
-      if (own) view.set(k, own.v);
+    return game.player ? game.player(me) : 'p' + me;
+  }
+
+  /**
+   * predict: restores view with this screen's own player as the newest state has it and the inputs the host hasn't
+   * applied yet played on top, drawn between its last two ticks (blend, at alpha). Each input is played once on a
+   * state: until the next state comes, a new tick plays on from where the last one left the player.
+   */
+  #own(view: Map<string, unknown>, alpha: number): void {
+    const game = this.#c.game, k = this.#key(), host = this.#world?.get(k), p = this.#pending, dt = this.#t.ms / 1000;
+    const show = (own: unknown): void => {
+      if (own !== undefined) view.set(k, own);
+      game.restore?.(Object.fromEntries(view));
+    };
+    if (!host || !game.snapshot) {
+      show(host?.v);
+      for (const x of p) game.predict?.(x.v, dt);
+      return;
     }
-    game.restore?.(Object.fromEntries(view));
-    if (this.#predicting) for (const p of this.#pending) game.predict?.(p.v, this.#tickMs / 1000);
+    const m = this.#mine?.seq === this.#newest ? this.#mine : null;
+    const from = m ? p.findIndex((x) => m.q < 0 || seqNewer(x.q, m.q)) : 0;
+    let a = m ? m.a : host.v, b = m ? m.b : host.v;
+    if (from >= 0 && from < p.length) {
+      show(b);
+      for (let i = from; i < p.length; i++) {
+        if (i === p.length - 1) a = i > from ? this.#copy(k) : b;
+        game.predict?.(p[i]!.v, dt);
+      }
+      b = this.#copy(k);
+      // A snapshot without this screen's player: it stays as played.
+      if (a === undefined || b === undefined) {
+        this.#mine = null;
+        return;
+      }
+    }
+    this.#mine = { seq: this.#newest, q: p.at(-1)?.q ?? -1, a, b };
+    show(game.blend && a !== b ? game.blend(a, b, alpha, k) : b);
+  }
+
+  /** The game's entity k as it is now, through the state's codec, as a state would bring it. */
+  #copy(k: string): unknown {
+    const v = (this.#c.game.snapshot?.() as Record<string, unknown> | null | undefined)?.[k], codec = this.#c.codec.state;
+    if (v === undefined) return undefined;
+    codec.write(this.#w.reset(), v);
+    return codec.read(this.#rd.set(this.#w.view()));
   }
 }

@@ -2,7 +2,7 @@
  * A network simulator for testing a game on a bad link: a WebSocket that adds delay, jitter, loss and a bandwidth
  * cap. Pass it to connect(), or turn it on in play() from the page's address: ?net=lag:120,jitter:30,loss:5,kbps:256.
  * Frames keep their order, as on a real WebSocket. Loss drops only unreliable app messages (stream()), never
- * reliable ones or the client's own pings.
+ * reliable ones or the client's own pings. Closing is not delayed.
  */
 import { Writer } from './codec.ts';
 import { clock, env, type WebSocketConstructor, type WebSocketLike } from './env.ts';
@@ -47,6 +47,14 @@ class Lane {
     this.bytes += n;
     this.#q.push([this.#last, n, run]);
     this.#arm();
+  }
+
+  /** Everything queued, now and in order. */
+  flush(): void {
+    for (const [, n, run] of this.#q.splice(0)) {
+      this.bytes -= n;
+      run();
+    }
   }
 
   #arm(): void {
@@ -120,8 +128,11 @@ export function netsim(o: NetSim, WebSocket: WebSocketConstructor | undefined = 
       if (f) this.#up.push(f.length, () => this.#ws.send(f));
     }
 
+    // At once, after what is still queued: a page that unloads runs no more timers, and a close left waiting
+    // for one would reach the relay as a dropped link, an away seat, instead of a clean leave.
     close(code?: number, reason?: string): void {
-      this.#up.push(0, () => this.#ws.close(code, reason));
+      this.#up.flush();
+      this.#ws.close(code, reason);
     }
   };
   return S;
