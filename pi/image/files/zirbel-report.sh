@@ -38,6 +38,10 @@ touch /run/zirbel-report
   # The HDMI console (docs/box-tv.md): the displays plugged in, and what it and its follower said.
   echo "== TV console: displays $(grep -lx connected /sys/class/drm/card*-*/status 2>/dev/null | cut -d/ -f5 | paste -sd' ')"
   journalctl -u zirbel-tv-follow -u zirbel-tv -b --no-pager -o short-monotonic | tail -15
+  # The controllers service logs the gamepads that come and go, never their input.
+  echo "== controllers: $(systemctl is-active bluetooth zirbel-pads | paste -sd' ')"
+  bluetoothctl show 2>&1 | grep -E "Controller|Powered|PowerState|Discovering"
+  journalctl -u zirbel-pads -b --no-pager -o short-monotonic | tail -15
   echo "== warnings, this boot"; journalctl -b -p warning --no-pager -o short-monotonic | tail -40
 } >"$tmp" 2>&1
 mv -f "$tmp" "$out"

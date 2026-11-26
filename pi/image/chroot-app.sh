@@ -1,7 +1,7 @@
 #!/bin/bash
 # The app stage, in the image's own root (provision.sh), on the base stage, owned by root in /opt/zirbel so the
 # service's own user can't change it: on a 64-bit box the Node editor build for Linux arm64 (build.mjs stages it), on a
-# 32-bit box the Go host built for it; then the services.
+# 32-bit box the Go host built for it; then the services: the box's own, its Wi-Fi setup and its controllers.
 #   chroot-app.sh COUNTRY [GAMES]   (GAMES: how many game folders build.mjs handed over, all of which must arrive)
 set -euo pipefail
 B=/tmp/zirbel-build
@@ -26,6 +26,7 @@ systemctl enable zirbel.service >/dev/null 2>&1
 [ ! -d "$B/setup" ] || bash "$B/setup-install.sh" "$B/setup" "$1"
 # The HDMI console on a 64-bit box (build.mjs hands its follower over there alone).
 [ ! -d "$B/tv" ] || bash "$B/tv-install.sh" "$B/tv"
+[ ! -d "$B/controllers" ] || bash "$B/controllers-install.sh" "$B/controllers"
 # The installed program starts in box mode, as `zirbel`, with a throwaway account folder, and answers its health check on
 # loopback. Its data folder is throwaway too, unless the box starts with games: then it is the box's own (~/.zirbel,
 # both hosts' default), and each game goes into its library as the editor's folder import puts it, then into its lobby.

@@ -77,6 +77,14 @@ type padController struct {
 	device   int
 	name     string
 	standard bool
+	uid      string
+}
+
+// padAway is where a box gamepad that went was, by its uid.
+type padAway struct {
+	screen *padScreen
+	place  int
+	at     time.Time
 }
 
 type padKept struct {
@@ -116,12 +124,18 @@ type Pads struct {
 	service padsLink
 	tries   codeTries
 	// controllers is the controller service's last view of the box's
-	// controllers and Bluetooth, while it is connected.
+	// controllers and Bluetooth, while it is connected; viewed is called with
+	// each (Box settings' controllers wait on it).
 	controllers json.RawMessage
+	viewed      func()
+	// away is where box gamepads that went were, by their uid: one back
+	// within a minute takes its place again.
+	away map[string]padAway
 }
 
 func NewPads(now func() time.Time) *Pads {
-	return &Pads{now: now, screens: map[string]*padScreen{}, tries: codeTries{now: now, tries: map[string]wrongTries{}}}
+	return &Pads{now: now, screens: map[string]*padScreen{}, tries: codeTries{now: now, tries: map[string]wrongTries{}},
+		away: map[string]padAway{}}
 }
 
 // Run sweeps the pads every second until ctx ends.
@@ -278,6 +292,11 @@ func (p *Pads) Sweep() {
 			}
 		}
 		screen.kept = kept
+	}
+	for uid, item := range p.away {
+		if at.Sub(item.at) >= padResume || p.screens[item.screen.id] != item.screen {
+			delete(p.away, uid)
+		}
 	}
 	p.expireClaims(at)
 }

@@ -1,5 +1,6 @@
 // Builds a Zirbel box's image from Raspberry Pi OS Lite as Raspberry Pi publishes it, checked against its published
-// hashes: what the box runs (chroot-base.sh), then the editor and its setup service (chroot-app.sh). Two targets:
+// hashes: what the box runs (chroot-base.sh), then the editor, its setup service and its controllers service
+// (chroot-app.sh). Two targets:
 // - arm64 (the default), for the Pis that run 64-bit Raspberry Pi OS: Pi 3, 4, 400, 5 and Zero 2 W. The Node editor
 //   and the harnesses; the editor turns harnesses on by default where there is memory for them. And its HDMI console,
 //   the lobby's TV page on a TV plugged into the box (docs/box-tv.md).
@@ -151,6 +152,8 @@ const setup = path.join(REPO, 'pi', 'setup');
 if (fs.existsSync(setup)) app[setup] = '/setup';
 // The HDMI console's follower (pi/tv), on a 64-bit box: the Pi 2 B has no console.
 if (values.target === 'arm64') app[path.join(REPO, 'pi', 'tv')] = '/tv';
+const controllers = path.join(REPO, 'pi', 'controllers');
+if (fs.existsSync(controllers)) app[controllers] = '/controllers';
 const image = path.join(out, `zirbel-${values.target}.img`);
 stage(base, image, 'app', [values.country, String(values.game.length)], app);
 // Beside it, compressed for keeping or sharing: Raspberry Pi Imager writes an .img.xz as it is.

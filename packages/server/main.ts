@@ -31,6 +31,7 @@ import { Pairing } from './box-pairing.ts';
 import { boxDoor, boxHealth, boxHosts, boxRequest, onBoxNetwork, type Access, type BoxContext } from './box-routes.ts';
 import { boxCapabilities, BoxHarnesses, BoxSettings } from './box-settings.ts';
 import { ownLoopback } from './loopback-owner.ts';
+import { BoxControllers } from './box-controllers.ts';
 import { Editors } from './box-editors.ts';
 import { editorsRequest } from './box-edit-routes.ts';
 import { checkRole, whoIs } from './box-roles.ts';
@@ -152,7 +153,8 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
         turns: () => chat.count, qr: (link) => QRCode.toDataURL(link, { margin: 2, width: 240 }),
         setupRequest: process.env.ZIRBEL_SETUP_REQUEST || '/run/zirbel-setup/request',
         ownNetwork: process.env.ZIRBEL_OWN_NETWORK || '/var/lib/zirbel-setup/own-network.json',
-        tvWake: process.env.ZIRBEL_TV_WAKE || '/run/zirbel-tv/wake', ownLoopback };
+        tvWake: process.env.ZIRBEL_TV_WAKE || '/run/zirbel-tv/wake', ownLoopback,
+        controllers: new BoxControllers(players.pads) };
     } else harnesses = harnessesFor(root);
     closeHarnesses = async () => { await harnesses.close?.(); };
     closeTurns = () => chat.close();

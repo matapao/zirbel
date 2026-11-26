@@ -1,0 +1,4 @@
+# Installed as /usr/lib/tmpfiles.d/zirbel-pads.conf. Where the host (user zirbel, in the group zirbel-pads) makes its
+# local socket for the box's controllers (--pads-socket /run/zirbel-pads/host.sock), and the controllers service (user
+# zirbel-pads) connects to it, and no one else: the folder's setgid bit gives the socket its group.
+d /run/zirbel-pads 2770 root zirbel-pads -

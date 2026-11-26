@@ -333,6 +333,7 @@ func run() error {
 		// sends the devices that aren't paired there.
 		players.box = config.box
 		box.lobbyPort = players.LANPort
+		box.controllers = newBoxControllers(pads) // Box settings' controllers, through the controller service
 		if _, err := players.StartLAN(ctx); err != nil {
 			return err
 		}

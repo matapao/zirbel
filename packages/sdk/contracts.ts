@@ -202,11 +202,30 @@ export const padsScreenMessage = z.discriminatedUnion('type', [
 ]);
 export const padsPadMessage = z.strictObject({ type: z.literal('place'), place: padPlace });
 export const padsServiceMessage = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('device'), device: padDevice, name: z.string().min(1).max(128), standard: z.boolean() }),
+  // uid: who the gamepad is across a reconnect (its Bluetooth address, or the USB port it is in), so it keeps its place.
+  z.strictObject({ type: z.literal('device'), device: padDevice, name: z.string().min(1).max(128), standard: z.boolean(),
+    uid: z.string().min(1).max(128).optional() }),
   z.strictObject({ type: z.literal('gone'), device: padDevice }),
   // The service's view of the box's controllers and Bluetooth, which Box settings shows.
   z.looseObject({ type: z.literal('controllers') }),
 ]);
+
+// The box's controllers (box mode): Box settings' requests, and the box's controllers service's view of its gamepads
+// and Bluetooth (pi/controllers/view.py), which reaches the host over the pads' local socket. Names are at most 64
+// characters there, which is at most 128 here.
+const bluetoothAddress = z.string().regex(/^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/);
+const controllerName = z.string().max(128);
+export const controllersScan = z.strictObject({ on: z.boolean() });
+export const controllersAddress = z.strictObject({ address: bluetoothAddress });
+export const controllersView = z.strictObject({
+  type: z.literal('controllers'),
+  devices: z.array(z.strictObject({
+    name: controllerName, kind: z.enum(['usb', 'bluetooth', 'other']), connected: z.boolean(),
+    device: z.number().int().min(0).max(15).optional(), address: bluetoothAddress.optional(),
+  })).max(32),
+  found: z.array(z.strictObject({ address: bluetoothAddress, name: controllerName })).max(32),
+  scanning: z.boolean(), bluetooth: z.boolean(), pairing: bluetoothAddress.nullable(), error: z.string().max(400).nullable(),
+});
 
 export type SceneObject = z.infer<typeof sceneObject>;
 export type Scene = z.infer<typeof scene>;

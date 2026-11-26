@@ -7,8 +7,8 @@ import { projectBundle, savedNote, savedProposal, storedProject } from '../packa
 import { importInput, updateInput } from '../packages/core/git-source.ts';
 import { gameFolder } from '../packages/core/game-files.ts';
 import {
-  asset, attachment, ClientMessage, id, lobbyFile, lobbyJoin, lobbyOffer, lobbyStart, padsPadMessage, padsScreenMessage, padsServiceMessage,
-  portableRelease, project, proposalInput, scene, ServerMessage,
+  asset, attachment, ClientMessage, controllersAddress, controllersScan, controllersView, id, lobbyFile, lobbyJoin, lobbyOffer,
+  lobbyStart, padsPadMessage, padsScreenMessage, padsServiceMessage, portableRelease, project, proposalInput, scene, ServerMessage,
 } from '../packages/sdk/contracts.ts';
 import { gameDocument } from '../packages/sdk/game.ts';
 import { grantSchema, toolDescriptors } from '../packages/server/mcp.ts';
@@ -51,6 +51,8 @@ const schemas = {
   'pads-screen': padsScreenMessage, 'pads-pad': padsPadMessage, 'pads-service': padsServiceMessage,
   // The arguments of the MCP tools for the game's files (packages/server/mcp-files.ts).
   'mcp-read-file': readFileInput, 'mcp-write-files': writeFilesInput,
+  // Box settings' controllers, and the controllers service's view of them (packages/server/box-controllers.ts).
+  'controllers-scan': controllersScan, 'controllers-address': controllersAddress, 'controllers-view': controllersView,
 };
 
 // Zod trims some strings, and its URL check trims and drops tabs and newlines,

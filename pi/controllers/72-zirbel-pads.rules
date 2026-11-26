@@ -1,0 +1,4 @@
+# Installed as /etc/udev/rules.d/72-zirbel-pads.rules, before systemd's 73-seat-late.rules gives a seat's user access.
+# The box's gamepads, joysticks and wheels reach a screen through the host alone (pi/controllers, as the group input):
+# the user at the box's own display gets no access of its own to them, so a browser there doesn't see them twice.
+SUBSYSTEM=="input", ENV{ID_INPUT_JOYSTICK}=="?*", TAG-="uaccess"

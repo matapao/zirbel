@@ -57,6 +57,7 @@ cp -R "$HERE/." "$WORK/"
 [ -f /zirbel-host ] && cp /zirbel-host "$WORK/zirbel-host"
 [ -d /setup ] && cp -R /setup "$WORK/setup"
 [ -d /tv ] && cp -R /tv "$WORK/tv"
+[ -d /controllers ] && cp -R /controllers "$WORK/controllers"
 [ -d /games ] && cp -R /games "$WORK/games"
 status=0
 chroot "$ROOT" /bin/bash "/tmp/zirbel-build/chroot-$STAGE.sh" "$@" || status=$?

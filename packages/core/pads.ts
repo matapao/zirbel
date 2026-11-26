@@ -3,7 +3,8 @@
 // screen's own device gamepads are the page's, and it says which places they hold). The host never reads input: it
 // checks a pad frame's shape (sdk/pads.ts), writes the controller's place into it and passes it to the screen, and it
 // only looks at a frame's buttons for one going down, which may take a controller to a screen or a place. A screen is
-// kept 15 s after its socket drops, so a page that navigates resumes it, and a phone's place 60 s.
+// kept 15 s after its socket drops, so a page that navigates resumes it, and a phone's place 60 s, and a box gamepad's
+// too, by its uid, when it goes and comes back (a Bluetooth gamepad that reconnects, the service restarting).
 // packages/server/pads-socket.ts carries this over WebSocket at /pads and the box's local socket; the Go host runs the
 // same (host/pads.go), and test/pads.contract.test.ts holds the two alike.
 import { randomBytes, timingSafeEqual } from 'node:crypto';
@@ -35,7 +36,8 @@ export type PadsLink = { text(message: object): void; binary(frame: Uint8Array):
 
 type Rate = { window: number; count: number };
 type Label = { name: string; color: string };
-type Device = { kind: 'box'; readonly id: number; name: string; standard: boolean; on?: Screen; place: number; pressed: number; rate: Rate };
+type Device = { kind: 'box'; readonly id: number; name: string; standard: boolean; uid?: string; on?: Screen; place: number;
+  pressed: number; rate: Rate };
 export type Phone = { kind: 'phone'; readonly link: PadsLink; readonly on: Screen; readonly resume: string; place: number; pressed: number;
   rate: Rate; gone: boolean };
 type Controller = Phone | Device;
@@ -65,6 +67,10 @@ export class Pads {
   private readonly tries: CodeTries;
   /** The controller service's last view of the box's controllers and Bluetooth, while it is connected. */
   controllers?: Record<string, unknown>;
+  /** Called with each view the service sends (Box settings' controllers wait on it). */
+  viewed?: () => void;
+  /** Where box gamepads that went were, by their uid: one back within a minute takes its place again. */
+  private readonly away = new Map<string, { screen: Screen; place: number; at: number }>();
 
   constructor(private readonly now = Date.now) { this.tries = new CodeTries(now); }
 
@@ -233,21 +239,27 @@ export class Pads {
   /** A control message from the service: a gamepad appeared or went, or its view of the controllers. */
   serviceMessage(link: PadsLink, message: PadsServiceMessage) {
     if (link !== this.service) return;
-    if (message.type === 'controllers') { this.controllers = message; return; }
+    if (message.type === 'controllers') { this.controllers = message; this.viewed?.(); return; }
     const known = this.devices.get(message.device);
     if (message.type === 'gone') {
-      if (known) this.leave(known);
+      if (known) this.leave(known, true);
       this.devices.delete(message.device);
     } else if (known) {
-      Object.assign(known, { name: message.name, standard: message.standard });
+      Object.assign(known, { name: message.name, standard: message.standard, uid: message.uid });
       if (known.on) this.list(known.on);
     } else {
-      const device: Device = { kind: 'box', id: message.device, name: message.name, standard: message.standard, place: 0, pressed: 0,
-        rate: { window: 0, count: 0 } };
+      const device: Device = { kind: 'box', id: message.device, name: message.name, standard: message.standard, uid: message.uid,
+        place: 0, pressed: 0, rate: { window: 0, count: 0 } };
       this.devices.set(device.id, device);
-      // The box's own screen takes each gamepad that appears.
-      const target = this.newestBox();
-      if (target) this.seat(device, target, free(target));
+      // One that went a moment ago takes its place again, where it is still free; else the box's own screen takes it.
+      const back = message.uid === undefined ? undefined : this.away.get(message.uid);
+      if (message.uid !== undefined) this.away.delete(message.uid);
+      if (back && this.now() - back.at < PAD_RESUME && this.screens.get(back.screen.id) === back.screen && open(back.screen, back.place))
+        this.seat(device, back.screen, back.place);
+      else {
+        const target = this.newestBox();
+        if (target) this.seat(device, target, free(target));
+      }
     }
   }
 
@@ -280,8 +292,17 @@ export class Pads {
     if (link !== this.service) return;
     this.service = undefined;
     this.controllers = undefined;
-    for (const device of this.devices.values()) this.leave(device);
+    for (const device of this.devices.values()) this.leave(device, true);
     this.devices.clear();
+  }
+
+  /** Whether the box's controller service is connected. */
+  get connected() { return this.service !== undefined; }
+
+  /** The screen a box gamepad is on now, by its number: its code, whether it is the box's own, and its place there. */
+  screenOf(id: number) {
+    const device = this.devices.get(id);
+    return device?.on ? { code: device.on.code, box: device.on.box, place: device.place } : undefined;
   }
 
   /** Sends the service a control message: false while none is connected. */
@@ -297,6 +318,7 @@ export class Pads {
       if (!screen.link && at - screen.lost >= RESUME) this.end(screen);
       for (const [token, kept] of screen.kept) if (at - kept.at >= PAD_RESUME) screen.kept.delete(token);
     }
+    for (const [uid, away] of this.away) if (at - away.at >= PAD_RESUME || !this.screens.has(away.screen.id)) this.away.delete(uid);
     this.claims = this.claims.filter((claim) => at - claim.at < CLAIM);
   }
 
@@ -333,10 +355,14 @@ export class Pads {
     this.seat(held, screen, claim.place);
   }
 
-  /** A gamepad leaves its screen. */
-  private leave(device: Device) {
+  /** A gamepad leaves its screen; one that goes (away) is remembered there by its uid for a while. */
+  private leave(device: Device, away = false) {
     const screen = device.on;
     if (!screen) return;
+    if (away && device.uid !== undefined) {
+      if (this.away.size >= KEPT) this.away.delete(this.away.keys().next().value!);
+      this.away.set(device.uid, { screen, place: device.place, at: this.now() });
+    }
     device.on = undefined;
     screen.slots[device.place] = undefined;
     this.list(screen);
