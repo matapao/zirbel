@@ -180,6 +180,25 @@ export const lobbyOffer = z.strictObject({ release: id, offered: z.boolean() });
 export const lobbyFile = z.strictObject({ version: z.literal(1), offered: z.array(id).max(256) })
   .refine((file) => new Set(file.offered).size === file.offered.length, 'A release is offered once.');
 
+// The pads socket (packages/core/pads.ts): what a screen sends the host on /pads, each at most 1 KB, and what the box's
+// controller service sends it on the local socket, each at most 4 KB. Pad state itself is binary (sdk/pads.ts).
+const padSlot = z.number().int().min(0).max(7);
+const padDevice = z.number().int().min(0).max(15);
+export const padsScreenMessage = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('claim') }),
+  z.strictObject({ type: z.literal('release'), slot: padSlot }),
+  z.strictObject({ type: z.literal('rumble'), slot: padSlot, duration: z.number().min(0).max(5000),
+    strong: z.number().min(0).max(1), weak: z.number().min(0).max(1) }),
+  // Show on TV: a player page of this listener, as a path, for the box's own screen to open.
+  z.strictObject({ type: z.literal('show'), link: z.string().max(256).regex(/^\/join\/[a-z0-9]{1,64}(?:#[A-Za-z0-9_=-]{1,128})?$/) }),
+]);
+export const padsServiceMessage = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('device'), device: padDevice, name: z.string().min(1).max(128), standard: z.boolean() }),
+  z.strictObject({ type: z.literal('gone'), device: padDevice }),
+  // The service's view of the box's controllers and Bluetooth, which Box settings shows.
+  z.looseObject({ type: z.literal('controllers') }),
+]);
+
 export type SceneObject = z.infer<typeof sceneObject>;
 export type Scene = z.infer<typeof scene>;
 export function legacyScene(value: { scene?: Scene }) {
@@ -206,3 +225,5 @@ export type Release = z.infer<typeof portableRelease>;
 export type ClientMessage = z.infer<typeof ClientMessage>;
 export type ServerMessage = z.infer<typeof ServerMessage>;
 export type SeatInfo = z.infer<typeof seatInfo>;
+export type PadsScreenMessage = z.infer<typeof padsScreenMessage>;
+export type PadsServiceMessage = z.infer<typeof padsServiceMessage>;
