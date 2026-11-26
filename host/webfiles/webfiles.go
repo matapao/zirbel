@@ -189,12 +189,20 @@ var Lobby = sync.OnceValue(func() map[string]*File {
 // Net is zirbel-net.js, the client a game with its own netcode imports to
 // reach the relay, or nil when the build has none. The host provides it to
 // every game like game-sdk.js, but it is not part of a release's runtime.
-var Net = sync.OnceValue(func() *File {
-	data, err := fs.ReadFile(embedded, "web/zirbel-net.js")
+var Net = sync.OnceValue(func() *File { return hostFile("zirbel-net.js") })
+
+// Skill is the skill that teaches an agent to make a game multiplayer with
+// zirbel-net (skills/zirbel-multiplayer), served as /zirbel-net/SKILL.md, or
+// nil when the build has none.
+var Skill = sync.OnceValue(func() *File { return hostFile("zirbel-net/SKILL.md") })
+
+// hostFile is one of the host's own files, or nil when the build has none.
+func hostFile(name string) *File {
+	data, err := fs.ReadFile(embedded, "web/"+name)
 	if err != nil {
 		return nil
 	}
 	file := newFile(data)
-	compress("zirbel-net.js", file)
+	compress(name, file)
 	return file
-})
+}

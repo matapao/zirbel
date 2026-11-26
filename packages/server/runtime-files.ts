@@ -76,16 +76,21 @@ export function threeAddons(webRoot: string): Addons {
   };
 }
 
-// zirbel-net's client (packages/net), bundled by the build. Games with their own netcode import it from /zirbel-net.js
-// on whichever listener serves them; it is the host's, not a release's.
-export function netClient(webRoot: string): RuntimeEntry {
-  let body;
-  try {
-    body = readFileSync(join(webRoot, 'zirbel-net.js'));
-  } catch {
-    throw new Error('The player runtime is missing zirbel-net.js; run `pnpm build`.');
-  }
-  return runtimeEntry('zirbel-net.js', body);
+// zirbel-net's files, the host's and not a release's: its client (packages/net), bundled by the build, which games with
+// their own netcode import from /zirbel-net.js on whichever listener serves them; and the skill that teaches agents to
+// make a game multiplayer with it (skills/zirbel-multiplayer), which agents fetch from /zirbel-net/SKILL.md.
+export type NetFiles = { client: RuntimeEntry; skill: RuntimeEntry };
+export function netFiles(webRoot: string): NetFiles {
+  const entry = (name: string) => {
+    let body;
+    try {
+      body = readFileSync(join(webRoot, name));
+    } catch {
+      throw new Error('The player runtime is missing ' + name + '; run `pnpm build`.');
+    }
+    return runtimeEntry(name, body);
+  };
+  return { client: entry('zirbel-net.js'), skill: entry('zirbel-net/SKILL.md') };
 }
 
 /** The lobby's page and the files it loads (public/lobby.html, packages/web/lobby.ts), served on every player listener

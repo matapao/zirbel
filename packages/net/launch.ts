@@ -10,9 +10,13 @@ export function defaultUrl(path: string): string {
   return 'ws://127.0.0.1:7777' + path;
 }
 
-/** This page's own folder on the host, /<game>/@1.0.0/, from its path; else /<game>/. */
+/**
+ * This page's own folder on the host, from its path: /<game>/@1.0.0/ on the earlier Zirbel's hub, and on Zirbel
+ * /game/@<room>/<key>/, where the room's key is part of the folder; else /<game>/.
+ */
 export function pageBase(game: string): string {
-  const m = /^\/[\w.-]+\/@[^/]+\//.exec(env.location?.pathname ?? '');
+  const path = env.location?.pathname ?? '';
+  const m = /^\/game\/@[0-9a-f]{12}\/[\w-]{32}\//.exec(path) ?? /^\/[\w.-]+\/@[^/]+\//.exec(path);
   return m ? m[0] : '/' + game + '/';
 }
 

@@ -155,6 +155,20 @@ func TestANetGameMayLoadZirbelNetAndReachTheRelay(t *testing.T) {
 	}
 }
 
+// A net game's document is at /game/@<room>/<key>/, in the shape zirbel-net
+// gives a game's folder on its host (/<game>/@<version>/); every other game's
+// stays at /game/<room>/<key>/. The key is the fourth part of both.
+func TestANetGameIsAtTheAddressZirbelNetGivesAGame(t *testing.T) {
+	net := newRoom(netRelease(t, 3), false, "local", false)
+	plain := newRoom(&Release{Game: &Game{HTML: "<canvas></canvas>", MaxPlayers: 2}}, false, "local", false)
+	if got := gamePath(net); got != "/game/@"+net.ID+"/"+net.DocumentKey+"/" || strings.Split(got, "/")[3] != net.DocumentKey {
+		t.Errorf("net game: %s", got)
+	}
+	if got := gamePath(plain); got != "/game/"+plain.ID+"/"+plain.DocumentKey+"/" {
+		t.Errorf("other game: %s", got)
+	}
+}
+
 // /zirbel-net.js on every player listener: the bundle, as game-sdk.js is
 // served, and open to the game's opaque origin.
 func TestZirbelNetIsServedToGames(t *testing.T) {

@@ -6,12 +6,12 @@ import { readFileSync } from 'node:fs';
 import { test, type TestContext } from 'node:test';
 import WebSocket from 'ws';
 import { MAX_FRAME } from '../packages/core/relay.ts';
-import { Rooms } from '../packages/core/rooms.ts';
+import { Rooms, type Room } from '../packages/core/rooms.ts';
 import { connect, launchParams, ALL, HOST, type Connection } from '../packages/net/index.ts';
 import { Players } from '../packages/server/hosting.ts';
 import { gamePath } from '../packages/server/player-listener.ts';
 import { relayOrigin } from '../packages/server/relay-socket.ts';
-import { install, netGame, rights, sandboxPolicy } from './helpers.ts';
+import { install, NET_RULES, netGame, rights, sandboxPolicy } from './helpers.ts';
 
 async function netPlayer(t: TestContext) {
   const { projects, releases } = install(t);
@@ -25,8 +25,8 @@ async function netPlayer(t: TestContext) {
 }
 
 /** zirbel-net's client in a game page at this room's address, until it is seated. */
-function player(base: string, room: { id: string; documentKey: string }) {
-  const params = launchParams({ pathname: '/game/' + room.id + '/' + room.documentKey + '/', search: '?room=' + room.id + '&key=' + room.documentKey });
+function player(base: string, room: Room) {
+  const params = launchParams({ pathname: gamePath(room), search: '?room=' + room.id + '&key=' + room.documentKey });
   const net = connect({ ...params, url: base.replace('http', 'ws') + '/mp', storage: null, reconnect: false });
   const events: unknown[][] = [];
   for (const name of ['peer', 'leave', 'away', 'back', 'host', 'close'] as const)
@@ -110,6 +110,20 @@ test('the relay socket takes games\' opaque origin and its own, and nothing over
   const page = await fetch(base + gamePath(room));
   assert.equal(page.headers.get('content-security-policy'),
     sandboxPolicy(base + '/runtime/' + room.id + '/', base + gamePath(room), "'self'", base));
+});
+
+test('a net game reads its data files with data(), beside its page, whose folder holds the room\'s key', async (t) => {
+  const { player: base, room } = await netPlayer(t);
+  // The client finds the page's folder in its address. A page with no host of its own reads from the relay's.
+  Object.defineProperty(globalThis, 'location', { value: { protocol: 'http:', host: '', pathname: gamePath(room) + 'index.html', search: '' },
+    configurable: true });
+  t.after(() => { delete (globalThis as { location?: unknown }).location; });
+  const { net, opened } = player(base, room);
+  t.after(() => net.close());
+  await opened;
+  assert.equal(launchParams().rev, '');
+  assert.deepEqual(await net.data('rules.json'), NET_RULES);
+  await assert.rejects(net.data('missing.json'), { message: 'zirbel-net: no ' + gamePath(room) + 'data/missing.json on this host' });
 });
 
 test('every player listener serves zirbel-net\'s client to games, cached like the runtime', async (t) => {

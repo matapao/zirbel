@@ -38,6 +38,9 @@ await rm('dist', { recursive: true, force: true });
 await mkdir('dist/web', { recursive: true });
 await cp('public', 'dist/web', { recursive: true });
 await Promise.all([
+  // The skill that teaches agents to make a game multiplayer with zirbel-net: every player listener serves it as
+  // /zirbel-net/SKILL.md, beside the client.
+  cp('skills/zirbel-multiplayer/SKILL.md', 'dist/web/zirbel-net/SKILL.md'),
   cp('node_modules/three/LICENSE', 'dist/web/three-license.txt'),
   cp('node_modules/zod/LICENSE', 'dist/web/zod-license.txt'),
   threePackage('node_modules/three', 'dist/web/three'),

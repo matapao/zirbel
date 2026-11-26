@@ -2,7 +2,9 @@
 
 zirbel-net, the earlier Zirbel's multiplayer client (MIT, see LICENSE). A Zirbel game that brings its own netcode uses it to talk to the other players through the host's relay. Up to 16 players can play. Zirbel treats a game as one of these when its document says `net: true`, or when a built folder you import has a `zirbel.json` whose `players.max` is above 1. Such a game releases with `simulation: 'net-v2'`.
 
-Every player listener serves the client as `/zirbel-net.js`, an ES module. The relay is a WebSocket at `/mp` on the same listener. The game page's policy allows exactly these two addresses, and only for net-v2 games.
+Every player listener serves the client as `/zirbel-net.js`, an ES module. The relay is a WebSocket at `/mp` on the same listener. The game page's policy allows exactly these two addresses, and only for net-v2 games. The page itself is at `/game/@<room>/<key>/`, in the shape zirbel-net gives a game's folder on its host (`/<game>/@<version>/`), with the game's files beside it; `net.data('rules.json')` reads its `data/rules.json`.
+
+To make a game multiplayer with a small adapter beside it, and leave the game itself free of network code, follow the skill `skills/zirbel-multiplayer/SKILL.md`. Every player listener serves it to agents as `/zirbel-net/SKILL.md`.
 
 ## Connecting
 

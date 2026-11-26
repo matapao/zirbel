@@ -5,7 +5,7 @@ export const THREE_ADDONS = 'three/addons/';
 
 // This response is navigable directly as well as embedded, so its HTTP sandbox
 // must enforce the same opaque origin as the player's iframe attribute.
-// base is the document's own address (/game/<room>/<key>/): a game imported as a built folder
+// base is the document's own address (/game/<room>/<key>/, a net game's /game/@<room>/<key>/): a game imported as a built folder
 // loads its files from beside it, and only those. Every game gets the same policy: WebAssembly,
 // workers and loaders reading data: and blob: URLs, and no other origin anywhere. A game with its own netcode
 // (net-v2) also imports zirbel-net's client from its host and opens the host's relay socket, /mp.

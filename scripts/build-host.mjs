@@ -15,6 +15,8 @@ writeFileSync(web + '/.gitkeep', '');
 for (const file of runtime) cpSync('dist/web/' + file, web + '/' + file);
 // zirbel-net's client, which every player listener serves as /zirbel-net.js: the host's own, not a release's runtime.
 cpSync('dist/web/zirbel-net.js', web + '/zirbel-net.js');
+// And the skill that teaches agents to make a game multiplayer with it, served as /zirbel-net/SKILL.md.
+cpSync('dist/web/zirbel-net/SKILL.md', web + '/zirbel-net/SKILL.md');
 // The lobby's page and files, which every player listener serves at / and beside it: the host's own too.
 for (const file of ['lobby.html', 'lobby.js', 'lobby.css']) cpSync('dist/web/' + file, web + '/' + file);
 for (const file of readdirSync('dist/web/chunks')) cpSync('dist/web/chunks/' + file, web + '/chunks/' + file);

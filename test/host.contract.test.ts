@@ -13,7 +13,7 @@ import { Projects } from '../packages/core/projects.ts';
 import { Releases } from '../packages/core/releases.ts';
 import type { Release } from '../packages/sdk/contracts.ts';
 import { Reader, Writer } from '../packages/net/codec.ts';
-import { about, errorOf, frameOf, hello, hostsUnderTest, importMap, launch, legacyProject, netGame, relaySocket as relay, rights, sandboxPolicy,
+import { about, errorOf, frameOf, hello, hostsUnderTest, importMap, launch, legacyProject, NET_RULES, netGame, relaySocket as relay, rights, sandboxPolicy,
   statusForHost, stopHost, tempDir, welcomeOf } from './helpers.ts';
 
 const hosts = hostsUnderTest();
@@ -215,6 +215,8 @@ for (const host of hosts) {
     }
     for (const path of ['assets/missing.js', 'index.html', '__proto__'])
       assert.equal((await fetch(player + info.gameUrl + path)).status, 404, path);
+    // Only a game with its own netcode is at /game/@<room>/<key>/.
+    assert.equal((await fetch(player + info.gameUrl.replace('/game/', '/game/@'))).status, 404);
   });
 
   test(host.name + ' host reserves seats and admits only invited players', async (t) => {
@@ -398,6 +400,13 @@ for (const host of hosts) {
       .json() as { gameUrl: string; manifest: { simulation: string; players: { max: number } } };
     assert.deepEqual([info.manifest.simulation, info.manifest.players.max], ['net-v2', 3]);
     const key = info.gameUrl.split('/')[3]!;
+    // Its address has the shape zirbel-net gives a game's folder on its host, /<game>/@<version>/: such games look for
+    // it before they turn their netcode on. Its files are beside it, and it is at no other address.
+    assert.equal(info.gameUrl, '/game/@' + roomId + '/' + key + '/');
+    const rules = await fetch(player + info.gameUrl + 'data/rules.json');
+    assert.deepEqual([rules.status, rules.headers.get('access-control-allow-origin'), await rules.json()], [200, '*', NET_RULES]);
+    for (const path of ['/game/' + roomId + '/' + key + '/', '/game/@' + roomId + '/wrong-key/', '/join/@' + roomId])
+      assert.equal((await fetch(player + path)).status, 404, path);
 
     const bytes = readFileSync('dist/web/zirbel-net.js');
     const etag = '"' + createHash('sha256').update(bytes).digest('base64url') + '"';

@@ -142,11 +142,14 @@ export function statusForHost(url: string, host: string) {
   });
 }
 
-// A built game folder whose zirbel.json is for this many players: it imports as a net game.
+// A built game folder whose zirbel.json is for this many players: it imports as a net game. Its data/rules.json is
+// what zirbel-net's data('rules.json') reads.
+export const NET_RULES = { kills: 25 };
 export function netGame(projects: Projects, players: number, title = 'Relay') {
   const base64 = (text: string) => Buffer.from(text).toString('base64');
   return importGameFolder(projects, { title, files: {
-    'index.html': base64('<!doctype html><canvas></canvas>'), 'zirbel.json': base64(JSON.stringify({ players: { max: players } })) } });
+    'index.html': base64('<!doctype html><canvas></canvas>'), 'zirbel.json': base64(JSON.stringify({ players: { max: players } })),
+    'data/rules.json': base64(JSON.stringify(NET_RULES)) } });
 }
 
 // zirbel-net protocol v2 on the wire (packages/net/protocol.ts), for the relay tests.

@@ -8,7 +8,7 @@ import type { Room, Rooms } from '../core/rooms.ts';
 import { lanAddresses, roomLink } from './http.ts';
 import type { LobbyContext } from './lobby-routes.ts';
 import { playerListener, type PlayerReach } from './player-listener.ts';
-import { lobbyFiles, netClient, threeAddons, type Addons, type RuntimeEntry } from './runtime-files.ts';
+import { lobbyFiles, netFiles, threeAddons, type Addons, type NetFiles } from './runtime-files.ts';
 
 // Shared by the editor and the headless host. Keep editor-only code (harnesses,
 // MCP) out of this file so `--host-only` loads only what players need.
@@ -82,14 +82,14 @@ export class Players {
 
   // Read from the build beside the release runtime, and shared by both listeners.
   private readonly addons: Addons;
-  private readonly client: RuntimeEntry;
+  private readonly net: NetFiles;
   private readonly lobbyContext: LobbyContext;
 
   // qr renders a LAN link for the editor; the headless host prints links only.
   constructor(readonly rooms: Rooms, private releases: Releases,
     private options: { playerPort: number; lanHost?: string; qr?: (link: string) => Promise<string>; box?: BoxPlayers }) {
     this.addons = threeAddons(releases.webRoot);
-    this.client = netClient(releases.webRoot);
+    this.net = netFiles(releases.webRoot);
     this.lobby = new Lobby(rooms, releases);
     this.lobbyContext = { lobby: this.lobby, files: lobbyFiles(releases.webRoot), pair: options.box?.pair };
   }
@@ -102,7 +102,7 @@ export class Players {
   /** The player for the editor's own playtests: on loopback, or on a box (reach) on every interface, for the box's
    *  network, embedded by the editor on the host name the device reached it by. */
   async openLocal(port: number, editorOrigins: string[] | ((host: string) => string[]) = [], reach?: PlayerReach) {
-    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons, this.client,
+    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons, this.net,
       { bind, lan: false, port, editorOrigins, reach, lobby: this.lobbyContext });
     this.local = await (reach ? everyInterface(open) : open('127.0.0.1'));
     return this.local;
@@ -112,7 +112,7 @@ export class Players {
   startLan() {
     if (this.lan) return Promise.resolve(this.lan);
     const { playerPort, lanHost, box } = this.options;
-    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons, this.client, { bind, lan: true,
+    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons, this.net, { bind, lan: true,
       port: playerPort, extraHosts: lanHost ? [lanHost] : [], reach: box?.reach, lobby: this.lobbyContext });
     this.startingLan ??= (box ? everyInterface(open) : open('0.0.0.0')).then((active) => (this.lan = active))
       .finally(() => { this.startingLan = undefined; });

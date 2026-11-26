@@ -3,6 +3,7 @@
 // joins one by its code. Every check runs against each host, with the same answers.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -100,6 +101,21 @@ for (const host of hosts) {
       assert.equal((await fetch(player + path)).status, 404, path);
     assert.deepEqual(error(await call(player, 'GET', '/lobby/sessions')), [404, 'Lobby route does not exist.']);
     assert.deepEqual(error(await call(player, 'POST', '/lobby/state', {})), [404, 'Lobby route does not exist.']);
+  });
+
+  test(host.name + ' host serves agents the skill that makes a game multiplayer, beside zirbel-net\'s client', async (t) => {
+    const data = fixtures(t);
+    const { player } = await startEditor(t, host.command, data.data, []);
+    const skill = await fetch(player + '/zirbel-net/SKILL.md');
+    const bytes = readFileSync('skills/zirbel-multiplayer/SKILL.md');
+    const etag = '"' + createHash('sha256').update(bytes).digest('base64url') + '"';
+    assert.deepEqual([skill.status, ...['content-type', 'cache-control', 'etag', 'x-content-type-options', 'access-control-allow-origin']
+      .map((name) => skill.headers.get(name))], [200, 'text/markdown; charset=utf-8', 'no-cache', etag, 'nosniff', null]);
+    assert.deepEqual(Buffer.from(await skill.arrayBuffer()), bytes);
+    assert.match(bytes.toString('utf8'), /^---\nname: zirbel-multiplayer\ndescription: .+\n---\n/);
+    assert.equal((await fetch(player + '/zirbel-net/SKILL.md', { headers: { 'if-none-match': etag } })).status, 304);
+    for (const [method, path] of [['POST', '/zirbel-net/SKILL.md'], ['GET', '/zirbel-net/'], ['GET', '/zirbel-net/skill.md']])
+      assert.equal((await fetch(player + path, { method })).status, 404, method + ' ' + path);
   });
 
   test(host.name + ' host gives the owner the lobby’s address for other devices while it shares on the network', async (t) => {

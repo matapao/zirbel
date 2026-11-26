@@ -27,8 +27,17 @@ type gamePageEntry struct {
 	gzip   []byte
 }
 
-// gamePath is the game document's own address; a built game's files sit beside it.
-func gamePath(room *Room) string { return "/game/" + room.ID + "/" + room.DocumentKey + "/" }
+// gamePath mirrors gamePath in packages/server/player-listener.ts: the game
+// document's own address, a built game's files beside it. A game with its own
+// netcode is at /game/@<room>/<key>/, in the shape zirbel-net gives a game's
+// folder on its host, /<game>/@<version>/, which such games look for before
+// they turn their netcode on.
+func gamePath(room *Room) string {
+	if isNet(room.Release.Manifest.Simulation) {
+		return "/game/@" + room.ID + "/" + room.DocumentKey + "/"
+	}
+	return "/game/" + room.ID + "/" + room.DocumentKey + "/"
+}
 
 // threeAddons mirrors THREE_ADDONS in game-page.ts: three.js's addons, served
 // from the host's own build beside three.module.js (webfiles.Addon).

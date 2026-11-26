@@ -72,6 +72,7 @@ type Listener struct {
 	rooms      *Rooms
 	runtime    map[string]*webfiles.File
 	net        *webfiles.File // zirbel-net.js, if the build has it
+	skill      *webfiles.File // zirbel-net/SKILL.md, if the build has it
 	lobbyFiles map[string]*webfiles.File
 	config     listenerConfig
 	port       int
@@ -152,6 +153,12 @@ func (l *Listener) serve(w http.ResponseWriter, r *http.Request) error {
 		sendFile(w, r, "text/javascript; charset=utf-8", "no-cache", l.net)
 		return nil
 	}
+	// The skill that teaches an agent to make a game multiplayer here, for
+	// agents that reach this host.
+	if r.Method == http.MethodGet && pathname == "/zirbel-net/SKILL.md" && l.skill != nil {
+		sendFile(w, r, "text/markdown; charset=utf-8", "no-cache", l.skill)
+		return nil
+	}
 	if l.config.lobby != nil {
 		if handled, err := l.serveLobby(w, r, pathname); handled {
 			return err
@@ -164,6 +171,11 @@ func (l *Listener) serve(w http.ResponseWriter, r *http.Request) error {
 	}
 	if len(segments) > 2 {
 		roomID, parts = segments[2], segments[3:]
+	}
+	// /game/@<room>/<key>/ is a net game's address (gamePath), and only a net game's.
+	netAddress := false
+	if route == "game" {
+		roomID, netAddress = strings.CutPrefix(roomID, "@")
 	}
 	if roomID == "" {
 		return fail(http.StatusNotFound, "Open the invitation link from the host.")
@@ -182,7 +194,8 @@ func (l *Listener) serve(w http.ResponseWriter, r *http.Request) error {
 		" connect-src 'self' ws://"+r.Host+"; frame-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors "+frame)
 	get := r.Method == http.MethodGet
 	switch {
-	case route == "game" && get && len(parts) >= 1 && room.Release.Game != nil && same(parts[0], room.DocumentKey):
+	case route == "game" && get && len(parts) >= 1 && room.Release.Game != nil && same(parts[0], room.DocumentKey) &&
+		netAddress == isNet(room.Release.Manifest.Simulation):
 		return l.serveGame(w, r, room, strings.Join(parts[1:], "/"))
 	case route == "join" && get && len(parts) == 0:
 		// room.ID is a server-generated hex ID from the room table, not request input.
@@ -285,8 +298,8 @@ func Listen(ctx context.Context, rooms *Rooms, runtime map[string]*webfiles.File
 	if err != nil {
 		return nil, err
 	}
-	l := &Listener{rooms: rooms, runtime: runtime, net: webfiles.Net(), lobbyFiles: webfiles.Lobby(), config: config, port: port,
-		playerPage: string(page.Bytes)}
+	l := &Listener{rooms: rooms, runtime: runtime, net: webfiles.Net(), skill: webfiles.Skill(), lobbyFiles: webfiles.Lobby(), config: config,
+		port: port, playerPage: string(page.Bytes)}
 	l.server = &http.Server{Handler: l, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 20 * time.Second, IdleTimeout: 5 * time.Second}
 	go func() { _ = l.server.Serve(&limitListener{socket, make(chan struct{}, 256)}) }()
 	return l, nil
