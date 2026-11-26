@@ -7,7 +7,7 @@
         "packages/web/{workspace,player,game-sdk,garden-3d}.ts",
         "test/*.{ts,mjs}"
       ],
-      "ignore": ["deps/**", ".claude/**"],
+      "ignore": ["deps/**"],
       "project": [
         "packages/**/*.ts",
         "scripts/**/*.mjs",

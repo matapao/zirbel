@@ -94,3 +94,29 @@ test('game files carry their content types, the same in both hosts', () => {
   const table = go.slice(start, go.indexOf('\n}\n', start));
   assert.deepEqual(Object.fromEntries([...table.matchAll(/"(\w+)": "([^"]+)"/g)].map(([, key, value]) => [key, value])), { ...GAME_FILE_TYPES });
 });
+
+test('a built folder whose zirbel.json is for several players imports as a net game, and releases as net-v2', (t) => {
+  const { projects, releases } = install(t);
+  const described = (manifest: unknown) => ({ ...folder, 'zirbel.json': base64(JSON.stringify(manifest)) });
+  const game = (files: Record<string, string>) => head(importGameFolder(projects, { files }), 'main').game!;
+  const net = game(described({ id: 'derby', players: { min: 1, max: 24 } }));
+  assert.equal(net.maxPlayers, 16);
+  assert.equal(net.net, true);
+  assert.ok(net.files!['zirbel.json']);
+  for (const manifest of [{ players: { max: 1 } }, { players: { max: 2.5 } }, { players: { max: '8' } }, { players: null }, 7, null]) {
+    assert.deepEqual([game(described(manifest)).maxPlayers, game(described(manifest)).net], [1, undefined]);
+  }
+  assert.equal(game({ ...folder, 'zirbel.json': base64('{"players":') }).net, undefined);
+  assert.equal(game({ ...folder, 'zirbel.json': base64(JSON.stringify({ players: { max: 3 }, pad: 'x'.repeat(70_000) })) }).net, undefined);
+
+  const project = importGameFolder(projects, { title: 'Derby', files: described({ players: { max: 8 } }) });
+  const release = releases.package(project.id, 'main', rights, true);
+  assert.equal(release.manifest.simulation, 'net-v2');
+  assert.deepEqual(release.manifest.players, { min: 1, max: 8 });
+  assert.deepEqual(release.manifest.capabilities, ['multiplayer']);
+
+  // More than four players only with net: a proposal can't drop it and keep them.
+  const revision = head(project, 'main');
+  assert.throws(() => projects.submit(project.id, { baseRevision: revision.id, branch: 'main', label: 'Edit',
+    operations: [{ op: 'writeGame', game: { html: revision.game!.html, maxPlayers: 8 } }] }), /needs net/);
+});

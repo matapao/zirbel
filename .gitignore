@@ -23,3 +23,7 @@ host/webfiles/web/*
 
 # The desktop app's packed builds.
 desktop/out/
+
+# Agent worktrees and the box report copied off a card: never part of the repo.
+.claude/
+zirbel-report.txt

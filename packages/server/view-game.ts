@@ -36,7 +36,7 @@ type ViewResult = { images: Buffer[]; console: ConsoleLine[] } | { unavailable: 
 export interface Renderer { render(request: ViewRequest, signal: AbortSignal): Promise<ViewResult> }
 
 /** The game a turn works on, besides its folder: its title, its imported assets and its number of players. */
-export type TurnGame = { title: string; assets: Asset[]; maxPlayers: number };
+export type TurnGame = { title: string; assets: Asset[]; maxPlayers: number; net?: true };
 type Deps = { projects: Projects; releases: Releases; rooms: Rooms; playerPort: () => number | undefined; renderer: Renderer };
 
 /** The longest a render may take, start to end. */
@@ -58,7 +58,7 @@ export async function viewGame(raw: unknown, folder: string, game: TurnGame, dep
     bytes.set(hash, file);
   }
   for (const asset of game.assets) bytes.set(asset.hash, deps.projects.readAsset(asset.hash));
-  const release = deps.releases.draft(game.title, { html, maxPlayers: game.maxPlayers, ...(files.size ? { files: paths } : {}) },
+  const release = deps.releases.draft(game.title, { html, maxPlayers: game.maxPlayers, ...(game.net ? { net: true as const } : {}), ...(files.size ? { files: paths } : {}) },
     game.assets, bytes);
   const port = deps.playerPort();
   if (!port) return { isError: true, content: [text('The editor’s player is not running.')] };

@@ -48,11 +48,11 @@ test('an asset without delivery rights can stay local and blocks a share or expo
   assert.doesNotThrow(() => releases.package(project.id, 'main', rights, true));
 });
 
-test('all five examples export and the complex 3D quest gates each encounter and completes', async (t) => {
+test('scene projects export and the complex 3D quest gates each encounter and completes', async (t) => {
   const { createQuest } = await import('../packages/games/quest.ts');
   const { projects, releases } = install(t);
-  for (const name of ['firefly-fen', 'moon-tiles', 'skyshard-isle', 'lantern-vale', 'hollow-crown']) {
-    const file = new URL('../examples/' + name + '.zirbel-project.json', import.meta.url);
+  for (const name of ['firefly-fen', 'hollow-crown']) {
+    const file = new URL('fixtures/' + name + '.zirbel-project.json', import.meta.url);
     const project = projects.import(JSON.parse(readFileSync(file, 'utf8')));
     const imported = projects.import(projects.export(project.id));
     const release = releases.package(imported.id, 'main', rights, false, true);

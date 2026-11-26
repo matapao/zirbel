@@ -1,4 +1,4 @@
-import { editableGame, gameDocument } from './game.ts';
+import { editableGame, gameDocument, NET_PLAYERS, SHARED_PLAYERS } from './game.ts';
 import { ENTRY_LIMIT, STEP_ID_LIMIT, TITLE_LIMIT, TURN_LIMIT, TURN_STEPS, entryWeight } from './activity.ts';
 import { z } from 'zod';
 
@@ -119,15 +119,16 @@ export const distribution = z.strictObject({ play: z.boolean(), download: z.bool
 const manifest = z.strictObject({
   format: z.literal(1), releaseId: id, gameId: id, sourceRevision: id, template: template.optional(),
   title: z.string().min(1).max(80), sdk: z.literal(SDK_VERSION), protocol: z.literal(PROTOCOL_VERSION),
-  client: z.literal('player.html'), simulation: z.enum(['mosslight-v1', 'tessellate-v1', 'shared-state-v1']).nullable(),
-  players: z.strictObject({ min: z.number().int().min(1), max: z.number().int().min(1).max(4) })
+  client: z.literal('player.html'), simulation: z.enum(['mosslight-v1', 'tessellate-v1', 'shared-state-v1', 'net-v2']).nullable(),
+  players: z.strictObject({ min: z.number().int().min(1), max: z.number().int().min(1).max(NET_PLAYERS) })
     .refine((players) => players.min <= players.max),
   capabilities: z.array(z.enum(['multiplayer', 'webgl'])).max(2),
   permissions: distribution,
   assets: z.array(asset).max(80),
   credits: z.array(z.strictObject({ name: z.string(), credit: z.string(), license: z.string() })).max(90),
   files: z.record(filename, hash),
-});
+}).refine((manifest) => manifest.players.max <= SHARED_PLAYERS || manifest.simulation === 'net-v2',
+  { message: 'A release for more than 4 players needs net.', path: ['players', 'max'] });
 export const portableRelease = z.strictObject({
   manifest, scene: scene.optional(), game: gameDocument.optional(), sceneHash: hash,
   files: z.record(filename, z.string()),

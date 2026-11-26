@@ -31,16 +31,26 @@ const gameFiles = z.record(gameFilePath, z.string().regex(/^[a-f0-9]{64}$/)).ref
   'Provide up to 1000 files besides index.html.',
 );
 
-// The document owns the game's rendering, input, objects and rules.
-export const gameDocument = z.strictObject({
+// The most players a game sharing state can have, and a game with its own netcode.
+export const SHARED_PLAYERS = 4;
+export const NET_PLAYERS = 16;
+
+// The document owns the game's rendering, input, objects and rules. A game with net brings its own
+// netcode over the host's relay (/zirbel-net.js, protocol v2): up to 16 players. Without it, players
+// share state through window.zirbel: up to 4.
+const gameFields = z.strictObject({
   html: z.string().trim().min(1).max(400_000),
-  maxPlayers: z.number().int().min(1).max(4).default(1),
+  maxPlayers: z.number().int().min(1).max(NET_PLAYERS).default(1),
+  net: z.literal(true).optional(),
   registerObjects: z.boolean().optional(),
   files: gameFiles.optional(),
 });
+const withinPlayers = (game: { maxPlayers: number; net?: true }) => game.maxPlayers <= SHARED_PLAYERS || game.net === true;
+const playersError = { message: 'A game for more than 4 players needs net.', path: ['maxPlayers'] };
+export const gameDocument = gameFields.refine(withinPlayers, playersError);
 export type GameDocument = z.infer<typeof gameDocument>;
 // What a proposal or a harness writes: files only arrive with their bytes, from an import.
-export const editableGame = gameDocument.omit({ files: true });
+export const editableGame = gameFields.omit({ files: true }).refine(withinPlayers, playersError);
 
 const registeredObject = z.strictObject({
   id: z.string().min(1).max(120),

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 const LIMIT = 500;
-const exempt = [/^contracts\/.*\.schema\.json$/, /^contracts\/mcp-/, /^examples\//, /(^|\/)pnpm-lock\.yaml$/, /^go\.sum$/];
+const exempt = [/^contracts\/.*\.schema\.json$/, /^contracts\/mcp-/, /^test\/fixtures\//, /(^|\/)pnpm-lock\.yaml$/, /^go\.sum$/];
 const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8' })
   .split('\n').filter((file) => file && !exempt.some((pattern) => pattern.test(file)));
 const long = files.flatMap((file) => {

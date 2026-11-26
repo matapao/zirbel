@@ -6,8 +6,8 @@ import { templates } from '../games/templates.ts';
 import { atomicWrite, deliveryAssets, digest, gameFileBytes, gameFileHashes, head, newId, readData, safeId, verifyAssetBytes, ZirbelError, type Projects } from './projects.ts';
 
 function runtimeSettings(template: Manifest['template'], game?: Revision['game']) {
-  if (game) return { simulation: game.maxPlayers > 1 ? 'shared-state-v1' as const : null,
-    max: game.maxPlayers, capabilities: game.maxPlayers > 1 ? ['multiplayer' as const] : [] };
+  if (game) return { simulation: game.net ? 'net-v2' as const : game.maxPlayers > 1 ? 'shared-state-v1' as const : null,
+    max: game.maxPlayers, capabilities: game.net || game.maxPlayers > 1 ? ['multiplayer' as const] : [] };
   if (template) return templates[template];
   throw new ZirbelError(422, 'This project has no game source yet.');
 }

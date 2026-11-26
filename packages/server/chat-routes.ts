@@ -27,7 +27,7 @@ export type ChatContext = {
  *  its view_game server for that folder. */
 function toolsFor({ tools, links, projects, views }: ChatContext, title: string, game: GameDocument | undefined, assets: Asset[]): TurnTools {
   return { ...tools, prepare: (folder) => prepareFolder(folder, game, (hash) => projects.readAsset(hash), links),
-    ...(views ? { server: (folder: string) => views.open(folder, { title, assets, maxPlayers: game?.maxPlayers ?? 1 }) } : {}) };
+    ...(views ? { server: (folder: string) => views.open(folder, { title, assets, maxPlayers: game?.maxPlayers ?? 1, ...(game?.net ? { net: true as const } : {}) }) } : {}) };
 }
 
 const text = z.string().trim().min(1).max(3000);

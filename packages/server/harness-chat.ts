@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { workspaceHistory, type Project, type Reference, type Revision } from '../sdk/contracts.ts';
 import { chatControl } from '../sdk/chat-control.ts';
-import { gameDocument, type GameDocument, type RegisteredObject } from '../sdk/game.ts';
+import { SHARED_PLAYERS, type GameDocument, type RegisteredObject } from '../sdk/game.ts';
 import { head, ZirbelError, type Projects } from '../core/projects.ts';
 import { applyChatControl, finishChatEdit, startFromChat, type ChatReply } from '../core/chat.ts';
 import type { ProcessorRun, Processors } from './processors.ts';
@@ -9,7 +9,8 @@ import { readGameFolder } from './turn-folder.ts';
 
 // The harness's final message: a short JSON object, never the game itself, which is the folder's game/.
 const message = z.string().trim().min(1).max(3000);
-const maxPlayers = gameDocument.shape.maxPlayers.unwrap().optional();
+// A harness sets players for a game sharing state; a game's net, from an import, stays as it was.
+const maxPlayers = z.number().int().min(1).max(SHARED_PLAYERS).optional();
 const plan = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('reply'), message }),
   z.strictObject({ action: z.literal('create'), message, title: z.string().trim().min(1).max(80), maxPlayers }),
@@ -38,7 +39,8 @@ function folderGame(projects: Projects, folder: string | undefined, output: Excl
   const { html, files } = readGameFolder(folder);
   const stored: Record<string, string> = {};
   for (const [path, bytes] of files) stored[path] = projects.storeAsset(bytes);
-  return { html, maxPlayers: output.maxPlayers ?? (output.action === 'edit' ? current?.maxPlayers : undefined) ?? 1,
+  const kept = output.action === 'edit' ? current : undefined;
+  return { html, maxPlayers: output.maxPlayers ?? kept?.maxPlayers ?? 1, ...(kept?.net ? { net: true as const } : {}),
     ...(registerObjects ? {} : { registerObjects: false }), ...(files.size ? { files: stored } : {}) };
 }
 

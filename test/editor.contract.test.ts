@@ -121,7 +121,7 @@ async function session(editor: string) {
   await record(post('/api/projects/' + id + '/apply/' + asset.proposal.id));
 
   // A built-in scene project: every scene operation.
-  const bundle = JSON.parse(readFileSync('examples/firefly-fen.zirbel-project.json', 'utf8')) as unknown;
+  const bundle = JSON.parse(readFileSync('test/fixtures/firefly-fen.zirbel-project.json', 'utf8')) as unknown;
   const legacy = body<{ id: string; branches: { main: string }; revisions: { scene?: { id: string } }[] }>(
     await record(post('/api/projects/import', bundle)));
   const sceneOps = body<{ proposal: { id: string } }>(await record(post('/api/projects/' + legacy.id + '/proposals', {
