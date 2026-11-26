@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -64,7 +65,7 @@ func (f *fakeControllerService) emit(message string) {
 
 func controllerCall(t *testing.T, box *Box, method, action, body string) (int, map[string]any, error) {
 	t.Helper()
-	r := httptest.NewRequest(method, "/api/box/controllers/"+action, strings.NewReader(body))
+	r := httptest.NewRequestWithContext(t.Context(), method, "/api/box/controllers/"+action, strings.NewReader(body))
 	r.Header.Set("content-type", "application/json")
 	w := httptest.NewRecorder()
 	handled, err := box.serveControllers(w, r, action)
@@ -160,7 +161,8 @@ func TestWithoutTheControllersServiceTheRoutesAnswer503(t *testing.T) {
 		for _, route := range [][3]string{{http.MethodGet, "", ""}, {http.MethodPost, "scan", `{"on":true}`},
 			{http.MethodPost, "pair", `{"address":"77:88:99:AA:BB:CC"}`}} {
 			_, _, err := controllerCall(t, box, route[0], route[1], route[2])
-			if known, ok := err.(*HTTPError); !ok || known.Status != http.StatusServiceUnavailable || known.Message != noControllerService {
+			var known *HTTPError
+			if !errors.As(err, &known) || known.Status != http.StatusServiceUnavailable || known.Message != noControllerService {
 				t.Fatalf("%v: %v", route, err)
 			}
 		}
