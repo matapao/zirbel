@@ -28,6 +28,10 @@ input{width:100%;min-height:3rem;padding:.6rem .8rem;color:var(--ink);background
 .count{flex:none;font-weight:700;color:var(--accent)}
 .started{display:flex;flex-direction:column;gap:.7rem;text-align:center}
 .code{font-size:clamp(3rem,18vw,5rem);font-weight:800;letter-spacing:.18em;padding-left:.18em;color:var(--accent);margin:.2rem 0 .4rem;font-variant-numeric:tabular-nums}
+.invite{margin:.2rem 0 .4rem;display:flex;flex-direction:column;align-items:center;gap:.7rem;text-align:center}
+.qr-frame{display:block;width:min(17rem,72vw);aspect-ratio:1}
+.qr{display:block;width:100%;height:100%;background:#fff;border-radius:.6rem}
+.address{color:var(--accent);font-size:1.05rem;font-weight:650;overflow-wrap:anywhere}
 .error{color:#ffc9a9;margin:0}
 footer{margin-top:auto;padding-top:1rem;text-align:center;font-size:.9rem}
 footer a{color:var(--quiet)}

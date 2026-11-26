@@ -14,6 +14,11 @@
       <h1 id="started-title">Your session is ready</h1>
       <p>Give this code to the others:</p>
       <p id="code" class="code"></p>
+      <figure class="invite">
+        <figcaption>Or they scan this with a phone’s camera to join your session:</figcaption>
+        <span id="session-qr" class="qr-frame"></span>
+        <a id="session-link" class="address" href="/"></a>
+      </figure>
       <a id="go-in" class="button primary" href="/">Go in</a>
       <button id="back" type="button">Back to the lobby</button>
     </section>
@@ -39,6 +44,12 @@
         <h2 id="sessions-title">Playing now</h2>
         <ul id="sessions" class="list"></ul>
         <p id="no-sessions" hidden>Nobody is playing yet. Start a session above.</p>
+      </section>
+      <button id="invite-toggle" type="button" aria-expanded="false" aria-controls="invite">Invite others</button>
+      <section id="invite" class="card invite" hidden aria-labelledby="invite-toggle">
+        <p>They scan this with a phone’s camera to open this lobby:</p>
+        <span id="lobby-qr" class="qr-frame"></span>
+        <a id="lobby-link" class="address" href="/"></a>
       </section>
     </div>
     <p id="error" class="error" role="alert"></p>

@@ -1,6 +1,6 @@
 // A Zirbel box in the browser: the first-run choice, agent access over MCP, Box settings with its switches, pairing
-// another device with a one-time code, the claim the pairing page offers while no device has paired, and the box's own
-// Wi-Fi with its name, password and QR code.
+// another device with a one-time code, the claim the pairing page offers while no device has paired, the lobby's
+// address for players, and the box's own Wi-Fi with its name, password and QR code.
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,7 +16,8 @@ process.env.ZIRBEL_OWN_NETWORK = join(setup, 'own-network.json');
 process.env.ZIRBEL_SETUP_REQUEST = join(setup, 'run', 'request');
 
 test('a box asks how to use it once, turns on agent access, and pairs another device with a code', { timeout: 60_000 }, async (t) => {
-  const { page, editor, browser, errors } = await openEditor(t, async (_context, res) => res.end('{}'), ['--box', '--player-port', '0']);
+  const { page, editor, browser, errors } = await openEditor(t, async (_context, res) => res.end('{}'),
+    ['--box', '--player-port', '0', '--player-host', 'games.lan']);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('heading', { name: 'How do you want to use Zirbel here?' }).waitFor();
   assert.ok(await dialog.getByText('Run harnesses on this box', { exact: true }).isVisible());
@@ -58,6 +59,11 @@ test('a box asks how to use it once, turns on agent access, and pairs another de
   assert.match((await dialog.locator('.item strong').first().textContent()) ?? '', /^Chrome on /);
   assert.ok(await dialog.getByText('This box can’t make its own Wi-Fi: it has no Wi-Fi setup.').isVisible());
   assert.ok(await dialog.getByRole('checkbox', { name: 'Make the box’s own Wi-Fi' }).isDisabled());
+  // Players open the lobby with no pairing: its address on the box's LAN listener, as its player host names it from
+  // the box itself, and its QR code.
+  assert.ok(await dialog.getByRole('heading', { name: 'Players' }).isVisible());
+  assert.match((await dialog.locator('.lobby-address').textContent()) ?? '', /^http:\/\/games\.lan:\d+\/$/);
+  assert.ok(await dialog.getByRole('img', { name: 'QR code that opens the lobby' }).isVisible());
   assert.deepEqual(errors, []);
 });
 

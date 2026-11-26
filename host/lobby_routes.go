@@ -101,12 +101,16 @@ func (l *Listener) joinSession(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// serveLobby is the owner's side: which releases the lobby offers.
+// serveLobby is the owner's side: which releases the lobby offers, and where
+// the lobby is for other devices.
 func (s *EditorServer) serveLobby(w http.ResponseWriter, r *http.Request, pathID, action string) error {
 	switch {
 	case s.lobby == nil: // a server built without one, as in tests
 	case r.Method == http.MethodGet && pathID == "" && action == "":
-		reply(w, http.StatusOK, map[string][]string{"offered": s.lobby.Offered()})
+		reply(w, http.StatusOK, struct {
+			Offered []string `json:"offered"`
+			Link    *string  `json:"link"` // the lobby's address for other devices on the network
+		}{s.lobby.Offered(), s.players.LobbyLink(s.playerHost(r))})
 		return nil
 	case r.Method == http.MethodPost && pathID == "offer" && action == "":
 		data, err := readBody(r, 4096)

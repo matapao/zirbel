@@ -1,7 +1,9 @@
 // A Zirbel box in the workspace (box mode): the first-run choice of how to use it, and Box settings with its two
-// switches, agent access over MCP, its paired devices, pairing another device, its own Wi-Fi and its Wi-Fi setup.
+// switches, agent access over MCP, its paired devices, pairing another device, the lobby players open, its own Wi-Fi
+// and its Wi-Fi setup.
 import { action, api, apiWith, attempt, dialog, el, inform, link, openDialog, option } from './editor-ui.ts';
 import { ws, type BoxHealth } from './state.ts';
+import { lobbyAddress, lobbyLink } from './lobby-address.ts';
 
 /** What the box's dialogs call in the rest of the workspace, set as it starts (chat.ts imports this module). */
 const hooks = { openHarnesses: () => Promise.resolve(), refreshProcessors: () => Promise.resolve() };
@@ -175,8 +177,8 @@ function ownWifi(box: BoxHealth, { ownNetwork, network }: OwnWifi) {
   return part;
 }
 
-/** Box settings: the two switches, agent access, paired devices, pairing another device, the box's own Wi-Fi and the
- *  Wi-Fi setup. */
+/** Box settings: the two switches, agent access, paired devices, pairing another device, the lobby's address for
+ *  players, the box's own Wi-Fi and the Wi-Fi setup. */
 export async function openBoxSettings() {
   const box = ws.health.box;
   if (!box) return;
@@ -215,7 +217,7 @@ export async function openBoxSettings() {
     body.append(item);
   }
   const pairing = el('div');
-  const wifi = await api<OwnWifi>('box/network');
+  const [wifi, lobby] = await Promise.all([api<OwnWifi>('box/network'), lobbyLink()]);
   body.append(action('Pair another device', async () => {
     // The native host draws no QR code: its link and code are enough.
     const code = await api<{ code: string; url: string; expiresAt: string; qr: string | null }>('pairing', {});
@@ -228,7 +230,7 @@ export async function openBoxSettings() {
     pairing.replaceChildren(el('p', 'On the other device, open the link' + (code.qr ? ' or scan the code' : '') + ', then enter this code if asked:'),
       el('strong', code.code, 'sign-in-code'), link(code.url, code.url, true), ...(code.qr ? [picture] : []),
       el('small', 'Valid until ' + new Date(code.expiresAt).toLocaleTimeString() + ', for one device.'));
-  }), pairing, el('h3', 'Network'), ownWifi(box, wifi), action('Change Wi-Fi', async () => {
+  }), pairing, el('h3', 'Players'), ...await lobbyAddress(lobby), el('h3', 'Network'), ownWifi(box, wifi), action('Change Wi-Fi', async () => {
     await api('box/setup', { requested: true });
     inform('The box opens its Wi-Fi setup: over Bluetooth, and as the “Zirbel setup” hotspot.');
   }));

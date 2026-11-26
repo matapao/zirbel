@@ -61,7 +61,8 @@ for (const host of hosts) {
 }
 
 // The lobby on a phone-sized page: one person starts a session of the game the owner offers (lobby.json, as the editor
-// keeps it) and reads its code out; another types it in, in lower case with a dash, and both play in one room.
+// keeps it) and reads its code out, or shows its QR code; another types it in, in lower case with a dash, and both play
+// in one room. A phone that scans the QR code finds the code filled in.
 for (const host of hosts) {
   test(host.name + ' host: one browser starts a session in the lobby and another joins it with its code', async (t) => {
     const root = tempDir(t, 'zirbel-host-lobby-');
@@ -90,8 +91,30 @@ for (const host of hosts) {
     await first.getByRole('heading', { name: 'Your session is ready' }).waitFor();
     const code = await first.locator('#code').textContent() ?? '';
     assert.match(code, /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/);
+    // Its QR code, drawn in the page, and the link under it: the lobby with the session's code.
+    const qr = first.getByRole('img', { name: 'QR code that joins this session' });
+    await qr.waitFor();
+    assert.match(await qr.getAttribute('src') ?? '', /^data:image\/svg\+xml,/);
+    assert.ok((await qr.boundingBox())!.width >= 200);
+    const invitation = await first.locator('#session-link').getAttribute('href') ?? '';
+    assert.deepEqual([invitation, await first.locator('#session-link').textContent()], [player + '/?code=' + code, invitation]);
     assert.deepEqual(await accessibility(first), []);
     await first.getByRole('link', { name: 'Go in' }).click();
+
+    // A phone that scans it opens the lobby with the code filled in, at the name; and invites others to the lobby.
+    const scanned = await (await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true })).newPage();
+    scanned.on('pageerror', (error) => failures.push(error.message));
+    scanned.on('console', (message) => { if (/Content Security Policy|Refused to/.test(message.text())) failures.push(message.text()); });
+    await scanned.goto(invitation);
+    assert.equal(await scanned.getByLabel('Session code').inputValue(), code);
+    assert.equal(await scanned.evaluate(() => document.activeElement?.id), 'name');
+    const invite = scanned.getByRole('button', { name: 'Invite others' });
+    await invite.click();
+    await scanned.getByRole('img', { name: 'QR code that opens this lobby' }).waitFor();
+    assert.deepEqual([await invite.getAttribute('aria-expanded'), await scanned.locator('#lobby-link').textContent()], ['true', player + '/']);
+    assert.deepEqual(await accessibility(scanned), []);
+    await invite.click();
+    assert.equal(await scanned.locator('#invite').isHidden(), true);
 
     await second.goto(player + '/');
     await second.locator('#sessions li').filter({ hasText: 'Lobby game' }).waitFor();
@@ -256,13 +279,14 @@ for (const host of hosts) {
 // editor has no harness chat, so the ⋯ menu leaves Harnesses out there.
 for (const host of hosts) {
   test(host.name + ' host: the editor UI loads and opens a project', async (t) => {
-    const editor = await launch(t, host.command, ['--data', join(tempDir(t, 'zirbel-editor-ui-'), 'data'), '--port', '0'],
-      (line) => typeof line.editor === 'string' ? line.editor : undefined).ready;
+    const editor = await launch(t, host.command, ['--data', join(tempDir(t, 'zirbel-editor-ui-'), 'data'), '--port', '0',
+      '--player-host', 'games.lan'], (line) => typeof line.editor === 'string' ? line.editor : undefined).ready;
     const post = (path: string, body: unknown) => fetch(editor + path, { method: 'POST',
       headers: { 'content-type': 'application/json', origin: editor }, body: JSON.stringify(body) });
     await post('/api/projects', { title: 'Browser check' });
     const html = '<!doctype html><button id="go">Go</button><script>zirbel.register("go", { name: "Go button" })</script>';
-    await post('/api/projects/import-game', { title: 'Built check', files: { 'index.html': Buffer.from(html).toString('base64') } });
+    const built = await (await post('/api/projects/import-game', { title: 'Built check',
+      files: { 'index.html': Buffer.from(html).toString('base64') } })).json() as { id: string };
 
     const browser = await chromium.launch();
     t.after(() => browser.close());
@@ -300,6 +324,29 @@ for (const host of hosts) {
     await page.getByRole('button', { name: 'More', exact: true }).click();
     const items = await page.getByRole('menu', { name: 'More' }).getByRole('menuitem').allTextContents();
     assert.equal(items.includes('Harnesses'), host.name === 'node');
+    assert.deepEqual(await accessibility(page), []);
+    await page.keyboard.press('Escape');
+
+    // The lobby, from the game menu: no address for other devices until the host shares on the network, then its QR
+    // code and address, and a link that opens it.
+    const lobby = async () => {
+      await page.locator('#game-switcher').click();
+      await page.getByRole('menu', { name: 'Games' }).getByRole('menuitem', { name: 'Lobby…' }).click();
+      return page.getByRole('dialog', { name: 'Lobby' });
+    };
+    await (await lobby()).getByText(/^The lobby is on your local network once this host shares on it/).waitFor();
+    await page.keyboard.press('Escape');
+    const release = await (await post('/api/projects/' + built.id + '/release', { branch: 'main', permissions: rights })).json() as
+      { releaseId: string };
+    assert.equal((await post('/api/rooms', { releaseId: release.releaseId, lan: true })).status, 201);
+    const shared = await lobby();
+    const qr = shared.getByRole('img', { name: 'QR code that opens the lobby' });
+    await qr.waitFor();
+    assert.match(await qr.getAttribute('src') ?? '', /^data:image\/svg\+xml,/);
+    const address = await shared.locator('.lobby-address').textContent() ?? '';
+    assert.match(address, /^http:\/\/games\.lan:\d+\/$/);
+    const opens = shared.getByRole('link', { name: 'Open the lobby' });
+    assert.deepEqual([await opens.getAttribute('href'), await opens.getAttribute('target')], [address, '_blank']);
     assert.deepEqual(await accessibility(page), []);
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Assets', exact: true }).click();

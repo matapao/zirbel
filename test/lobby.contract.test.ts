@@ -102,6 +102,19 @@ for (const host of hosts) {
     assert.deepEqual(error(await call(player, 'POST', '/lobby/state', {})), [404, 'Lobby route does not exist.']);
   });
 
+  test(host.name + ' host gives the owner the lobby’s address for other devices while it shares on the network', async (t) => {
+    const data = fixtures(t);
+    const { editor } = await startEditor(t, host.command, data.data, ['--lan', '--player-host', 'Games.lan']);
+    const answer = await call(editor, 'GET', '/api/lobby');
+    const { link } = answer.body as { link: string };
+    // On the LAN listener, by the player host name, its port the one it got.
+    assert.deepEqual([answer.status, { ...answer.body as object, link: link.replace(/:\d+\/$/, ':<port>/') }],
+      [200, { offered: [], link: 'http://games.lan:<port>/' }]);
+    assert.notEqual(new URL(link).port, new URL(editor).port);
+    const page = await fetch(link.replace('games.lan', '127.0.0.1'));
+    assert.deepEqual([page.status, await page.text()], [200, readFileSync('dist/web/lobby.html', 'utf8')]);
+  });
+
   test(host.name + ' host offers games in its lobby, starts sessions and seats players by their code', async (t) => {
     const data = fixtures(t);
     const { editor, player } = await startEditor(t, host.command, data.data, data.imports);
@@ -109,8 +122,9 @@ for (const host of hosts) {
     const lobby = (path: string, json?: unknown, headers?: Record<string, string>) =>
       call(player, json === undefined ? 'GET' : 'POST', '/lobby/' + path, json, headers);
 
-    // The owner's side: one release per game, only those that may be played.
-    assert.deepEqual((await owner('GET', 'lobby')).body, { offered: [] });
+    // The owner's side: one release per game, only those that may be played. Other devices have no address for the
+    // lobby while the host shares on no network.
+    assert.deepEqual((await owner('GET', 'lobby')).body, { offered: [], link: null });
     assert.deepEqual((await owner('POST', 'lobby/offer', { release: data.shared.id, offered: true })).body, { offered: [data.shared.id] });
     assert.deepEqual((await owner('POST', 'lobby/offer', { release: data.alone.id, offered: true })).body,
       { offered: [data.shared.id, data.alone.id] });

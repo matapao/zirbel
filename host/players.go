@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -63,12 +64,7 @@ func (p *Players) Describe(ctx context.Context, room *Room, host string) (any, e
 		if active, err = p.StartLAN(ctx); err != nil {
 			return nil, err
 		}
-		address = p.lanHost
-		if address == "" {
-			if list := LANAddresses(); len(list) > 0 {
-				address = list[0]
-			}
-		}
+		address = p.lanAddress()
 	}
 	linked := address
 	if linked == "" {
@@ -83,6 +79,46 @@ func (p *Players) Describe(ctx context.Context, room *Room, host string) (any, e
 		QR        *string `json:"qr"`
 	}{room.Summary(), address != "", roomLink("http://"+linked+port, room), roomLink("http://"+host+port, room), nil}, nil
 }
+
+// LobbyLink mirrors Players.lobbyLink in packages/server/hosting.ts: the
+// lobby's address for other devices on the network, on the LAN listener. It
+// is on host, the name a box was reached by, where others can use it, and
+// otherwise on the address a shared room's link has. Nil while no LAN
+// listener runs, or while it has no address.
+func (p *Players) LobbyLink(host string) *string {
+	port := p.LANPort()
+	if port == 0 {
+		return nil
+	}
+	address := host
+	if address == "" || loopbackName(address) {
+		address = p.lanAddress()
+	}
+	if address == "" {
+		return nil
+	}
+	link := "http://" + address + ":" + strconv.Itoa(port) + "/"
+	return &link
+}
+
+// lanAddress is the host LAN links are on: the --player-host name, or the
+// first LAN address; empty when there is neither.
+func (p *Players) lanAddress() string {
+	if p.lanHost != "" {
+		return p.lanHost
+	}
+	if list := LANAddresses(); len(list) > 0 {
+		return list[0]
+	}
+	return ""
+}
+
+// loopbackName is a host name only the device it is on reaches itself by.
+func loopbackName(host string) bool {
+	return host == "localhost" || host == "[::1]" || loopbackHost.MatchString(host)
+}
+
+var loopbackHost = regexp.MustCompile(`^127\.\d+\.\d+\.\d+$`)
 
 // LANPort is the LAN listener's port, 0 until it has started.
 func (p *Players) LANPort() int {

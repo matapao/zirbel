@@ -1,5 +1,5 @@
 // Split from workspace.ts; shares state through ws in state.ts.
-// The top bar: the game switcher on the left; Edit, Assets and Share on the right, and the ⋯ menu for the rest.
+// The top bar: the game switcher on the left, with the library and the lobby; Edit, Assets and Share on the right, and the ⋯ menu for the rest.
 import { $, action, attempt, el } from './editor-ui.ts';
 import { ws } from './state.ts';
 import { current, edit, hasContent, leaveProject, library, loadProject, recentCards, route } from './workspace.ts';
@@ -10,6 +10,7 @@ import { openChatSettings } from './chat-settings.ts';
 import { openHarnesses } from './chat.ts';
 import { openBoxSettings } from './box.ts';
 import { boxSetupDialog } from './box-setup.ts';
+import { lobbyDialog } from './lobby-address.ts';
 
 let assets: { readonly open: boolean } | undefined;
 
@@ -31,6 +32,7 @@ function gameMenu(): MenuItem[] {
         }),
     },
     { label: 'Library…', run: () => attempt(library.open) },
+    { label: 'Lobby…', run: () => attempt(lobbyDialog) },
     { label: 'Import a game folder…', run: library.importFolder },
     { label: 'Import a file…', run: library.importFile },
     'separator',

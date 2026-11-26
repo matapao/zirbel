@@ -1,11 +1,13 @@
 // The lobby (packages/core/lobby.ts): its codes, the offers it keeps in lobby.json, what it lists, the sessions it
-// starts and their limits, the seats it hands out by code and its count of wrong codes.
+// starts and their limits, the seats it hands out by code and its count of wrong codes; and its address for other
+// devices (packages/server/hosting.ts).
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { CODE_LETTERS, LOBBY_SESSIONS, Lobby, newCode, readCode, SESSIONS_PER_ADDRESS, WRONG_CODES } from '../packages/core/lobby.ts';
 import { Rooms } from '../packages/core/rooms.ts';
+import { Players } from '../packages/server/hosting.ts';
 import { install, joinRoom, legacyProject, rights } from './helpers.ts';
 
 function lobbyFor(t: TestContext, now = Date.now) {
@@ -165,4 +167,19 @@ test('a lobby session closes once nobody has been in it for twenty minutes; an o
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 21 * 60_000 });
   assert.equal(room.step(), false);
   assert.equal(owned.step(), true);
+});
+
+test('the lobby’s address for other devices is on the LAN listener, by a name others can use', async (t) => {
+  const { releases } = install(t);
+  const players = new Players(new Rooms(), releases, { playerPort: 0, lanHost: 'games.lan' });
+  t.after(() => players.close());
+  await players.openLocal(0);
+  assert.equal(players.lobbyLink(), null);
+  assert.equal(players.lobbyLink('192.168.1.2'), null);
+  await players.startLan();
+  const port = players.lanPort!;
+  // On a box, the name the editor was reached by, unless only the box itself reaches it by that; else the player host.
+  for (const [reached, address] of [['192.168.1.2', '192.168.1.2'], ['zirbel.local', 'zirbel.local'], ['[fd00::2]', '[fd00::2]'],
+    [undefined, 'games.lan'], ['127.0.0.1', 'games.lan'], ['127.1.2.3', 'games.lan'], ['localhost', 'games.lan'], ['[::1]', 'games.lan']])
+    assert.equal(players.lobbyLink(reached), 'http://' + address + ':' + port + '/', String(reached));
 });

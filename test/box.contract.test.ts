@@ -1,7 +1,8 @@
 // A box (--box) on both hosts: `node dist/server.mjs --box` and the Go host's --box. Each runs one scripted session,
 // from the box itself (loopback) and from this computer's own network address, and their normalized answers must
 // match: the door, the pairing page and its codes and claim, the paired devices, the switches, the setup flag, the
-// box's own Wi-Fi, external MCP access, and the lobby a device that isn't paired is sent to. What the hosts differ in by design is compared by its form only: harnesses
+// box's own Wi-Fi, external MCP access, the lobby a device that isn't paired is sent to, and its address for other
+// devices. What the hosts differ in by design is compared by its form only: harnesses
 // run in the Node editor alone, and only it draws a QR code, for a pairing link or for joining the box's own Wi-Fi.
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -152,6 +153,9 @@ async function session({ editor: base, wake, own, network }: Started) {
   await record(device('GET', '/pair', { session: first }));
   await record(device('GET', '/api/pairing/devices', { session: first }));
   await record(device('GET', '/api/box/status', { session: first }));
+  // The lobby's address for other devices: on the name this device reached the box by, at the LAN listener's port.
+  const lobbyAddress = await record(device('GET', '/api/lobby', { session: first }));
+  assert.equal((lobbyAddress.body as { link: string }).link, door.location);
   await record(device('PUT', '/api/box/settings', { json: { onboarded: false }, session: first }));
   await record(device('PUT', '/api/box/settings', { json: { onboarded: false }, session: first, origin: true }));
   const code = ((await record(device('POST', '/api/pairing', { json: {}, session: first, origin: true }))).body as { code: string }).code;

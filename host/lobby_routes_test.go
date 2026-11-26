@@ -166,7 +166,7 @@ func TestTheOwnerOffersReleasesAndSeesSessionCodes(t *testing.T) {
 	lobby, rooms, _ := testLobby(t)
 	storedRelease(t, lobby.releases, "shared", "g1", "Garden", 2, true)
 	players := &Players{rooms: rooms, runtime: map[string]*webfiles.File{"player.html": {Bytes: []byte("<head></head>")}},
-		local: &Listener{port: 4174}, lobby: lobby}
+		local: &Listener{port: 4174}, lanHost: "games.lan", lobby: lobby}
 	t.Cleanup(func() {
 		if lan := players.lan; lan != nil {
 			lan.Close()
@@ -174,7 +174,9 @@ func TestTheOwnerOffersReleasesAndSeesSessionCodes(t *testing.T) {
 	})
 	s := &EditorServer{Editor: &Editor{releases: lobby.releases}, rooms: rooms, players: players, lobby: lobby, port: 4173}
 	const host, owner = "127.0.0.1:4173", "127.0.0.1:5000"
-	if got := call(t, s, http.MethodGet, host, "/api/lobby", owner, "", nil); got.status != http.StatusOK || got.body != "{\"offered\":[]}\n" {
+	// No address for other devices while no LAN listener runs.
+	if got := call(t, s, http.MethodGet, host, "/api/lobby", owner, "", nil); got.status != http.StatusOK ||
+		got.body != "{\"offered\":[],\"link\":null}\n" {
 		t.Fatalf("the empty lobby: %+v", got)
 	}
 	if got := call(t, s, http.MethodPost, host, "/api/lobby/offer", owner, `{"release":"shared","offered":true}`, nil); got.status != http.StatusOK ||
@@ -206,6 +208,18 @@ func TestTheOwnerOffersReleasesAndSeesSessionCodes(t *testing.T) {
 	}
 	if link := call(t, s, http.MethodGet, host, "/api/rooms/"+room.ID+"/link", owner, "", nil); !strings.Contains(link.body, `"code":"`+room.Code+`"`) {
 		t.Fatalf("the room's link: %s", link.body)
+	}
+	// Sharing on the network started the LAN listener, where the lobby is for other devices: on the player host.
+	lanPort := strconv.Itoa(players.LANPort())
+	if got := call(t, s, http.MethodGet, host, "/api/lobby", owner, "", nil); got.body != `{"offered":["shared"],"link":"http://games.lan:`+lanPort+`/"}`+"\n" {
+		t.Fatalf("the lobby's address: %+v", got)
+	}
+	// On a box, on the name the editor was reached by, unless only the box itself reaches it by that.
+	for reached, want := range map[string]string{"192.168.1.2": "192.168.1.2", "zirbel.local": "zirbel.local", "[fd00::2]": "[fd00::2]",
+		"": "games.lan", "127.0.0.1": "games.lan", "127.1.2.3": "games.lan", "localhost": "games.lan", "[::1]": "games.lan"} {
+		if got := players.LobbyLink(reached); got == nil || *got != "http://"+want+":"+lanPort+"/" {
+			t.Errorf("the lobby reached by %q: %v", reached, got)
+		}
 	}
 	local := call(t, s, http.MethodPost, host, "/api/rooms", owner, `{"releaseId":"shared","lan":false}`, nil)
 	if local.status != http.StatusCreated || strings.Contains(local.body, `"code"`) {

@@ -1,6 +1,9 @@
 // The lobby page (public/lobby.html) every player listener serves at /: the games the owner offers, a code to join a
 // session with, and the sessions being played. Mostly used on phones. It talks to its own listener's /lobby/ alone, and
-// goes only to the player links that listener hands back.
+// goes only to the player links that listener hands back. Its QR codes hold its own address: the lobby's, to invite
+// others, and with ?code= a session's, which opens the lobby with that code filled in.
+import { qrPicture } from './qr.ts';
+
 type Game = { release: string; title: string; players: { min: number; max: number }; multiplayer: boolean };
 type Session = { id: string; title: string; players: number; max: number; started: string };
 type State = { games: Game[]; sessions: Session[]; pair: string | null };
@@ -10,10 +13,17 @@ const nameField = byId<HTMLInputElement>('name');
 const error = byId('error');
 const home = byId('home');
 const started = byId('started');
+const joinCode = byId<HTMLInputElement>('join-code');
 const NAME_KEY = 'zirbel-lobby-name';
 const REFRESH_MS = 5000;
 
 try { nameField.value = localStorage.getItem(NAME_KEY) ?? ''; } catch { /* the name is typed again */ }
+// A session's QR code opens the lobby with its code: whoever scanned it types a name and joins.
+const invited = new URLSearchParams(location.search).get('code')?.trim().slice(0, joinCode.maxLength);
+if (invited) {
+  joinCode.value = invited;
+  nameField.focus();
+}
 nameField.addEventListener('change', () => {
   try { localStorage.setItem(NAME_KEY, nameField.value.trim()); } catch { /* kept for this page only */ }
 });
@@ -101,6 +111,14 @@ async function refresh() {
   try { render(await call<State>('state')); } catch (reason) { error.textContent = (reason as Error).message; }
 }
 
+/** An address of this lobby: its QR code in frame, and the link itself in anchor. */
+async function showAddress(address: string, frame: string, anchor: string, alt: string) {
+  const link = byId<HTMLAnchorElement>(anchor);
+  link.href = address;
+  link.textContent = address;
+  byId(frame).replaceChildren(await qrPicture(address, alt));
+}
+
 async function start(game: Game) {
   const { code, link } = await call<{ code: string | null; link: string }>('sessions', { release: game.release, name: playerName() });
   const target = playerLink(link);
@@ -108,9 +126,13 @@ async function start(game: Game) {
   byId('code').textContent = code;
   byId('code').setAttribute('aria-label', 'Code ' + code.split('').join(' '));
   byId<HTMLAnchorElement>('go-in').href = target;
+  byId('session-qr').replaceChildren();
   home.hidden = true;
   started.hidden = false;
   byId('go-in').focus();
+  // The code is enough to join by, should its QR code fail.
+  await showAddress(location.origin + '/?code=' + encodeURIComponent(code), 'session-qr', 'session-link',
+    'QR code that joins this session');
 }
 
 byId('back').addEventListener('click', () => {
@@ -119,12 +141,22 @@ byId('back').addEventListener('click', () => {
   void refresh();
 });
 
+// Inviting others to the lobby: its own address, as a QR code to scan.
+const inviteToggle = byId<HTMLButtonElement>('invite-toggle');
+inviteToggle.addEventListener('click', () => void attempt(inviteToggle, async () => {
+  const invite = byId('invite');
+  if (invite.hidden && !byId('lobby-qr').firstChild)
+    await showAddress(location.origin + '/', 'lobby-qr', 'lobby-link', 'QR code that opens this lobby');
+  invite.hidden = !invite.hidden;
+  inviteToggle.setAttribute('aria-expanded', String(!invite.hidden));
+}));
+
 const joinForm = byId<HTMLFormElement>('join-form');
 joinForm.addEventListener('submit', (event) => {
   event.preventDefault();
   const button = joinForm.querySelector('button')!;
   void attempt(button, async () => {
-    const code = byId<HTMLInputElement>('join-code').value;
+    const code = joinCode.value;
     const { link } = await call<{ link: string }>('join', { code, name: playerName() });
     location.assign(playerLink(link));
   });

@@ -62,6 +62,9 @@ export async function stopOnSignal(stop: () => Promise<void>) {
   }
 }
 
+/** A host name only the device it is on reaches itself by. */
+const loopbackName = (host: string) => host === 'localhost' || host === '[::1]' || /^127\.\d+\.\d+\.\d+$/.test(host);
+
 /** A box's player side: the LAN listener on every interface for the box's own network (reach), and the address of the
  *  pairing page the lobby links to, on the host name a device reached it by. */
 type BoxPlayers = { reach: PlayerReach; pair: (host: string) => string };
@@ -123,6 +126,15 @@ export class Players {
       localLink: roomLink('http://' + host + ':' + active.port, room),
       qr: shared && address && this.options.qr ? await this.options.qr(link) : null,
     };
+  }
+
+  /** The lobby's address for other devices on the network, on the LAN listener: by host, the name a box was reached
+   *  by, where others can use it, and otherwise by the address a shared room's link has. None while no LAN listener
+   *  runs, or while it has no address. */
+  lobbyLink(host?: string) {
+    if (!this.lan) return null;
+    const address = host && !loopbackName(host) ? host : this.options.lanHost ?? lanAddresses()[0];
+    return address ? 'http://' + address + ':' + this.lan.port + '/' : null;
   }
 
   solo(release: Release, host = '127.0.0.1') {

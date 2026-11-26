@@ -357,7 +357,9 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
           if (method === 'POST' && pathID && action === 'remix') { reply(response, releases.remix(pathID), 201); return; }
         }
         if (resource === 'lobby' && !action) {
-          if (method === 'GET' && !pathID) { reply(response, { offered: players.lobby.offered() }); return; }
+          if (method === 'GET' && !pathID) {
+            reply(response, { offered: players.lobby.offered(), link: players.lobbyLink(playerHost) }); return;
+          }
           if (method === 'POST' && pathID === 'offer') {
             const input = lobbyOffer.parse(await body(request, 4096));
             reply(response, players.lobby.offer(input.release, input.offered)); return;
