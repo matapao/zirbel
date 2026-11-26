@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"runtime"
 	"strings"
 	"testing"
@@ -85,7 +85,7 @@ func TestTheBoxsOwnLoopbackIsTheHostsUserAndRoot(t *testing.T) {
 	read, me := readTables, myUID
 	t.Cleanup(func() { readTables, myUID = read, me })
 	request := func(from string) *http.Request {
-		r, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "/", http.NoBody)
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", http.NoBody)
 		r.RemoteAddr = from
 		return r.WithContext(contextWithLocal(r, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 80}))
 	}
@@ -102,7 +102,7 @@ func TestTheBoxsOwnLoopbackIsTheHostsUserAndRoot(t *testing.T) {
 		t.Error("the host's own user is not the box's own")
 	}
 	// No local address: not one the host accepted.
-	if r, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "/", http.NoBody); ownLoopback(r) {
+	if ownLoopback(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", http.NoBody)) {
 		t.Error("a request with no local address is the box's own")
 	}
 	readTables = func() (socketTables, bool) { return socketTables{}, false }
@@ -114,24 +114,23 @@ func TestTheBoxsOwnLoopbackIsTheHostsUserAndRoot(t *testing.T) {
 // On this system, a request from this process is its own user's, whether
 // the tables name it (Linux) or can't be read.
 func TestThisSystemsLoopbackRequestIsThisUsers(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// No Content for the box's own, Forbidden for another's.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ownLoopback(r) {
+			w.WriteHeader(http.StatusNoContent)
+		} else {
+			w.WriteHeader(http.StatusForbidden)
+		}
+	}))
+	t.Cleanup(server.Close)
+	r, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/", http.NoBody)
+	response, err := server.Client().Do(r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, ownLoopback(r))
-	})}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { _ = server.Close() })
-	r, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+listener.Addr().String()+"/", http.NoBody)
-	response, err := http.DefaultClient.Do(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer response.Body.Close()
-	body, _ := io.ReadAll(response.Body)
-	if string(body) != "true" {
-		t.Fatalf("a request from this process on %s: %s", runtime.GOOS, body)
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("a request from this process on %s: %d", runtime.GOOS, response.StatusCode)
 	}
 	if _, readable := readSocketTables(); readable != (runtime.GOOS == "linux") {
 		t.Fatalf("the tables are readable on %s: %v", runtime.GOOS, readable)
