@@ -5,6 +5,7 @@ name: Security
 on:
   push:
   pull_request:
+  merge_group:
   workflow_dispatch:
     inputs:
       live:
@@ -27,7 +28,7 @@ concurrency:
 
 jobs:
   security:
-    name: Security checks
+    name: Security
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -37,10 +38,10 @@ jobs:
         with:
           fetch-depth: 0 # every commit, for the secrets scan
           persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-      - run: corepack enable pnpm
       # pnpm audit signatures and the licence check read the installed packages. The two link: dependencies point
       # at submodules in deps/, which this job doesn't check out: neither is a registry package.
       - run: pnpm install --frozen-lockfile
@@ -77,9 +78,10 @@ jobs:
           # For zizmor's online audits, which read the actions' own repositories (--live only).
           GH_TOKEN: ${{ github.token }}
         run: pnpm check:security --strict ${MODE:+"$MODE"}
-      # Zirbel's stricter reading of its workflows, on top of the shared script's: zizmor's auditor persona, offline.
+      # Zirbel's stricter reading of its own workflows, on top of the shared script's: zizmor's auditor persona,
+      # offline. The standard's shared workflows (codeql, dependency-review, scorecard) keep the shared reading.
       - name: zizmor, auditor persona
-        run: zizmor --offline --persona=auditor .
+        run: zizmor --offline --persona=auditor .github/workflows/checks.yml .github/workflows/security.yml .github/workflows/fuzz.yml
 
       # govulncheck reads the standard library of the Go it runs on, go.mod's, as the Check workflow builds with.
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0

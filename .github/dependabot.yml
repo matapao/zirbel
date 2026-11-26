@@ -1,60 +1,87 @@
 version: 2
+# The same plan in every repository: weekly, grouped per ecosystem, and a week behind each release, the wait pnpm's
+# minimumReleaseAge keeps too (pnpm-workspace.yaml). Security updates come at once. One entry per ecosystem this
+# repository has (npm per folder with a lockfile, gomod per go.mod, docker per Dockerfile folder, gitsubmodule), and
+# github-actions always.
 updates:
-  - package-ecosystem: npm
+  - package-ecosystem: npm # pnpm's lockfile
     directory: /
     schedule:
       interval: weekly
+      day: monday
     cooldown:
-      default-days: 7 # let a new release age a week before proposing it
+      default-days: 7
+    open-pull-requests-limit: 5
     groups:
-      # three.js and its types in one pull request; the build makes the games' three package from node_modules/three.
-      three:
-        patterns: ['three', '@types/three']
-      dev-tools:
-        dependency-type: development
+      # three.js and its types come in the same group; the build makes the games' three package from node_modules/three.
+      npm:
+        patterns: ['*']
+        update-types: [minor, patch]
     ignore:
       # The two link: dependencies are submodules in deps/; the gitsubmodule entry below updates them.
       - dependency-name: celler
       - dependency-name: '@matapao/vindu'
-      # Node 24 is the runtime (.nvmrc, engines), so its types stay on 24.
+      # Node 26 is the runtime (.nvmrc, engines), so its types stay on 26.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
-  # The desktop app, a pnpm project of its own. One pull request per package, so Electron's come on their own.
+  # The desktop app, a pnpm project of its own.
   - package-ecosystem: npm
     directory: /desktop
     schedule:
       interval: weekly
+      day: monday
     cooldown:
-      default-days: 7 # let a new release age a week before proposing it
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      desktop:
+        patterns: ['*']
+        update-types: [minor, patch]
     ignore:
-      # Node 24 is the runtime (.nvmrc, engines), so its types stay on 24.
+      # Electron 45 runs the app on Node 24, so its types stay on 24.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
   - package-ecosystem: gitsubmodule
     directory: /
     schedule:
       interval: weekly
+      day: monday
     cooldown:
-      default-days: 7 # let a new commit age a week before proposing it
+      default-days: 7
+    groups:
+      submodules:
+        patterns: ['*']
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
+      day: monday
     cooldown:
-      default-days: 7 # let a new release age a week before proposing it
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7 # let a new release age a week before proposing it
+      default-days: 7
+    groups:
+      go:
+        patterns: ['*']
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
+      day: monday
     cooldown:
-      default-days: 7 # let a new release age a week before proposing it
+      default-days: 7
+    groups:
+      docker:
+        patterns: ['*']
     ignore:
       # The image runs the same Node major as .nvmrc and engines; it moves with the project.
       - dependency-name: node
         update-types: ['version-update:semver-major']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ['*']

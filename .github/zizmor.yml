@@ -1,0 +1,6 @@
+# zizmor's settings for this repository's workflows.
+rules:
+  # It suggests GitHub's newer "$/..." form for calling this repository's own workflows. actionlint and the zizmor in CI
+  # do not know that form yet, and "./..." calls the same workflows at the same commit.
+  self-repository:
+    disable: true

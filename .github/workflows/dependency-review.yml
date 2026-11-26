@@ -1,0 +1,23 @@
+name: Dependency review
+# Every pull request: the dependencies it adds or changes, against GitHub's advisory database. A pull request that
+# brings in a known vulnerability fails. Public repositories only (a private one needs GitHub Code Security).
+on:
+  pull_request:
+  merge_group:
+permissions:
+  contents: read
+
+jobs:
+  review:
+    if: github.event.repository.visibility == 'public'
+    name: Dependency review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          fail-on-severity: low
+          fail-on-scopes: runtime, development

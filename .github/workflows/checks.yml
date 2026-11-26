@@ -1,52 +1,71 @@
-name: Check Zirbel
-on: [push, pull_request]
+name: Checks
+# Every push to main, pull request and merge queue entry: `pnpm check --coverage` (the one gate, scripts/check.mjs), the
+# contracts, the cross-built Go hosts, the browser tests and both containers; and the desktop app on macOS. The last
+# job, Checks, is the one required check: it fails unless every other job succeeded.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_call:
+  workflow_dispatch:
 permissions:
   contents: read # checkout only
 concurrency:
-  group: check-${{ github.ref }}
+  group: checks-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   check:
-    name: Build, lint and test
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: Build, check and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: zirbel
           submodules: true
           persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: zirbel/package.json
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: zirbel/.nvmrc
-      - run: corepack enable pnpm
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: zirbel/go.mod
           cache: false # the module is stdlib-only; tools are pinned in scripts/
+      # ruff for `pnpm check:py`, from its release, checked against its checksum.
+      - name: ruff 0.17.6
+        run: |
+          set -euo pipefail
+          tools="$RUNNER_TEMP/tools"
+          mkdir -p "$tools"
+          cd "$tools"
+          curl -fsSL --retry 3 -o ruff.tar.gz \
+            https://github.com/astral-sh/ruff/releases/download/0.17.6/ruff-x86_64-unknown-linux-gnu.tar.gz
+          echo "94b33791f48cd54ab35ad673a443a5c001d3e6d87effeaba9899070b700d45f3  ruff.tar.gz" | sha256sum -c -
+          tar -xzf ruff.tar.gz --strip-components=1 ruff-x86_64-unknown-linux-gnu/ruff
+          echo "$tools" >> "$GITHUB_PATH"
       # The two link: dependencies are submodules in deps/, at the commits this repository records.
       - name: Build the submodule dependencies
         working-directory: zirbel
         run: pnpm run deps
-      - name: Install, build and test
+      - name: Install
+        working-directory: zirbel
+        run: pnpm install --frozen-lockfile
+      - name: pnpm check --coverage
+        working-directory: zirbel
+        run: pnpm check --coverage
+      - name: Contracts, cross-built hosts and the browser tests
         working-directory: zirbel
         run: |
-          pnpm install --frozen-lockfile
-          pnpm check
-          pnpm lint
           pnpm contracts --check
-          pnpm build
           pnpm build:host "" linux/amd64 linux/arm64 linux/arm/7
-          pnpm check:go
-          pnpm coverage
-          pnpm test:pi
           node dist/server.mjs --help
           pnpm exec playwright install --with-deps chromium
           pnpm test:browser
-      - name: Formatting (report-only until the codebase is reformatted)
-        working-directory: zirbel
-        run: pnpm format:check || echo "::warning::Prettier formatting differs; run pnpm format"
       - name: Build the native host container
         working-directory: zirbel
         run: |
@@ -79,10 +98,12 @@ jobs:
           path: zirbel
           submodules: true
           persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: zirbel/package.json
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: zirbel/.nvmrc
-      - run: corepack enable pnpm
       # pnpm run deps builds the spaces kernel's binary from its submodule.
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
@@ -95,7 +116,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       # Its windows show on the runner's screen while Playwright drives them.
-      - name: Build, lint, test, pack and test the packed app
+      - name: Build, typecheck, lint, test, pack and test the packed app
         working-directory: zirbel/desktop
         run: |
           pnpm install --frozen-lockfile
@@ -105,3 +126,21 @@ jobs:
           pnpm test
           pnpm pack:app
           pnpm test:packed
+
+  checks:
+    name: Checks
+    if: always()
+    needs: [check, desktop]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            if [ "$result" != success ]; then
+              echo "A job ended with: $result"
+              exit 1
+            fi
+          done
