@@ -33,8 +33,9 @@ export type BoxContext = {
   ownNetwork: string;
 };
 /** Who sent a request: the box itself, a paired device (an owner) by its id, or an editor of one game by its id and
- *  its game's; none of them for a project grant's /mcp request. */
-export type Access = { local: boolean; device?: string; editor?: { id: string; game: string } };
+ *  its game's, with the name they go by (a device's label, an editor's own); none of them for a project grant's /mcp
+ *  request, or a git request without a session, which brings its own credentials (git-http.ts). */
+export type Access = { local: boolean; device?: string; editor?: { id: string; game: string }; name?: string };
 
 /** The box's name on its network: its host name, in mDNS's .local. */
 export function boxName() {
@@ -86,9 +87,10 @@ export async function boxDoor(box: BoxContext, request: IncomingMessage, respons
     return { local: false };
   }
   const device = box.pairing.session(request.headers.cookie);
-  if (device) return { local: false, device: device.id };
+  if (device) return { local: false, device: device.id, name: device.label };
   const editor = box.editors.session(request.headers.cookie);
-  if (editor) return { local: false, editor: { id: editor.id, game: editor.project } };
+  if (editor) return { local: false, editor: { id: editor.id, game: editor.project }, name: editor.name };
+  if (url.pathname.startsWith('/git/')) return { local: false };
   if (request.method === 'GET' && !url.pathname.startsWith('/api/')) {
     const lobby = box.lobbyPort();
     redirect(response, url.pathname === '/' && lobby ? 'http://' + url.hostname + ':' + lobby + '/' : '/pair');

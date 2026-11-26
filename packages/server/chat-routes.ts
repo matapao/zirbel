@@ -16,6 +16,7 @@ import { inThread, type TurnTools } from './thread-turns.ts';
 import { prepareFolder, type ToolLink } from './turn-folder.ts';
 import type { TurnServers } from './turn-mcp.ts';
 import { projectThread, workspaceThread, type Threads } from './threads.ts';
+import type { Ident } from '../core/git.ts';
 
 export type ChatContext = {
   projects: Projects; harnesses: Processors; chat: ChatRuns; activity: ActivityStore; threads: Threads;
@@ -113,7 +114,7 @@ export async function chatRequest(ctx: ChatContext, request: IncomingMessage, re
 
 /** /api/projects/<id>/…: a turn in one of the project's threads, what a thread has, and a turn's kept steps. */
 export async function projectChat(ctx: ChatContext, request: IncomingMessage, response: ServerResponse, url: URL,
-  projectId: string, action: string | undefined, tail: string | undefined) {
+  projectId: string, action: string | undefined, tail: string | undefined, author?: Ident) {
   const { chat, harnesses, projects, threads, activity } = ctx;
   const method = request.method;
   if (action === 'prompt' && method === 'POST' && !tail) {
@@ -132,7 +133,7 @@ export async function projectChat(ctx: ChatContext, request: IncomingMessage, re
       try {
         return await inThread(threads, harnesses, key, { id: turn.id, harness: input.provider, text: input.text, noteId: note.id },
           toolsFor(ctx, project.title, base.game, base.assets), run.signal, (harness, folder) => runHarnessChat(harness, input.provider, projects, project,
-            base, { ...input, folder }, references, { ...run, selection: input.modelSettings }));
+            base, { ...input, folder, author }, references, { ...run, selection: input.modelSettings }));
       } finally { kept.close(); }
     });
     await streamTurn(request, response, turn, 201);

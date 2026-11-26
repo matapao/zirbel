@@ -3,6 +3,7 @@ import { templates } from '../games/templates.ts';
 import { gameFilePath } from '../sdk/game.ts';
 import { action, api, attempt, dialog, el, inform, link, openDialog } from './editor-ui.ts';
 import type { ProjectCard } from './state.ts';
+import { importGitDialog } from './git.ts';
 
 export type Room = {
   id: string; manifest: Manifest; development: boolean; link: string; localLink: string;
@@ -25,7 +26,8 @@ export function createLibrary(projects: LibraryProjects) {
   async function libraryDialog() {
     const body = openDialog('Game library');
     const header = el('div', undefined, 'row');
-    header.append(action('New project', newDialog, 'primary'), action('Import file…', importDialog), action('Import game folder…', folderDialog));
+    header.append(action('New project', newDialog, 'primary'), action('Import file…', importDialog), action('Import game folder…', folderDialog),
+      action('Import from a git URL…', gitDialog));
     const projectId = projects.active();
     if (projectId) header.append(link('Export editable project', new URL('api/projects/' + projectId + '/export', document.baseURI).href));
     body.append(header);
@@ -154,7 +156,12 @@ export function createLibrary(projects: LibraryProjects) {
       }, 'primary'));
   }
 
-  return { open: libraryDialog, importFolder: folderDialog, importFile: importDialog };
+  /** A public repository, its history kept, which the game can update from later. */
+  function gitDialog() {
+    importGitDialog(async (imported) => { await projects.refresh(); await projects.open(imported.id); });
+  }
+
+  return { open: libraryDialog, importFolder: folderDialog, importFile: importDialog, importGit: gitDialog };
 }
 
 function base64(file: Blob) {

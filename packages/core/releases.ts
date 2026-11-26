@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROTOCOL_VERSION, SDK_VERSION, distribution, portableRelease, type Asset, type Manifest, type Revision, type Release } from '../sdk/contracts.ts';
 import type { GameDocument } from '../sdk/game.ts';
+import type { Ident } from './git.ts';
 import { templates } from '../games/templates.ts';
 import { atomicWrite, deliveryAssets, digest, gameFileBytes, gameFileHashes, head, newId, readData, safeId, verifyAssetBytes, ZirbelError, type Projects } from './projects.ts';
 
@@ -133,7 +134,7 @@ export class Releases {
     return this.save(release);
   }
 
-  remix(releaseId: string) {
+  remix(releaseId: string, author?: Ident) {
     const release = this.read(releaseId);
     if (!release.manifest.permissions.remix) throw new ZirbelError(403, 'The creator has disabled remixing.');
     for (const asset of deliveryAssets([release.manifest])) {
@@ -145,6 +146,6 @@ export class Releases {
     return this.projects.createRevision((release.manifest.title + ' remix').slice(0, 80), {
       label: 'Remixed release', template: release.manifest.template,
       game: release.game, scene: release.scene, assets: release.manifest.assets, upstream: releaseId,
-    });
+    }, author);
   }
 }

@@ -65,11 +65,17 @@ export const proposalInput = z.strictObject({
 // the editor itself stored by their hashes.
 const storedOperation = z.discriminatedUnion('op', [z.strictObject({ op: z.literal('writeGame'), game: gameDocument }), ...sceneOperations]);
 export const storedProposalInput = proposalInput.extend({ operations: z.array(storedOperation).min(1).max(160) });
+// A revision in full. Its id is its commit's hash (docs/git-store.md); author: who made it, as its commit names them.
 const revision = z.strictObject({
   id, parent: id.nullable(), restoredFrom: id.optional(),
-  label: z.string().min(1).max(120), date: z.iso.datetime(),
+  label: z.string().min(1).max(120), date: z.iso.datetime(), author: z.string().min(1).max(120).optional(),
   scene: scene.optional(), game: gameDocument.optional(), assets: z.array(asset).max(80),
 });
+// A branch or tag name as an import from a git URL takes one.
+export const gitRef = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/)
+  .refine((ref) => !/\.\.|\/\/|@\{|\/$|\.$|\.lock$|\/\./.test(ref), 'Name a branch or tag.');
+// Where a game imported from a git URL came from, which Update from source fetches again.
+const gitSource = z.strictObject({ url: z.string().min(1).max(2048), ref: gitRef.optional() });
 export const attachment = z.strictObject({
   id,
   name: z.string().min(1).max(160),
@@ -112,7 +118,7 @@ export const turnActivity = z.strictObject({
 export const project = z.strictObject({
   version: z.literal(1), id, title: z.string().trim().min(1).max(80), template: template.optional(),
   branches: z.record(id, id), revisions: z.array(revision).min(1), notes: z.array(note), attachments: z.array(attachment),
-  upstream: id.optional(), imported: z.literal(true).optional(),
+  upstream: id.optional(), imported: z.literal(true).optional(), source: gitSource.optional(),
 });
 const filename = z.string().regex(/^(?:chunks\/)?[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/);
 export const distribution = z.strictObject({ play: z.boolean(), download: z.boolean(), remix: z.boolean() });
@@ -188,8 +194,13 @@ export type ChatUsage = z.infer<typeof chatUsage>;
 export type Note = z.infer<typeof note>;
 export type ActivityEntry = z.infer<typeof activityEntry>;
 export type Operation = z.infer<typeof storedOperation>;
-export type Revision = z.infer<typeof revision>;
-export type Project = z.infer<typeof project>;
+/** A revision as a project lists it: only a branch's head carries its content (scene, game, assets). */
+export type Revision = Omit<z.infer<typeof revision>, 'assets'> & { assets?: Asset[] };
+/** A revision with its content. */
+export type FullRevision = z.infer<typeof revision>;
+/** A project as the API answers it; a bundle's (export, import) has every revision in full. */
+export type Project = Omit<z.infer<typeof project>, 'revisions'> & { revisions: Revision[] };
+export type ProjectBundle = z.infer<typeof project>;
 export type Manifest = z.infer<typeof manifest>;
 export type Release = z.infer<typeof portableRelease>;
 export type ClientMessage = z.infer<typeof ClientMessage>;

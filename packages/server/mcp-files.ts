@@ -11,6 +11,7 @@ import { gameDocument, gameFilePath, MAX_GAME_FILES, type GameDocument } from '.
 import { describedGame } from '../core/game-files.ts';
 import { assertCurrent, head, ZirbelError, type Projects } from '../core/projects.ts';
 import { GAME_BYTES } from './turn-folder.ts';
+import type { Ident } from '../core/git.ts';
 
 /** Base64 in whole groups of four, as the import reads it. */
 const base64 = z.string().max(PORTABLE_FILE_LIMIT).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
@@ -32,9 +33,7 @@ const utf8 = (bytes: Buffer, ignoreBOM: boolean) => {
 
 /** One file of a revision's game: UTF-8 text as text, anything else as base64. */
 export function readGameFile(projects: Projects, projectId: string, { path, branch, revision }: z.output<typeof readFileInput>) {
-  const project = projects.read(projectId);
-  const source = revision === undefined ? head(project, branch) : project.revisions.find((item) => item.id === revision);
-  if (!source) throw new ZirbelError(404, 'Revision does not exist.');
+  const source = revision === undefined ? head(projects.read(projectId), branch) : projects.revision(projectId, revision);
   const game = source.game;
   if (!game) throw new ZirbelError(404, 'This revision has no game.');
   let bytes: Buffer;
@@ -56,7 +55,7 @@ function storedSize(projects: Projects, hash: string) {
 }
 
 /** Stages the branch head's game with these files written or removed, and the rest as they are. */
-export function stageFiles(projects: Projects, projectId: string, input: z.output<typeof writeFilesInput>) {
+export function stageFiles(projects: Projects, projectId: string, input: z.output<typeof writeFilesInput>, author?: Ident) {
   const { branch, baseRevision, label } = input;
   const paths = new Set<string>();
   for (const { path } of input.files) {
@@ -111,5 +110,5 @@ export function stageFiles(projects: Projects, projectId: string, input: z.outpu
   const game: GameDocument = { html, ...players,
     ...(base.game?.registerObjects === undefined ? {} : { registerObjects: base.game.registerObjects }),
     ...(count || base.game?.files ? { files } : {}) };
-  return projects.submit(projectId, { branch, baseRevision, label, operations: [{ op: 'writeGame', game }] }, true);
+  return projects.submit(projectId, { branch, baseRevision, label, operations: [{ op: 'writeGame', game }] }, true, author);
 }

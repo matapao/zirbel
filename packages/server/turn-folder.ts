@@ -7,15 +7,15 @@
 import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, rmSync, symlinkSync,
   writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { PORTABLE_FILE_LIMIT } from '../sdk/contracts.ts';
 import { gameDocument, gameFilePath, MAX_GAME_FILES, type GameDocument } from '../sdk/game.ts';
 import { ZirbelError } from '../core/projects.ts';
+import { GAME_BYTES } from '../core/game-files.ts';
 
 /** A package the folder's node_modules links to: node_modules/<name> → target. */
 export type ToolLink = { name: string; target: string };
 
-/** What game/ may hold in all, as an imported folder may: what 48 MB of base64 carries. */
-export const GAME_BYTES = Math.floor(PORTABLE_FILE_LIMIT * 3 / 4);
+/** What game/ may hold in all, as an imported folder may. */
+export { GAME_BYTES };
 /** Folders deeper than a game path can be, and entries a game/ can hold before it is plainly not a game. */
 const DEPTH = 8;
 const ENTRIES = 4 * MAX_GAME_FILES;

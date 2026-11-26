@@ -3,7 +3,9 @@
 import { z } from 'zod';
 import { PORTABLE_FILE_LIMIT } from '../sdk/contracts.ts';
 import { adapterPath, gameDocument, gameFilePath, MAX_GAME_FILES, NET_PLAYERS, type GameDocument } from '../sdk/game.ts';
-import { ZirbelError, type Projects } from './projects.ts';
+import { ZirbelError } from './errors.ts';
+import type { Projects } from './projects.ts';
+import type { Ident } from './git.ts';
 
 const base64 = z.string().max(PORTABLE_FILE_LIMIT).regex(/^[A-Za-z0-9+/]*={0,2}$/);
 
@@ -19,6 +21,8 @@ export const gameFolder = z.strictObject({
 // game's multiplayer.adapter names its adapter, one of the folder's .js or .mjs files (has): anything
 // else leaves it without one.
 const MANIFEST_BASE64 = Math.ceil(65_536 / 3) * 4;
+/** What a game's index.html and files may hold in all, as an imported folder may: what 48 MB of base64 carries. */
+export const GAME_BYTES = Math.floor(PORTABLE_FILE_LIMIT * 3 / 4);
 type Described = { players?: { max?: unknown }; multiplayer?: { adapter?: unknown } } | null;
 export function describedGame(manifest: string | undefined, has: (path: string) => boolean):
   Pick<GameDocument, 'maxPlayers' | 'net' | 'adapter'> {
@@ -32,7 +36,7 @@ export function describedGame(manifest: string | undefined, has: (path: string) 
     ...(adapterPath.safeParse(adapter).success && has(adapter as string) ? { adapter: adapter as string } : {}) };
 }
 
-export function importGameFolder(projects: Projects, raw: unknown) {
+export function importGameFolder(projects: Projects, raw: unknown, author?: Ident) {
   const { title, files } = gameFolder.parse(raw);
   const entry = files['index.html'];
   if (entry === undefined) throw new ZirbelError(422, 'A game folder needs an index.html at its top.');
@@ -50,5 +54,5 @@ export function importGameFolder(projects: Projects, raw: unknown) {
   return projects.createRevision(title ?? 'Imported game', {
     game: { html, ...describedGame(files['zirbel.json'], (path) => Object.hasOwn(stored, path)), files: stored }, assets: [],
     label: 'Imported game folder',
-  });
+  }, author);
 }

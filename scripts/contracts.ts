@@ -3,7 +3,8 @@
 // these files. Run `pnpm contracts` after changing packages/sdk/contracts.ts.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { z } from 'zod';
-import { projectBundle, savedNote, savedProposal } from '../packages/core/projects.ts';
+import { projectBundle, savedNote, savedProposal, storedProject } from '../packages/core/projects.ts';
+import { importInput, updateInput } from '../packages/core/git-source.ts';
 import { gameFolder } from '../packages/core/game-files.ts';
 import {
   asset, attachment, ClientMessage, id, lobbyFile, lobbyJoin, lobbyOffer, lobbyStart, portableRelease, project, proposalInput, scene,
@@ -34,6 +35,10 @@ const editor = {
   'project-bundle': projectBundle,
   'game-folder': gameFolder,
   grant: grantSchema,
+  // projects/<id>.json since git keeps the revisions (docs/git-store.md), and the git routes' bodies.
+  'stored-project': storedProject,
+  'import-git': importInput,
+  'update-from-source': updateInput,
 };
 
 const schemas = {

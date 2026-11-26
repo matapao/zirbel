@@ -1,20 +1,33 @@
-import { createHash, randomUUID } from 'node:crypto';
+// The project store. A project is its metadata (projects/<id>.json: title, notes, attachments, where it came from) and
+// a bare git repository (git/<id>.git) whose commits are its revisions and whose branches are its branches. Every save
+// is a commit: a proposal is one on refs/zirbel/proposals/<id> until it is applied, and applying moves the branch to it,
+// compare-and-swap. docs/git-store.md is the design; the Go host follows it.
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import {
-  attachment, id, note, PORTABLE_FILE_LIMIT, project, proposalInput, scene, sceneReference, storedProposalInput, type Asset, type Attachment,
-  type Note, type Operation, type Project, type Reference, type Revision, type Template,
+  asset, attachment, id, note, project, proposalInput, scene, sceneReference, storedProposalInput, type Asset,
+  type Attachment, type FullRevision, type Note, type Project, type ProjectBundle, type Reference, type Revision,
+  type Template,
 } from '../sdk/contracts.ts';
-import type { GameDocument } from '../sdk/game.ts';
+import { gameDocument, type GameDocument } from '../sdk/game.ts';
 import { starterScene, templates } from '../games/templates.ts';
+import { ZirbelError } from './errors.ts';
+import { digest, mediaMatches } from './bytes.ts';
+import {
+  commitTree, FastImport, git, initRepository, listTree, now as seconds, OWNER, readBranches, readObjects, resolve, updateRefs, ZERO,
+  type Ident,
+} from './git.ts';
+import { ASSETS_JSON, commitMessage, treeChanges, type Content } from './git-tree.ts';
+import { History } from './history.ts';
+import { migrateProject } from './migrate.ts';
+import { exportBundle, importBundle, withAssetFiles } from './bundles.ts';
+import { applyOperations, referencesFor } from './operations.ts';
 
-export class ZirbelError extends Error {
-  constructor(public status: number, message: string) { super(message); }
-}
-
-export const digest = (input: string | Buffer) => createHash('sha256').update(input).digest('hex');
+export { ZirbelError, digest, mediaMatches };
+export { deliveryAssets, gameFileBytes, gameFileHashes, verifyAssetBytes } from './bundles.ts';
 const now = () => new Date().toISOString();
 export const newId = () => randomUUID();
 export const safeId = (input: unknown) => id.parse(input);
@@ -40,80 +53,25 @@ export function readData(path: string): unknown {
   }
 }
 
-export function head(project: Project, branch: string) {
+/** A branch's head, which a project lists with its content. */
+export function head(project: Pick<Project, 'branches' | 'revisions'>, branch: string): FullRevision {
   const revisionId = Object.hasOwn(project.branches, branch) ? project.branches[branch] : undefined;
   const revision = project.revisions.find((item) => item.id === revisionId);
   if (!revision) throw new ZirbelError(404, 'Branch does not exist.');
-  return revision;
+  if (!revision.assets) throw new Error('A branch head was listed without its content.');
+  return revision as FullRevision;
 }
 
-export function assertCurrent(project: Project, branch: string, baseRevision: string) {
+export function assertCurrent(project: Pick<Project, 'branches' | 'revisions'>, branch: string, baseRevision: string) {
   const current = head(project, branch);
   if (current.id !== baseRevision) throw new ZirbelError(409, 'The branch has changed. Request a new proposal against its current revision.');
   return current;
 }
 
-function applyOperations(base: Pick<Revision, 'scene' | 'assets' | 'game'>, operations: Operation[]) {
-  let game = base.game;
-  let background = base.scene?.background;
-  const objects = new Map((base.scene?.objects ?? []).map((item) => [item.id, { ...item }]));
-  const assets = new Map(base.assets.map((asset) => [asset.id, asset]));
-  for (const operation of operations) {
-    switch (operation.op) {
-      case 'writeGame':
-        // Only a game with its files replaces a folder game: one document alone would drop them.
-        if (game?.files && !operation.game.files)
-          throw new ZirbelError(422, 'This game is a folder of files, which this change would drop. Change it in a harness turn, or import a new build.');
-        game = operation.game;
-        break;
-      case 'background':
-        background = operation.color;
-        break;
-      case 'add':
-        if (objects.has(operation.object.id)) throw new ZirbelError(409, 'An object already uses that ID.');
-        objects.set(operation.object.id, operation.object);
-        break;
-      case 'update': {
-        const object = objects.get(operation.id);
-        if (!object) throw new ZirbelError(409, 'The target object is missing.');
-        objects.set(operation.id, { ...object, ...operation.changes });
-        break;
-      }
-      case 'remove':
-        if (!objects.delete(operation.id)) throw new ZirbelError(409, 'The target object is missing.');
-        break;
-      case 'addAsset':
-        if (assets.has(operation.asset.id)) throw new ZirbelError(409, 'An asset already uses that ID.');
-        assets.set(operation.asset.id, operation.asset);
-        break;
-      case 'removeAsset':
-        if (!assets.delete(operation.id)) throw new ZirbelError(409, 'The target asset is missing.');
-        break;
-    }
-  }
-  if (assets.size > 80) throw new ZirbelError(400, 'A project can reference up to 80 assets.');
-  return { game, scene: base.scene && scene.parse({ ...base.scene, background, objects: [...objects.values()] }), assets: [...assets.values()] };
-}
-
-function referencesFor(base: Revision, references: Reference[]): Reference[] {
-  return references.map((reference) => {
-    if (!base.scene || reference.sceneId !== base.scene.id || reference.revision !== base.id)
-      throw new ZirbelError(409, 'A selected reference belongs to another revision.');
-    if (reference.type === 'instance') {
-      const object = base.scene.objects.find((item) => item.id === reference.object.id);
-      if (!object) throw new ZirbelError(409, 'A selected object no longer exists.');
-      return { ...reference, object };
-    }
-    const { x, y, width, height } = reference.bounds;
-    return { ...reference, objects: base.scene.objects.filter((item) => item.x >= x && item.x <= x + width &&
-      item.y >= y && item.y <= y + height) };
-  });
-}
-
-function isLegacyPreview(project: Project) {
+function isLegacyPreview(project: Project | ProjectBundle) {
   if (!project.template || project.upstream || project.imported || project.attachments.length || project.revisions.length !== 1) return false;
   const first = project.revisions[0];
-  if (!first || first.label !== 'Initial scene' || first.parent !== null || first.assets.length || first.game ||
+  if (!first || first.label !== 'Initial scene' || first.parent !== null || first.assets?.length || first.game ||
       !isDeepStrictEqual(first.scene, starterScene(project.template))) return false;
   const builtInTitle = templates[project.template].title;
   const title = project.title;
@@ -129,91 +87,169 @@ function isLegacyPreview(project: Project) {
 export const savedNote = note.omit({ id: true, date: true });
 export const projectBundle = z.strictObject({ project, assets: z.record(z.string(), z.string()) });
 const titleSchema = project.shape.title;
+/** projects/<id>.json: what of a project isn't its game's content. Its branches and revisions are its repository's. */
+export const storedProject = z.strictObject({
+  version: z.literal(2), id, title: titleSchema, template: project.shape.template, notes: z.array(note), attachments: z.array(attachment),
+  upstream: id.optional(), imported: z.literal(true).optional(), source: project.shape.source,
+});
+type Stored = z.infer<typeof storedProject>;
+type Meta = Pick<Stored, 'title' | 'template' | 'upstream' | 'imported' | 'source'>;
+const content = z.strictObject({ scene: scene.optional(), game: gameDocument.optional(), assets: z.array(asset).max(80) });
+const proposalRef = (proposalId: string) => 'refs/zirbel/proposals/' + proposalId;
 
 export class Projects {
+  readonly history: History;
+
   constructor(public readonly root: string) {
-    for (const name of ['projects', 'proposals', 'assets', 'media', 'releases', 'grants']) {
+    for (const name of ['projects', 'proposals', 'assets', 'media', 'releases', 'grants', 'git']) {
       mkdirSync(join(root, name), { recursive: true, mode: 0o700 });
     }
+    this.history = new History({ hasAsset: (hash) => existsSync(join(root, 'assets', hash)), storeAsset: (bytes) => this.storeAsset(bytes) });
   }
 
   private path(projectId: string) { return join(this.root, 'projects', safeId(projectId) + '.json'); }
   private proposalPath(projectId: string, proposalId: string) {
     return join(this.root, 'proposals', safeId(projectId) + '.' + safeId(proposalId) + '.json');
   }
+  /** A project's bare repository. */
+  repository(projectId: string) { return join(this.root, 'git', safeId(projectId) + '.git'); }
 
-  private *storedProjects() {
-    for (const file of readdirSync(join(this.root, 'projects'))) {
-      if (file.endsWith('.json')) yield this.read(file.slice(0, -5));
-    }
-  }
+  private ids() { return readdirSync(join(this.root, 'projects')).filter((file) => file.endsWith('.json')).map((file) => file.slice(0, -5)); }
 
-  list() { return [...this.storedProjects()]; }
+  list() { return this.ids().map((projectId) => this.read(projectId)); }
 
   summaries() {
-    return Array.from(this.storedProjects(), ({ id, title, template, branches }) => ({ id, title, template, branches }));
+    return this.ids().map((projectId) => {
+      const { id, title, template } = this.stored(projectId);
+      return { id, title, template, branches: readBranches(this.repository(projectId)) };
+    });
   }
 
+  /** Moves aside the built-in starters nobody changed, before or after their migration. */
   archiveLegacyPreviews() {
     const withProposals = new Set(readdirSync(join(this.root, 'proposals')).filter((file) => file.endsWith('.json'))
       .map((file) => file.split('.')[0]));
-    const directory = join(this.root, 'archived-preview-projects');
-    for (const project of this.storedProjects()) {
-      const { id } = project;
-      if (withProposals.has(id) || !isLegacyPreview(project)) continue;
-      this.moveAside(id, directory);
+    for (const projectId of this.ids()) {
+      if (withProposals.has(projectId)) continue;
+      const raw = readData(this.path(projectId)) as { version?: unknown };
+      const found = raw.version === 1 ? project.safeParse(raw).data : this.read(projectId);
+      if (found && isLegacyPreview(found)) this.moveAside(projectId, join(this.root, 'archived-preview-projects'));
     }
   }
 
-  read(projectId: string) {
-    const saved = project.parse(readData(this.path(projectId)));
+  /** Makes every project still kept as a version-1 file a repository (migrate.ts). Says how many it migrated. */
+  migrate() {
+    let migrated = 0;
+    for (const projectId of this.ids()) {
+      const raw = readData(this.path(projectId)) as { version?: unknown };
+      if (raw.version !== 1) continue;
+      migrateProject(this, project.parse(raw));
+      migrated++;
+    }
+    return migrated;
+  }
+
+  private stored(projectId: string): Stored {
+    const raw = readData(this.path(projectId)) as { version?: unknown };
+    if (raw.version === 1) throw new ZirbelError(503, 'This project is still to be migrated. Start the editor again.');
+    const saved = storedProject.parse(raw);
     if (saved.id !== projectId) throw new ZirbelError(422, 'The stored project ID does not match its filename.');
     return saved;
+  }
+
+  read(projectId: string): Project {
+    const { version: _version, id, title, template, notes, attachments, upstream, imported, source } = this.stored(projectId);
+    const repo = this.repository(projectId);
+    const branches = readBranches(repo);
+    if (!branches.main) throw new ZirbelError(422, 'The project’s repository has no main branch.');
+    const heads = new Set(Object.values(branches));
+    const revisions: Revision[] = this.history.revisions(repo, branches)
+      .map((meta) => heads.has(meta.id) ? { ...meta, ...this.history.content(repo, meta.id) } : meta);
+    return { version: 1, id, title, ...(template ? { template } : {}), branches, revisions, notes, attachments,
+      ...(upstream ? { upstream } : {}), ...(imported ? { imported } : {}), ...(source ? { source } : {}) };
   }
 
   has(projectId: string) { return existsSync(this.path(projectId)); }
 
   remove(projectId: string) {
-    this.read(projectId);
+    this.stored(projectId);
     this.moveAside(projectId, join(this.root, 'removed-projects'));
   }
 
   private moveAside(projectId: string, directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    const path = join(directory, projectId + '.json');
-    renameSync(this.path(projectId), existsSync(path) ? join(directory, projectId + '.' + newId() + '.json') : path);
+    const name = existsSync(join(directory, projectId + '.json')) ? projectId + '.' + newId() : projectId;
+    renameSync(this.path(projectId), join(directory, name + '.json'));
+    const repo = this.repository(projectId);
+    if (existsSync(repo)) renameSync(repo, join(directory, name + '.git'));
   }
 
-  private save(value: Project) {
-    const saved = project.parse(value);
+  /** Writes a project's metadata. */
+  save(value: Stored) {
+    const saved = storedProject.parse(value);
     atomicWrite(this.path(saved.id), JSON.stringify(saved));
     return saved;
   }
 
-  createGame(title = 'Untitled project', game?: GameDocument) {
-    return this.createRevision(title, { game, assets: [], label: game ? 'Created with harness' : 'Created project' });
+  private update(projectId: string, change: (current: Stored) => Stored) {
+    this.save(change(this.stored(projectId)));
   }
 
-  createRevision(title: string, initial: { scene?: Revision['scene']; game?: GameDocument; assets: Asset[];
-    template?: Template; upstream?: string; label: string }) {
+  createGame(title = 'Untitled project', game?: GameDocument, author: Ident = OWNER) {
+    return this.createRevision(title, { game, assets: [], label: game ? 'Created with harness' : 'Created project' }, author);
+  }
+
+  createRevision(title: string, initial: { scene?: FullRevision['scene']; game?: GameDocument; assets: Asset[];
+    template?: Template; upstream?: string; label: string }, author: Ident = OWNER) {
     const { template, upstream } = initial;
-    const first: Revision = {
-      id: newId(), parent: null, label: initial.label, date: now(),
-      game: initial.game, scene: initial.scene, assets: initial.assets,
-    };
-    return this.save({
-      version: 1, id: newId(), title, template, branches: { main: first.id }, revisions: [first],
-      notes: [], attachments: [], upstream,
-    });
+    const first = content.parse({ scene: initial.scene, game: initial.game, assets: initial.assets });
+    const name = titleSchema.parse(title);
+    return this.createRepository((repo) => {
+      const stream = new FastImport();
+      const { changes, hashes } = treeChanges([], () => undefined, first, (hash) => this.readAsset(hash), stream);
+      stream.commit('refs/heads/main', { author, time: seconds(), message: commitMessage(initial.label) }, changes);
+      stream.run(repo);
+      return hashes;
+    }, { title: name, ...(template ? { template } : {}), ...(upstream ? { upstream } : {}) });
+  }
+
+  /** A new project whose repository fill writes, made aside and moved in whole; its metadata last. */
+  createRepository(fill: (repo: string) => [string, string][], meta: Meta, projectId = newId()) {
+    const making = this.repository(projectId) + '.' + newId() + '.making';
+    try {
+      initRepository(making);
+      return this.adopt(making, fill(making), meta, projectId);
+    } finally { rmSync(making, { recursive: true, force: true }); }
+  }
+
+  /** Makes a repository written aside a new project's: hashes, the SHA-256s of blobs it was written with. */
+  adopt(making: string, hashes: [string, string][], meta: Meta, projectId: string) {
+    const repo = this.repository(projectId);
+    rmSync(repo, { recursive: true, force: true });
+    renameSync(making, repo);
+    this.history.learn(repo, hashes);
+    this.save({ version: 2, id: projectId, ...meta, notes: [], attachments: [] });
+    return this.read(projectId);
   }
 
   rename(projectId: string, title: string) {
-    const current = this.read(projectId);
-    return this.save({ ...current, title: titleSchema.parse(title) });
+    this.update(projectId, (current) => ({ ...current, title: titleSchema.parse(title) }));
+    return this.read(projectId);
+  }
+
+  /** Writes content as a commit on a ref, its parent base, keeping what the host doesn't manage of base's tree. */
+  private write(repo: string, ref: string, base: string | undefined, next: Content, label: string, author: Ident) {
+    const stream = new FastImport();
+    const entries = base ? listTree(repo, base) : [];
+    const { changes, hashes } = treeChanges(entries, (oid) => this.history.sha256(repo, oid), next, (hash) => this.readAsset(hash), stream);
+    const mark = stream.commit(ref, { author, time: seconds(), message: commitMessage(label), from: base }, changes);
+    const commit = stream.run(repo).get(mark)!;
+    this.history.learn(repo, hashes);
+    return commit;
   }
 
   /** Stages a proposal. Only the editor's own harness turns stage a game with its files (withFiles). */
-  submit(projectId: string, input: unknown, withFiles = false) {
+  submit(projectId: string, input: unknown, withFiles = false, author: Ident = OWNER) {
     const request = (withFiles ? storedProposalInput : proposalInput).parse(input);
     const project = this.read(projectId);
     const base = assertCurrent(project, request.branch, request.baseRevision);
@@ -222,10 +258,16 @@ export class Projects {
     // Bounds what a proposal-only MCP grant can stage; it cannot move the head to reset this.
     if (this.proposals(projectId, request.branch).length >= 50)
       throw new ZirbelError(429, 'Apply or discard pending proposals before staging more.');
-    const preview = applyOperations(base, request.operations);
+    const applied = applyOperations(base, request.operations);
     const proposal = { ...request, id: newId(), projectId, date: now() };
+    const repo = this.repository(projectId);
+    const commit = this.write(repo, proposalRef(proposal.id), base.id, applied, request.label, author);
     atomicWrite(this.proposalPath(projectId, proposal.id), JSON.stringify(proposal));
-    return { proposal, preview };
+    return { proposal, preview: this.history.content(repo, commit) };
+  }
+
+  saveProposal(proposal: Proposal) {
+    atomicWrite(this.proposalPath(proposal.projectId, proposal.id), JSON.stringify(savedProposal.parse(proposal)));
   }
 
   getProposal(projectId: string, proposalId: string) {
@@ -242,42 +284,78 @@ export class Projects {
     ).filter((proposal) => proposal.branch === branch && proposal.baseRevision === base.id).sort((a, b) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label));
   }
 
+  private proposalCommit(projectId: string, proposalId: string) {
+    const commit = resolve(this.repository(projectId), proposalRef(proposalId));
+    if (!commit) throw new ZirbelError(404, 'The requested item does not exist.');
+    return commit;
+  }
+
   preview(projectId: string, proposalId: string) {
     const proposal = this.getProposal(projectId, proposalId);
-    const base = assertCurrent(this.read(projectId), proposal.branch, proposal.baseRevision);
-    return { proposal, preview: applyOperations(base, proposal.operations) };
+    assertCurrent(this.read(projectId), proposal.branch, proposal.baseRevision);
+    return { proposal, preview: this.history.content(this.repository(projectId), this.proposalCommit(projectId, proposalId)) };
   }
 
   discard(projectId: string, proposalId: string) {
     this.getProposal(projectId, proposalId);
     rmSync(this.proposalPath(projectId, proposalId));
+    updateRefs(this.repository(projectId), [{ ref: proposalRef(proposalId) }]);
   }
 
   commit(projectId: string, proposalId: string, fork?: string) {
     if (fork !== undefined) safeId(fork);
-    const { proposal, preview } = this.preview(projectId, proposalId);
+    const { proposal } = this.preview(projectId, proposalId);
     const current = this.read(projectId);
     if (fork && Object.hasOwn(current.branches, fork)) throw new ZirbelError(409, 'A branch with that name already exists.');
     const branch = fork ?? proposal.branch;
-    // In the schema's order, as a revision is read back and the Go host writes one: apply_proposal answers with it as JSON text.
-    const { scene, game, assets } = preview;
-    const next: Revision = { id: newId(), parent: proposal.baseRevision, label: proposal.label, date: now(), scene, game, assets };
-    this.save({ ...current, branches: { ...current.branches, [branch]: next.id }, revisions: [...current.revisions, next] });
-    // Once the transaction commits the proposal is stale on that branch.
+    const repo = this.repository(projectId);
+    const commit = this.proposalCommit(projectId, proposalId);
+    // The branch moves only from the proposal's base (or a fork from none), with the proposal's ref going in one step.
+    if (!updateRefs(repo, [{ ref: 'refs/heads/' + branch, to: commit, from: fork ? ZERO : proposal.baseRevision },
+      { ref: proposalRef(proposalId), from: commit }]))
+      throw new ZirbelError(409, 'The branch has changed. Request a new proposal against its current revision.');
     rmSync(this.proposalPath(projectId, proposalId), { force: true });
-    return { revision: next, branch };
+    return { revision: this.revision(projectId, commit), branch };
   }
 
-  restore(projectId: string, branch: string, baseRevision: string, target: string) {
+  /** Moves a branch from base to a commit, or answers that it has moved on. */
+  advance(projectId: string, branch: string, base: string, commit: string) {
+    if (!updateRefs(this.repository(projectId), [{ ref: 'refs/heads/' + branch, to: commit, from: base }]))
+      throw new ZirbelError(409, 'The branch has changed. Request a new proposal against its current revision.');
+  }
+
+  restore(projectId: string, branch: string, baseRevision: string, target: string, author: Ident = OWNER) {
     const project = this.read(projectId);
     assertCurrent(project, safeId(branch), safeId(baseRevision));
-    const earlier = project.revisions.find((item) => item.id === target);
-    if (!earlier) throw new ZirbelError(404, 'Revision does not exist.');
-    const revision: Revision = {
-      ...earlier, id: newId(), date: now(), parent: baseRevision, restoredFrom: earlier.id,
-      label: ('Restore ' + earlier.label).slice(0, 120),
-    };
-    return this.save({ ...project, branches: { ...project.branches, [branch]: revision.id }, revisions: [...project.revisions, revision] });
+    const repo = this.repository(projectId);
+    const earlier = this.revision(projectId, target);
+    const { problems } = this.history.read(repo, earlier.id);
+    if (problems.length) throw new ZirbelError(422, 'That revision can’t be restored: ' + problems[0]);
+    const message = commitMessage(('Restore ' + earlier.label).slice(0, 120), [['Zirbel-Restored-From', earlier.id]]);
+    const restored = commitTree(repo, earlier.id + '^{tree}', [baseRevision], author, seconds(), message);
+    this.advance(projectId, branch, baseRevision, restored);
+    return this.read(projectId);
+  }
+
+  /** A revision of the project's history, in full: a commit reachable from one of its branches. */
+  revision(projectId: string, revisionId: string): FullRevision {
+    this.stored(projectId);
+    const repo = this.repository(projectId);
+    const commit = /^[0-9a-f]{40}$/.test(revisionId) ? resolve(repo, revisionId) : undefined;
+    const reachable = commit !== undefined && commit === revisionId &&
+      git(repo, ['for-each-ref', '--count=1', '--contains', commit, 'refs/heads/']).stdout.length > 0;
+    if (!reachable) throw new ZirbelError(404, 'Revision does not exist.');
+    return { ...this.history.meta(repo, commit), ...this.history.content(repo, commit) };
+  }
+
+  /** Every asset the listed history holds: what an MCP grant may add again. */
+  knownAssets(projectId: string) {
+    const repo = this.repository(projectId);
+    const listed = this.history.revisions(repo, readBranches(repo));
+    const files = readObjects(repo, listed.map(({ id }) => id + ':' + ASSETS_JSON));
+    return [...files.values()].flatMap((bytes) => {
+      try { return z.array(asset).parse(JSON.parse(bytes.toString('utf8'))); } catch { return []; }
+    });
   }
 
   addNote(projectId: string, raw: unknown) {
@@ -285,24 +363,25 @@ export class Projects {
     const project = this.read(projectId);
     head(project, input.branch);
     const references = input.references.map((reference) => {
-      const revision = project.revisions.find((item) => item.id === reference.revision);
-      if (!revision) throw new ZirbelError(404, 'Note refers to a missing revision.');
+      let revision: FullRevision;
+      try { revision = this.revision(projectId, reference.revision); }
+      catch { throw new ZirbelError(404, 'Note refers to a missing revision.'); }
       return referencesFor(revision, [reference])[0]!;
     });
     if (input.attachments.some((id) => !project.attachments.some((item) => item.id === id)))
       throw new ZirbelError(404, 'Note refers to a missing attachment.');
     const next: Note = { ...input, id: newId(), date: now(), references };
-    this.save({ ...project, notes: [...project.notes, next] });
+    this.update(projectId, (current) => ({ ...current, notes: [...current.notes, next] }));
     return next;
   }
 
-  select(projectId: string, branch: string, baseRevision: string, raw: unknown) {
+  select(projectId: string, branch: string, baseRevision: string, raw: unknown): Reference[] {
     const current = assertCurrent(this.read(projectId), branch, baseRevision);
     return referencesFor(current, z.array(sceneReference).max(32).parse(raw));
   }
 
   addMedia(projectId: string, metadata: Omit<Attachment, 'id'>, bytes: Buffer) {
-    const project = this.read(projectId);
+    const project = this.stored(projectId);
     const item = attachment.parse({ ...metadata, id: newId() });
     if (item.original && !project.attachments.some((media) => media.id === item.original))
       throw new ZirbelError(404, 'The original attachment is missing.');
@@ -312,7 +391,7 @@ export class Projects {
   }
 
   editTranscript(projectId: string, attachmentId: string, transcript: string, intent: Attachment['intent']) {
-    const current = this.read(projectId);
+    const current = this.stored(projectId);
     const item = current.attachments.find((candidate) => candidate.id === attachmentId);
     if (!item) throw new ZirbelError(404, 'Attachment does not exist.');
     const next = attachment.parse({ ...item, transcript, intent });
@@ -321,14 +400,15 @@ export class Projects {
   }
 
   readMedia(projectId: string, attachmentId: string) {
-    const item = this.read(projectId).attachments.find((media) => media.id === attachmentId);
+    const item = this.stored(projectId).attachments.find((media) => media.id === attachmentId);
     if (!item) throw new ZirbelError(404, 'Attachment does not exist.');
     return { item, bytes: readFileSync(join(this.root, 'media', item.id)) };
   }
 
   storeAsset(bytes: Buffer) {
     const hash = digest(bytes);
-    atomicWrite(join(this.root, 'assets', hash), bytes);
+    const path = join(this.root, 'assets', hash);
+    if (!existsSync(path)) atomicWrite(path, bytes);
     return hash;
   }
 
@@ -341,119 +421,14 @@ export class Projects {
     }
   }
 
-  export(projectId: string) {
-    const { notes: _notes, attachments: _attachments, ...accepted } = this.read(projectId);
-    return this.withAssetFiles({ project: { ...accepted, notes: [], attachments: [] } }, deliveryAssets(accepted.revisions),
-      gameFileHashes(accepted.revisions));
-  }
+  /** A bundle of the project (bundles.ts). */
+  export(projectId: string) { return exportBundle(this, projectId); }
 
-  // The package's assets map carries image assets and a built game's files, each once, by hash.
+  /** A package's metadata with the bytes of its assets and game files (bundles.ts). */
   withAssetFiles<T extends object>(metadata: T, assets: readonly Asset[], gameFiles: readonly string[] = []) {
-    let remaining = PORTABLE_FILE_LIMIT - Buffer.byteLength(JSON.stringify({ ...metadata, assets: {} }));
-    const files = new Map<string, string>();
-    const checkSize = () => {
-      if (remaining < 0) throw new ZirbelError(413, 'This package exceeds the 48 MB file limit.');
-    };
-    checkSize();
-    for (const asset of assets) {
-      const bytes = this.readAsset(asset.hash);
-      verifyAssetBytes(asset, bytes);
-      if (files.has(asset.hash)) continue;
-      // Base64 length plus the quoted key, quoted value, colon and optional comma.
-      remaining -= 4 * Math.ceil(bytes.length / 3) + asset.hash.length + 5 + Number(files.size > 0);
-      checkSize();
-      files.set(asset.hash, bytes.toString('base64'));
-    }
-    for (const hash of gameFiles) {
-      if (files.has(hash)) continue;
-      const bytes = this.readAsset(hash);
-      if (digest(bytes) !== hash) throw new ZirbelError(422, 'A game file does not match its hash.');
-      remaining -= 4 * Math.ceil(bytes.length / 3) + hash.length + 5 + Number(files.size > 0);
-      checkSize();
-      files.set(hash, bytes.toString('base64'));
-    }
-    return { ...metadata, assets: Object.fromEntries(files) };
+    return withAssetFiles((hash) => this.readAsset(hash), metadata, assets, gameFiles);
   }
 
-  import(raw: unknown) {
-    const bundle = projectBundle.parse(raw);
-    const source = bundle.project;
-    const ids = new Set<string>();
-    for (const revision of source.revisions) {
-      if (source.template && !revision.scene && !revision.game)
-        throw new ZirbelError(422, 'The imported legacy revision is missing its scene.');
-      const validParent = ids.size === 0 ? revision.parent === null : revision.parent !== null && ids.has(revision.parent);
-      if (ids.has(revision.id) || !validParent ||
-        (revision.restoredFrom && !ids.has(revision.restoredFrom))) throw new ZirbelError(400, 'Revision history is invalid.');
-      ids.add(revision.id);
-    }
-    if (!source.branches.main || Object.values(source.branches).some((id) => !ids.has(id)))
-      throw new ZirbelError(400, 'The imported branches have invalid revisions.');
-    const assets = new Map<string, Buffer>();
-    for (const item of deliveryAssets(source.revisions)) {
-      const data = bundle.assets[item.hash];
-      if (typeof data !== 'string') throw new ZirbelError(422, 'An asset file is missing.');
-      const bytes = Buffer.from(data, 'base64');
-      verifyAssetBytes(item, bytes);
-      assets.set(item.hash, bytes);
-    }
-    for (const hash of gameFileHashes(source.revisions)) assets.set(hash, gameFileBytes(hash, bundle.assets[hash]));
-    if (Object.keys(bundle.assets).length !== assets.size) throw new ZirbelError(422, 'The package contains undeclared assets.');
-    for (const bytes of assets.values()) this.storeAsset(bytes);
-    return this.save({ ...source, id: newId(), notes: [], attachments: [], imported: true });
-  }
-}
-
-export function mediaMatches(media: string, bytes: Buffer) {
-  switch (media) {
-    case 'image/png': return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-    case 'image/jpeg': return bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
-    case 'image/webp': return bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
-    case 'video/mp4': return bytes.toString('ascii', 4, 8) === 'ftyp';
-    case 'video/webm': return bytes.subarray(0, 4).equals(Buffer.from([26, 69, 223, 163]));
-    case 'text/plain': return !bytes.includes(0) && !bytes.toString('utf8').includes('\ufffd');
-    default: return false;
-  }
-}
-
-function checkDeliveryRights(asset: Asset) {
-  if (asset.license === 'unknown' || asset.license === 'local-only')
-    throw new ZirbelError(422, 'Resolve the delivery rights for ' + asset.name + '.');
-  if (asset.license !== 'CC0-1.0' && !asset.credit.trim())
-    throw new ZirbelError(422, 'Add the required credit for ' + asset.name + '.');
-  const source = new URL(asset.source);
-  if (source.username || source.password)
-    throw new ZirbelError(422, 'Remove account credentials from the source URL for ' + asset.name + '.');
-}
-
-// Check every revision's metadata, but process each distinct file only once.
-export function deliveryAssets(revisions: ReadonlyArray<Pick<Revision, 'assets'>>) {
-  const unique = new Map<string, Asset>();
-  for (const { assets } of revisions) {
-    for (const asset of assets) {
-      checkDeliveryRights(asset);
-      const previous = unique.get(asset.hash);
-      if (previous && previous.media !== asset.media) throw new ZirbelError(422, 'Conflicting media types for ' + asset.name + '.');
-      unique.set(asset.hash, asset);
-    }
-  }
-  return [...unique.values()];
-}
-
-// Every file a built game lists, once each.
-export function gameFileHashes(revisions: ReadonlyArray<Pick<Revision, 'game'>>) {
-  return [...new Set(revisions.flatMap(({ game }) => Object.values(game?.files ?? {})))];
-}
-
-// A built game's file carried as base64, which must match its hash.
-export function gameFileBytes(hash: string, data: unknown) {
-  if (typeof data !== 'string') throw new ZirbelError(422, 'A game file is missing.');
-  const bytes = Buffer.from(data, 'base64');
-  if (digest(bytes) !== hash) throw new ZirbelError(422, 'A game file does not match its hash.');
-  return bytes;
-}
-
-export function verifyAssetBytes(asset: Asset, bytes: Buffer) {
-  if (digest(bytes) !== asset.hash || !mediaMatches(asset.media, bytes))
-    throw new ZirbelError(422, 'The asset bytes do not match ' + asset.name + '.');
+  /** A new project from a bundle (bundles.ts). */
+  import(raw: unknown, author?: Ident) { return importBundle(this, raw, author); }
 }

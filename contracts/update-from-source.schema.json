@@ -1,0 +1,20 @@
+{
+  "$id": "https://zirbel.app/contracts/update-from-source.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "branch": {
+      "default": "main",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "baseRevision": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    }
+  },
+  "required": [
+    "baseRevision"
+  ],
+  "additionalProperties": false
+}

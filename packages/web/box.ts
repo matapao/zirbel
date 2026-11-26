@@ -100,7 +100,7 @@ export function grantSetup(endpoint: string, grant: Grant) {
     el('p', 'This access ends ' + new Date(grant.expires).toLocaleString() + '.')];
 }
 
-function copyable(text: string, label: string) {
+export function copyable(text: string, label: string) {
   const row = el('div', undefined, 'row');
   const field = el('input', undefined, 'invite');
   field.value = text;

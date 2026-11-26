@@ -46,6 +46,8 @@ function normalizer() {
   };
   const text = (value: string) => value
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, (id) => name(id, 'id'))
+    // Revisions are commits (docs/git-store.md), each named by its hash.
+    .replace(/\b[0-9a-f]{40}\b/g, (commit) => name(commit, 'commit'))
     .replace(/\b\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\b/g, '<date>')
     .replace(/127\.0\.0\.1:\d+/g, '127.0.0.1:<port>')
     .replace(/\/join\/[a-f0-9]{12}#[\w-]{32}/g, '/join/<room>#<invite>')
