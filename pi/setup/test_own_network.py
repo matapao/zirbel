@@ -170,6 +170,12 @@ class AccessPoint(unittest.TestCase):
         self.assertEqual([(item["address"], item["prefix"]) for item in ipv4["address-data"]], [("10.42.0.1", 24)])
         self.assertEqual(values["ipv6"]["method"], "disabled")
 
+    def test_the_network_chosen_last_goes_first_and_the_own_wifi_before_any(self):
+        self.assertEqual(self.network.next_priority([]), 1)
+        self.assertEqual(self.network.next_priority([0, 3, 1]), 4)
+        self.assertEqual(self.network.next_priority([98, 99]), 99)
+        self.assertLess(self.network.next_priority([500]), self.network.OWN_PRIORITY)
+
     def test_every_name_resolves_to_the_box_only_while_the_setup_hotspot_runs(self):
         with tempfile.TemporaryDirectory() as folder:
             dns = Path(folder) / "zirbel-setup.conf"

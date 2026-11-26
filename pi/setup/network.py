@@ -39,7 +39,7 @@ HOTSPOT_ADDRESS = "10.42.0.1"
 ONLINE_TYPES = ("802-11-wireless", "802-3-ethernet")
 # The box's own Wi-Fi, on the hotspot's address: the one radio serves one or the other.
 OWN_ID = "zirbel-network"
-# Above every network the box joins (0, unless set otherwise): after a reboot the box makes its own Wi-Fi first.
+# Above every network the box joins: after a reboot the box makes its own Wi-Fi first.
 OWN_PRIORITY = 100
 PMF_DISABLE = 1
 
@@ -307,8 +307,11 @@ class NetworkManager:
         if not device:
             return None
         name = ssid.decode("utf-8", errors="replace")
+        others = [int(saved["connection"].get("autoconnect-priority", 0)) for _path, saved in self._saved()
+                  if bytes(saved["802-11-wireless"].get("ssid", b"")) != ssid]
         values = {
-            "connection": _sv({"id": name, "type": "802-11-wireless", "autoconnect": True}),
+            "connection": _sv({"id": name, "type": "802-11-wireless", "autoconnect": True,
+                               "autoconnect-priority": dbus.Int32(next_priority(others))}),
             "802-11-wireless": _sv({"ssid": dbus.ByteArray(ssid), "mode": "infrastructure"}),
             "ipv4": _sv({"method": "auto"}),
             "ipv6": _sv({"method": "auto"}),
@@ -399,6 +402,13 @@ RULES = """table inet zirbel_setup {{
   }}
 }}
 """
+
+
+def next_priority(saved: list[int]) -> int:
+    """The autoconnect priority for a network joined now, from those of the networks saved before it: above them all,
+    so after a reboot, with several in reach, the box goes back to the one chosen in setup last; below the box's own
+    Wi-Fi, which goes first while it is on."""
+    return min(OWN_PRIORITY - 1, max(saved, default=0) + 1)
 
 
 def reaches_out(attempts: int = 3) -> bool:
