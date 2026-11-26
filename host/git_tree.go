@@ -19,7 +19,7 @@ import (
 // document's own fields, an older project's scene, imported assets), and
 // anything else kept as it is. readTree reads one into a revision's content
 // under the rules every host applies; treeChanges writes content over a base
-// tree, touching only what the host manages. docs/git-store.md is the design.
+// tree, touching only what the host manages. The git store in AGENTS.md is the design.
 
 // Content is a revision's content: an older project's scene, the game, and the
 // imported assets, in the order the Node host writes them.

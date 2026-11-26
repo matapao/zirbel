@@ -108,3 +108,66 @@ func TestGitTokensAreDerivedFromTheBoxsSecret(t *testing.T) {
 		}
 	}
 }
+
+// A pushed update's line, `<old> <new> <ref>`, as refuseUpdate reads it: the
+// refusals that need no repository are the Node host's, word for word, and an
+// update it takes moves a branch named as an id, deletes nothing, and ends at
+// a game.
+func FuzzRefuseUpdate(f *testing.F) {
+	repo := filepath.Join(f.TempDir(), "git", "game.git")
+	if err := initRepository(repo); err != nil {
+		f.Fatal(err)
+	}
+	first := commitFiles(f, repo, "refs/heads/main", "", map[string]string{"index.html": "<p>1</p>"}, "One\n")
+	next := commitFiles(f, repo, "refs/zirbel/next", first, map[string]string{"index.html": "<p>2</p>"}, "Two\n")
+	pageless := commitFiles(f, repo, "refs/zirbel/pageless", first, map[string]string{"other.html": "<p>"}, "No page\n")
+	for _, update := range []string{first + " " + next + " refs/heads/main", zeroCommit + " " + next + " refs/heads/new", next + " " + first + " refs/heads/main",
+		first + " " + pageless + " refs/heads/main", first + " " + zeroCommit + " refs/heads/main", first + " " + next + " refs/tags/v1",
+		first + " " + next, "  refs/heads/main", first + " " + next + " refs/heads/Main extra"} {
+		f.Add(update, false)
+		f.Add(update, true)
+	}
+	games := []string{treeOf(f, repo, first), treeOf(f, repo, next)}
+	refusedRef := ": Zirbel takes branches alone, named in lowercase letters, digits, - and _."
+	f.Fuzz(func(t *testing.T, update string, grant bool) {
+		refused, err := refuseUpdate(repo, update, false, nil, grant)
+		// What packages/server/git-hook.ts refuses before it reads the repository.
+		fields := strings.Split(update, " ")
+		ref := "That ref"
+		if len(fields) > 2 {
+			ref = fields[2]
+		}
+		branch, isBranch := strings.CutPrefix(ref, "refs/heads/")
+		switch {
+		case len(fields) < 3 || fields[0] == "" || fields[1] == "" || !isBranch || !idPattern.MatchString(branch):
+			if refused != ref+refusedRef || err != nil {
+				t.Fatalf("%q: %q, %v; Node refuses it as %q", update, refused, err, ref+refusedRef)
+			}
+		case fields[1] == zeroCommit:
+			if refused != branch+": a branch isn’t deleted by a push." || err != nil {
+				t.Fatalf("%q, a deletion: %q, %v", update, refused, err)
+			}
+		case fields[0] == zeroCommit && grant:
+			if refused != branch+": a project grant pushes to the game’s branches, and makes none." || err != nil {
+				t.Fatalf("%q, a new branch by a grant: %q, %v", update, refused, err)
+			}
+		case err == nil && refused == "":
+			// Taken: the update ends at a game, one of the trees with a page.
+			if tree := treeOf(t, repo, fields[1]); tree != games[0] && tree != games[1] {
+				t.Fatalf("%q was taken, at %q, which isn't a game", update, tree)
+			}
+		case err == nil && !strings.HasPrefix(refused, branch+": "):
+			t.Fatalf("%q: %q names another branch", update, refused)
+		}
+	})
+}
+
+// treeOf is the tree a revision names in a repository, or "".
+func treeOf(t testing.TB, repo, revision string) string {
+	t.Helper()
+	out, err := runGit(repo, []string{"rev-parse", "--verify", "--quiet", "--end-of-options", revision + "^{tree}"}, gitOptions{allow: []int{1, 128}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out.stdout))
+}

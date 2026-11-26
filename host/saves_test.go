@@ -50,8 +50,7 @@ func mustHead(t *testing.T, p *Project) *Revision {
 }
 
 func status(err error) int {
-	var known *HTTPError
-	if errors.As(err, &known) {
+	if known, ok := errors.AsType[*HTTPError](err); ok {
 		return known.Status
 	}
 	return 0

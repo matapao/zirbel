@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net"
@@ -115,7 +114,7 @@ func TestMosslightMovesAndCollects(t *testing.T) {
 	if got := game.apply("a", json.RawMessage(`{"type":"move","x":1,"y":0}`)); got != "" {
 		t.Fatal(got)
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		game.tick(0.05)
 	}
 	if len(game.collected) != 1 || game.explorers[0].Score != 1 {
@@ -129,6 +128,16 @@ func TestMosslightMovesAndCollects(t *testing.T) {
 
 func fakeRelease(t *testing.T) (*Release, map[string]*webfiles.File) {
 	t.Helper()
+	data, runtime := fakeReleaseJSON()
+	release, err := ParseRelease(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return release, runtime
+}
+
+// fakeReleaseJSON is a release file for a runtime of one file, as Zirbel writes one.
+func fakeReleaseJSON() ([]byte, map[string]*webfiles.File) {
 	runtime := map[string]*webfiles.File{"player.js": {Bytes: []byte("ok"), Hash: digest([]byte("ok"))}}
 	game := `{"html":"<canvas></canvas>","maxPlayers":2}`
 	document := map[string]any{
@@ -143,11 +152,7 @@ func fakeRelease(t *testing.T) (*Release, map[string]*webfiles.File) {
 	}
 	// Encode like JSON.stringify: Go's default HTML escaping would change the hashed bytes.
 	data, _ := jsJSON(document)
-	release, err := ParseRelease(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return release, runtime
+	return data, runtime
 }
 
 func TestVerifyChecksContentRuntimeAndCapabilities(t *testing.T) {
@@ -231,14 +236,14 @@ func TestOpeningAtTheRoomLimitReplacesOneIdlePlaytest(t *testing.T) {
 	release, _ := fakeRelease(t)
 	rooms := NewRooms()
 	defer rooms.Dispose()
-	for i := 0; i < maxRooms; i++ {
+	for range maxRooms {
 		if _, err := rooms.Open(release, true, "local", false); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// Each concurrent open must evict one idle playtest and add one room.
 	var opening sync.WaitGroup
-	for i := 0; i < 16; i++ {
+	for range 16 {
 		opening.Go(func() { _, _ = rooms.Open(release, true, "local", false) })
 	}
 	opening.Wait()
@@ -292,17 +297,6 @@ func TestClaimDirectoryIsExclusiveAndRecoversItsOwnStalePID(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "service.json")); !os.IsNotExist(err) {
 		t.Fatal("release left the claim behind")
 	}
-}
-
-func FuzzParseRelease(f *testing.F) {
-	f.Add([]byte(`{"manifest":{},"sceneHash":"","files":{},"assets":{}}`))
-	f.Add([]byte(`[]`))
-	f.Fuzz(func(t *testing.T, data []byte) {
-		release, err := ParseRelease(data)
-		if err == nil && release == nil {
-			t.Fatal("nil release without an error")
-		}
-	})
 }
 
 func FuzzClientMessage(f *testing.F) {
@@ -366,7 +360,7 @@ func TestReviewRegressions(t *testing.T) {
 	}
 
 	queued := &socketPeer{out: make(chan outgoing, 1024), drop: func() {}}
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		queued.Send(make([]byte, 50_000))
 	}
 	if !queued.closed.Load() {
@@ -403,7 +397,7 @@ func TestListenersAreIPv4Only(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	if conn, err := (&net.Dialer{}).DialContext(context.Background(), "tcp6", net.JoinHostPort("::1", strconv.Itoa(listener.port))); err == nil {
+	if conn, err := (&net.Dialer{}).DialContext(t.Context(), "tcp6", net.JoinHostPort("::1", strconv.Itoa(listener.port))); err == nil {
 		_ = conn.Close()
 		t.Fatal("the LAN listener accepted IPv6")
 	}

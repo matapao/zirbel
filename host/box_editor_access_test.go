@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -54,9 +55,7 @@ var editorCookieText = regexp.MustCompile(`^zirbel_editor=([\w-]{43}); HttpOnly;
 func redeem(t *testing.T, s *EditorServer, code, name string, headers map[string]string) lobbyReply {
 	t.Helper()
 	form := map[string]string{"content-type": "application/x-www-form-urlencoded", "origin": boxOrigin}
-	for key, value := range headers {
-		form[key] = value
-	}
+	maps.Copy(form, headers)
 	return call(t, s, http.MethodPost, boxHost, "/edit", fromDevice, url.Values{"code": {code}, "name": {name}}.Encode(), form)
 }
 

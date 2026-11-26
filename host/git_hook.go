@@ -17,7 +17,7 @@ import (
 // project: a game or a scene), read under the rules every host applies
 // (git_tree.go). It reads the pushed objects in receive-pack's quarantine, so
 // a refused push leaves nothing behind; the reason goes to stderr, which the
-// client shows. docs/git-store.md is the design.
+// client shows. The git store in AGENTS.md is the design.
 
 // quarantine is the environment receive-pack gives its hooks: the repository and its quarantine.
 func quarantine() []string {
@@ -108,7 +108,7 @@ func gitHook(input io.Reader) (string, error) {
 		return "", err
 	}
 	grant := os.Getenv("ZIRBEL_GIT_GRANT") == "1"
-	for _, update := range strings.Split(string(data), "\n") {
+	for update := range strings.SplitSeq(string(data), "\n") {
 		if update == "" {
 			continue
 		}

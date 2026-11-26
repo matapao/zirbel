@@ -113,7 +113,7 @@ func (f *fastImport) run(repo string) (map[string]string, error) {
 		return nil, err
 	}
 	ids := map[string]string{}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if mark, oid, ok := strings.Cut(line, " "); ok {
 			ids[mark] = oid
 		}
@@ -157,14 +157,15 @@ func commitMessage(label string, trailers ...[2]string) string {
 		}
 		i = end
 	}
-	message := contracts.Trim(subject.String()) + "\n"
+	var message strings.Builder
+	message.WriteString(contracts.Trim(subject.String()) + "\n")
 	if len(trailers) > 0 {
-		message += "\n"
+		message.WriteString("\n")
 		for _, trailer := range trailers {
-			message += trailer[0] + ": " + trailer[1] + "\n"
+			message.WriteString(trailer[0] + ": " + trailer[1] + "\n")
 		}
 	}
-	return message
+	return message.String()
 }
 
 // codePoints is text cut to its first most code points.

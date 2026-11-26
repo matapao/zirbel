@@ -38,8 +38,11 @@ const (
 )
 
 var (
-	codePattern    = regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{8}$`)
-	codeSpacing    = regexp.MustCompile(`[\s-]`)
+	codePattern = regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{8}$`)
+	// codeLetters are what toUpperCase in JavaScript writes as letters a code holds and strings.ToUpper leaves alone:
+	// it maps sharp s and the Latin ligatures ff to st to two or three letters each.
+	codeLetters = strings.NewReplacer("\u00df", "SS", "\ufb00", "FF", "\ufb01", "FI", "\ufb02", "FL", "\ufb03", "FFI", "\ufb04", "FFL",
+		"\ufb05", "ST", "\ufb06", "ST")
 	sessionPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 	tokenHashText  = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	deviceIDText   = regexp.MustCompile(`^[a-z0-9-]{1,80}$`)
@@ -91,10 +94,21 @@ func NewPairing(folder string, now func() time.Time) (*Pairing, error) {
 // isoTime is a time as Node's toISOString writes it.
 func isoTime(at time.Time) string { return at.UTC().Format("2006-01-02T15:04:05.000Z") }
 
+// codeText is a code as a person typed it, as input.toUpperCase().replace(/[\s-]/g, "")
+// in JavaScript writes it: in upper case, without white space, line breaks or dashes.
+func codeText(input string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '-' || jsSpace(r) {
+			return -1
+		}
+		return r
+	}, strings.ToUpper(codeLetters.Replace(input)))
+}
+
 // normalizeCode reads a code as a person types it: any case, with or without its
 // dash or spaces, O read as 0 and I or L as 1. Empty when it is not a code.
 func normalizeCode(input string) string {
-	plain := strings.NewReplacer("O", "0", "I", "1", "L", "1").Replace(codeSpacing.ReplaceAllString(strings.ToUpper(input), ""))
+	plain := strings.NewReplacer("O", "0", "I", "1", "L", "1").Replace(codeText(input))
 	if !codePattern.MatchString(plain) {
 		return ""
 	}
@@ -130,14 +144,33 @@ func deviceLabel(agent string) string {
 }
 
 // sessionToken is the session a Cookie header carries, in the form this box makes.
-func sessionToken(cookie string) string {
-	for _, part := range strings.Split(cookie, ";") {
-		name, value, _ := strings.Cut(strings.TrimSpace(part), "=")
-		if name == sessionCookie && sessionPattern.MatchString(value) {
+func sessionToken(cookie string) string { return cookieToken(cookie, sessionCookie) }
+
+// cookieToken is the token a Cookie header carries as the cookie name, in the
+// form this box makes, read as the Node host reads it: each part trimmed, and
+// split at "=" with the value up to the next one.
+func cookieToken(cookie, name string) string {
+	for part := range strings.SplitSeq(cookie, ";") {
+		key, rest, _ := strings.Cut(headerTrim(part), "=")
+		value, _, _ := strings.Cut(rest, "=")
+		if key == name && sessionPattern.MatchString(value) {
 			return value
 		}
 	}
 	return ""
+}
+
+// headerTrim is trim() in JavaScript of a header's text, which Node reads as
+// Latin-1: its white space there is these bytes.
+func headerTrim(text string) string {
+	space := func(b byte) bool { return b == ' ' || (b >= '\t' && b <= '\r') || b == 0xa0 }
+	for text != "" && space(text[0]) {
+		text = text[1:]
+	}
+	for text != "" && space(text[len(text)-1]) {
+		text = text[:len(text)-1]
+	}
+	return text
 }
 
 func randomCode() string {

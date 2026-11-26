@@ -105,9 +105,9 @@ func specialParts(rest, scheme string) (host string, credentials bool, path stri
 		if err != nil || !address.Is6() {
 			return "", false, "", false
 		}
-		host = "[" + address.String() + "]"
+		host = "[" + ipv6Text(address) + "]"
 	}
-	// Hosts the URL standard would rewrite (non-ASCII, percent-encoded, numbers that aren't dotted decimal) aren't taken.
+	// Hosts the URL standard would rewrite otherwise (non-ASCII, percent-encoded) aren't taken.
 	for i := 0; i < len(host); i++ {
 		if c := host[i]; c >= utf8.RuneSelf || c == '%' {
 			return "", false, "", false
@@ -115,6 +115,9 @@ func specialParts(rest, scheme string) (host string, credentials bool, path stri
 	}
 	if host == "" {
 		return "", false, "", false
+	}
+	if address, ok := contracts.IPv4(host); ok {
+		host = address
 	}
 	if port != "" {
 		number, err := strconv.Atoi(port)
@@ -126,6 +129,18 @@ func specialParts(rest, scheme string) (host string, credentials bool, path stri
 		}
 	}
 	return host, credentials, normalizedPath(strings.ReplaceAll(path, `\`, "/")), true
+}
+
+// ipv6Text is an IPv6 address as the URL standard writes it: in hexadecimal
+// pieces throughout, where netip writes an IPv4-mapped one's last two as an
+// IPv4 address (::ffff:1.2.3.4 is ::ffff:102:304).
+func ipv6Text(address netip.Addr) string {
+	if !address.Is4In6() {
+		return address.String()
+	}
+	four := address.As4()
+	return "::ffff:" + strconv.FormatUint(uint64(four[0])<<8|uint64(four[1]), 16) + ":" +
+		strconv.FormatUint(uint64(four[2])<<8|uint64(four[3]), 16)
 }
 
 // normalizedPath is a URL's path as the URL standard writes it: its dot

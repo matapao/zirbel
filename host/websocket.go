@@ -59,7 +59,7 @@ type wsConn struct {
 
 func headerHas(h http.Header, name, token string) bool {
 	for _, value := range h.Values(name) {
-		for _, part := range strings.Split(value, ",") {
+		for part := range strings.SplitSeq(value, ",") {
 			if strings.EqualFold(strings.TrimSpace(part), token) {
 				return true
 			}

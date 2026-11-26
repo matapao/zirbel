@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 )
@@ -76,9 +77,7 @@ type Rooms struct {
 
 func NewRooms() *Rooms {
 	rooms := &Rooms{rooms: map[string]*Room{}, opening: map[string]bool{}, stop: make(chan struct{})}
-	rooms.done.Add(1)
-	go func() {
-		defer rooms.done.Done()
+	rooms.done.Go(func() {
 		ticker := time.NewTicker(tickInterval)
 		defer ticker.Stop()
 		for {
@@ -93,7 +92,7 @@ func NewRooms() *Rooms {
 				}
 			}
 		}
-	}()
+	})
 	return rooms
 }
 func (rs *Rooms) list() []*Room {
@@ -252,8 +251,8 @@ func (rs *Rooms) Sessions(access string) []*Room {
 	list := []*Room{}
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	for i := len(rs.order) - 1; i >= 0; i-- {
-		if room := rs.rooms[rs.order[i]]; room != nil && room.Code != "" && room.Access == access {
+	for _, id := range slices.Backward(rs.order) {
+		if room := rs.rooms[id]; room != nil && room.Code != "" && room.Access == access {
 			list = append(list, room)
 		}
 	}

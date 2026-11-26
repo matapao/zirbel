@@ -85,11 +85,10 @@ func (l *Listener) serveSocket(w http.ResponseWriter, r *http.Request, pathname 
 	conn, err := acceptWebSocket(w, r, roomMessageLimit)
 	if err != nil {
 		l.handshakes.Add(-1)
-		var refused *HTTPError
-		if errors.As(err, &refused) {
+		if _, refused := errors.AsType[*HTTPError](err); refused {
 			return err // nothing was taken over yet, so answer with the status
 		}
-		return nil //nolint:nilerr // the connection was hijacked and is gone; no response is possible
+		return nil // the connection was hijacked and is gone; no response is possible
 	}
 	l.sockets.Add(1)
 	// A room socket outlives its upgrade request, so it must not end with it.

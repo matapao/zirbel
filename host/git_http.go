@@ -20,7 +20,7 @@ import (
 // git token (a paired device's, for every game; an editor's, for its game) or
 // a project grant (its game; pushes with a write grant alone), as its Basic
 // password or a bearer token. A push is checked by the host's own pre-receive
-// hook (git_hook.go) before any ref moves. docs/git-store.md is the design.
+// hook (git_hook.go) before any ref moves. The git store in AGENTS.md is the design.
 
 // pushBytes is what a push may bring in all.
 const pushBytes = 128 * 1024 * 1024
@@ -56,10 +56,12 @@ func credential(header string) string {
 	if match == nil {
 		return ""
 	}
-	decoded, err := base64.StdEncoding.DecodeString(match[1])
-	if err != nil {
-		decoded, _ = base64.RawStdEncoding.DecodeString(strings.TrimRight(match[1], "="))
+	// As Buffer.from(…, 'base64') reads it: up to the first "=", without a last character that makes no byte.
+	encoded, _, _ := strings.Cut(match[1], "=")
+	if len(encoded)%4 == 1 {
+		encoded = encoded[:len(encoded)-1]
 	}
+	decoded, _ := base64.RawStdEncoding.DecodeString(encoded) // every character is base64's, and no padding is left
 	text := string(decoded)
 	return text[strings.IndexByte(text, ':')+1:]
 }

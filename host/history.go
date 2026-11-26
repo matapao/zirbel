@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -64,7 +65,7 @@ func logCommits(repo string, tips []string, max int) ([]commitInfo, error) {
 		return nil, err
 	}
 	commits := []commitInfo{}
-	for _, record := range strings.Split(string(out.stdout), "\x00") {
+	for record := range strings.SplitSeq(string(out.stdout), "\x00") {
 		if strings.TrimSpace(record) == "" {
 			continue
 		}
@@ -91,10 +92,11 @@ func (h *History) revisions(repo string, branches map[string]string) ([]Revision
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	key := ""
+	var built strings.Builder
 	for _, name := range names {
-		key += name + " " + branches[name] + "\n"
+		built.WriteString(name + " " + branches[name] + "\n")
 	}
+	key := built.String()
 	if known, ok := h.logs[repo]; ok && known.key == key {
 		return known.revisions, nil
 	}
@@ -190,21 +192,21 @@ func (h *History) sha256(repo, oid string) string { return h.cache(repo)[oid] }
 // learn notes the SHA-256 of blobs the host wrote.
 func (h *History) learn(repo string, pairs [][2]string) error {
 	cache := h.cache(repo)
-	fresh := ""
+	var fresh strings.Builder
 	for _, pair := range pairs {
 		if _, known := cache[pair[0]]; !known {
 			cache[pair[0]] = pair[1]
-			fresh += pair[0] + " " + pair[1] + "\n"
+			fresh.WriteString(pair[0] + " " + pair[1] + "\n")
 		}
 	}
-	if fresh == "" {
+	if fresh.Len() == 0 {
 		return nil
 	}
 	file, err := os.OpenFile(filepath.Join(repo, "zirbel-sha256"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304 -- a repository in the data directory
 	if err != nil {
 		return err
 	}
-	_, err = file.WriteString(fresh)
+	_, err = file.WriteString(fresh.String())
 	return errors.Join(err, file.Close())
 }
 
@@ -214,7 +216,7 @@ func (h *History) cache(repo string) map[string]string {
 	}
 	cache := map[string]string{}
 	data, _ := os.ReadFile(filepath.Join(repo, "zirbel-sha256")) // #nosec G304 -- none yet: hashed as read
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if match := sha256Line.FindStringSubmatch(line); match != nil {
 			cache[match[1]] = match[2]
 		}
@@ -302,12 +304,7 @@ func (c Content) clone() Content {
 	}
 	if c.Game != nil {
 		game := *c.Game
-		if c.Game.Files != nil {
-			game.Files = make(map[string]string, len(c.Game.Files))
-			for path, hash := range c.Game.Files {
-				game.Files[path] = hash
-			}
-		}
+		game.Files = maps.Clone(c.Game.Files) // nil stays nil
 		out.Game = &game
 	}
 	return out

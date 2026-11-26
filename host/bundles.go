@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 )
 
 // writeAsset stores asset bytes under a hash the caller has already verified, and that is a hash, as readAsset
@@ -197,8 +198,8 @@ func (s *Projects) exportRevisions(p *Project) ([]Revision, error) {
 	}
 	ids := map[string]bool{}
 	revisions := []Revision{}
-	for i := len(listed) - 1; i >= 0; i-- {
-		revision := revisionMeta(listed[i])
+	for _, commit := range slices.Backward(listed) {
+		revision := revisionMeta(commit)
 		content, err := s.history.content(repo, revision.ID)
 		if err != nil {
 			return nil, err

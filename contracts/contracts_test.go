@@ -1,7 +1,10 @@
 package contracts
 
 import (
+	"bytes"
+	"encoding/json"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -161,4 +164,49 @@ func TestParseURLFollowsTheURLStandard(t *testing.T) {
 	if url, _ := ParseURL(" \ufeffhttps://exa\nmple.com/ "); url.Value != "https://example.com/" {
 		t.Errorf("Zod keeps %q", url.Value)
 	}
+}
+
+// JSON a client sends, as Decode reads it: valid JSON and one value alone,
+// which written out and read again is the same value.
+func FuzzDecode(f *testing.F) {
+	for _, seed := range []string{`{"n":2.0,"z":-0,"s":"<b>","s":"<i>"}`, `[1,[2,{"a":null}]]`, `{} {}`, `{"type":"resync"}}`, `"\ud800"`, `1e400`, " \n{}\n", ""} {
+		f.Add([]byte(seed))
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		value, err := Decode(data)
+		if err != nil {
+			return
+		}
+		if !json.Valid(data) {
+			t.Fatalf("%q isn't JSON, but read as %v", data, value)
+		}
+		written, err := json.Marshal(value)
+		if err != nil {
+			t.Fatalf("%q: %v", data, err)
+		}
+		again, err := Decode(written)
+		rewritten, _ := json.Marshal(again)
+		// Equal compares numbers as doubles; past a double's range (1e400) it holds no number equal.
+		if err != nil || !bytes.Equal(rewritten, written) || (finite(value) && (!Equal(again, value) || !Equal(value, value))) {
+			t.Fatalf("%q, written as %s, read back otherwise: %v", data, written, err)
+		}
+	})
+}
+
+// finite reports whether every number in a value from Decode is a double.
+func finite(value any) bool {
+	switch v := value.(type) {
+	case json.Number:
+		_, err := v.Float64()
+		return err == nil
+	case []any:
+		return !slices.ContainsFunc(v, func(item any) bool { return !finite(item) })
+	case map[string]any:
+		for _, item := range v {
+			if !finite(item) {
+				return false
+			}
+		}
+	}
+	return true
 }

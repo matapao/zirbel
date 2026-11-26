@@ -12,6 +12,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	"zirbel/contracts"
 )
 
 // storedRelease writes a release of game for up to players into the store: a
@@ -293,4 +296,64 @@ func TestLobbySessionsHaveLimits(t *testing.T) {
 	if session.step() || !owned.step() {
 		t.Fatal("an idle session stayed open, or the owner's room closed")
 	}
+}
+
+// A session code as a guest types it reads as readCode in packages/core/lobby.ts
+// reads it: spaces, line breaks and dashes dropped, a to z upper-cased, and
+// nothing else turned into a letter of the code.
+func FuzzSessionCode(f *testing.F) {
+	for _, typed := range []string{"ab2c", " AB-2C\n", "AB\u00a02C", "AB\v2C", "\u0131BCD", "ABC\u017f", "AB0C", "ABCD\xff", ""} {
+		f.Add(typed)
+	}
+	f.Fuzz(func(t *testing.T, typed string) {
+		var plain strings.Builder
+		for _, r := range typed {
+			switch {
+			case r == '\t' || r == '\n' || r == '\f' || r == '\r' || r == ' ' || r == '-':
+			case r >= 'a' && r <= 'z':
+				plain.WriteRune(r - 'a' + 'A')
+			default:
+				plain.WriteRune(r)
+			}
+		}
+		want := plain.String()
+		if !onlyOf(want, sessionAlphabet, sessionCodeLength) {
+			want = ""
+		}
+		if got := sessionCode(typed); got != want {
+			t.Fatalf("%q reads as %q; Node reads %q", typed, got, want)
+		}
+	})
+}
+
+// A guest's lobby request, as decodeContract reads lobby-start and lobby-join:
+// what it takes names an offered game's release by its id, a player name of 1
+// to 24 code points once trimmed, and a code a guest could have typed.
+func FuzzLobbyInput(f *testing.F) {
+	for _, input := range []string{`{"release":"r1","name":"Ana"}`, `{"code":"ab-2c","name":"  Bo  "}`, `{"code":"AB2C","name":"\u00a0"}`,
+		`{"release":"../r1","name":"A"}`, `{"code":"x","name":"A","extra":1}`, `{"name":"` + strings.Repeat("界", 25) + `","code":""}`} {
+		f.Add([]byte(input), strings.Contains(input, "release"))
+	}
+	f.Fuzz(func(t *testing.T, data []byte, start bool) {
+		var input struct{ Release, Code, Name string }
+		contract := "lobby-join"
+		if start {
+			contract = "lobby-start"
+		}
+		if err := decodeContract(contract, data, &input); err != nil {
+			if status(err) != http.StatusBadRequest {
+				t.Fatalf("%s: %v, not a 400", data, err)
+			}
+			return
+		}
+		if name := []rune(contracts.Trim(input.Name)); len(name) < 1 || len(name) > 24 {
+			t.Fatalf("%s: the name %q", data, input.Name)
+		}
+		if start && !idPattern.MatchString(input.Release) || !start && utf8.RuneCountInString(input.Code) > 16 {
+			t.Fatalf("%s: %+v", data, input)
+		}
+		if code := sessionCode(input.Code); code != "" && !onlyOf(code, sessionAlphabet, sessionCodeLength) {
+			t.Fatalf("%s: the code %q", data, code)
+		}
+	})
 }

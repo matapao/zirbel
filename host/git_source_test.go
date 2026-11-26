@@ -23,6 +23,10 @@ func TestSourcesAreHttpsAddressesWrittenAsTheURLStandardWritesThem(t *testing.T)
 		"https://[0:0:0:0:0:0:0:1]/x.git":      "https://[::1]/x.git",
 		"https://example.org/%E2%9C%93/ü.git":  "https://example.org/%E2%9C%93/%C3%BC.git",
 		"https://example.org/a/%2e%2E/b.git":   "https://example.org/b.git",
+		// IPv4 and IPv6 addresses as the URL standard writes them, which fuzzing found the Go host didn't.
+		"https://127.1/x.git":        "https://127.0.0.1/x.git",
+		"https://0X7F.0.0.1.:443/":   "https://127.0.0.1/",
+		"https://[::FFFF:1.2.3.4]/x": "https://[::ffff:102:304]/x",
 	} {
 		if got, err := sourceURL(input); got != want || err != nil {
 			t.Errorf("sourceURL(%q) = %q, %v; want %q", input, got, err, want)
@@ -137,4 +141,41 @@ func TestAGameImportsFromItsSourceAndUpdatesFromIt(t *testing.T) {
 	if _, err := store.ImportGit([]byte(`{"url":"` + address + `"}`)); status(err) != http.StatusBadRequest {
 		t.Errorf("file: without the tests' switch: %v", err)
 	}
+}
+
+// An import's address and ref, as importSource checks them: what it takes is
+// an https address it fetches as it is, and a branch or tag name git can't
+// read as an option or another refspec; what it refuses, it refuses as the
+// client's mistake.
+func FuzzImportSource(f *testing.F) {
+	for _, seed := range []string{`{"url":"https://example.org/game.git"}`, `{"url":"https://example.org/game.git","ref":"release/v1.2"}`,
+		`{"url":"https://example.org/game.git","ref":"a..b"}`, `{"url":"https://example.org/game.git","ref":"-c"}`, `{"url":" https://example.org "}`,
+		`{"url":"https://example.org/","ref":"main","extra":1}`, `{"url":"","ref":""}`, `{"url":"https://example.org/x","url":"file:///x"}`, `[]`} {
+		f.Add([]byte(seed))
+	}
+	f.Setenv("ZIRBEL_GIT_ALLOW_LOCAL", "")
+	f.Fuzz(func(t *testing.T, data []byte) {
+		source, err := importSource(data)
+		if err != nil {
+			if status(err) != http.StatusBadRequest {
+				t.Fatalf("%s: %v, not a 400", data, err)
+			}
+			return
+		}
+		if !strings.HasPrefix(source.URL, "https://") || strings.Contains(source.URL[:strings.IndexByte(source.URL[8:], '/')+8], "@") {
+			t.Fatalf("%s: the address %q", data, source.URL)
+		}
+		if ref := source.Ref; ref != "" {
+			first := ref[0]
+			alphanumeric := first >= '0' && first <= '9' || first >= 'A' && first <= 'Z' || first >= 'a' && first <= 'z'
+			if len(ref) > 200 || !alphanumeric || strings.Trim(ref, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/-") != "" ||
+				strings.Contains(ref, "..") || strings.Contains(ref, "//") || strings.Contains(ref, "/.") || strings.HasSuffix(ref, "/") ||
+				strings.HasSuffix(ref, ".") || strings.HasSuffix(ref, ".lock") {
+				t.Fatalf("%s: the ref %q", data, ref)
+			}
+		}
+		if again, err := importSource(data); err != nil || again != source {
+			t.Fatalf("%s: %v, then %v (%v)", data, source, again, err)
+		}
+	})
 }

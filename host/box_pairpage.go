@@ -61,9 +61,8 @@ func (b *Box) pairRoute(w http.ResponseWriter, r *http.Request, address string) 
 		return token, err
 	}()
 	if err != nil {
-		var known *HTTPError
 		status, message := http.StatusInternalServerError, "The server could not complete that request."
-		if errors.As(err, &known) {
+		if known, ok := errors.AsType[*HTTPError](err); ok {
 			status, message = known.Status, known.Message
 		}
 		claimable, readErr := b.pairing.Claimable()

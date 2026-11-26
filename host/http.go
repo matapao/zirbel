@@ -66,8 +66,7 @@ func reply(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 func replyError(w http.ResponseWriter, err error) {
-	var known *HTTPError
-	if errors.As(err, &known) {
+	if known, ok := errors.AsType[*HTTPError](err); ok {
 		reply(w, known.Status, map[string]string{"error": known.Message})
 		return
 	}
@@ -115,7 +114,7 @@ func readBody(r *http.Request, max int64) ([]byte, error) {
 	return data, nil
 }
 func acceptsGzip(r *http.Request) bool {
-	for _, part := range strings.Split(r.Header.Get("accept-encoding"), ",") {
+	for part := range strings.SplitSeq(r.Header.Get("accept-encoding"), ",") {
 		if strings.TrimSpace(strings.SplitN(part, ";", 2)[0]) == "gzip" {
 			return true
 		}

@@ -23,7 +23,7 @@ import (
 // insteadOf, hooks), no prompts, and plain C messages. Everything is plumbing:
 // ls-tree and cat-file to read, fast-import to write (git_import.go),
 // update-ref --stdin to move refs, each move compare-and-swap.
-// docs/git-store.md is the design.
+// The git store in AGENTS.md is the design.
 
 // The oldest git the host runs on: merge-tree --write-tree came in 2.38.
 const gitMinimumMajor, gitMinimumMinor = 2, 38
@@ -108,8 +108,7 @@ func runGit(repo string, args []string, o gitOptions) (gitResult, error) {
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	status := 0
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
+	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 		status = exit.ExitCode()
 	} else if err != nil {
 		return gitResult{}, errors.New("git could not run: " + err.Error())
@@ -177,7 +176,7 @@ func readBranches(repo string) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, line := range strings.Split(string(listed.stdout), "\n") {
+		for line := range strings.SplitSeq(string(listed.stdout), "\n") {
 			oid, ref, _ := strings.Cut(line, " ")
 			branch, isBranch := strings.CutPrefix(ref, "refs/heads/")
 			if isBranch && idPattern.MatchString(branch) && commitPattern.MatchString(oid) {
@@ -190,7 +189,7 @@ func readBranches(repo string) (map[string]string, error) {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	for _, line := range strings.Split(string(packed), "\n") {
+	for line := range strings.SplitSeq(string(packed), "\n") {
 		oid, ref, _ := strings.Cut(line, " ")
 		branch, isBranch := strings.CutPrefix(ref, "refs/heads/")
 		if isBranch && commitPattern.MatchString(oid) && idPattern.MatchString(branch) {
@@ -242,7 +241,7 @@ func listTree(repo, treeish string, env []string) ([]treeEntry, error) {
 		return nil, err
 	}
 	entries := []treeEntry{}
-	for _, record := range strings.Split(string(out.stdout), "\x00") {
+	for record := range strings.SplitSeq(string(out.stdout), "\x00") {
 		head, path, found := strings.Cut(record, "\t")
 		fields := strings.Fields(head)
 		if !found || len(fields) < 4 {
@@ -320,7 +319,7 @@ func parseCommit(id string, raw []byte) commitInfo {
 	text := string(raw)
 	head, message, _ := strings.Cut(text, "\n\n")
 	info := commitInfo{id: id, parents: []string{}, message: message}
-	for _, line := range strings.Split(head, "\n") {
+	for line := range strings.SplitSeq(head, "\n") {
 		switch {
 		case strings.HasPrefix(line, "tree "):
 			info.tree = line[5:]
@@ -364,7 +363,7 @@ var refMoved = regexp.MustCompile(`cannot lock ref|is at .* but expected|referen
 // expects, so nothing moves when one of them has moved on. It says whether it
 // went through.
 func updateRefs(repo string, updates []refUpdate) (bool, error) {
-	lines := ""
+	var lines strings.Builder
 	for _, u := range updates {
 		line := "update " + u.ref + " " + u.to
 		if u.to == "" {
@@ -373,9 +372,9 @@ func updateRefs(repo string, updates []refUpdate) (bool, error) {
 		if u.from != "" {
 			line += " " + u.from
 		}
-		lines += line + "\n"
+		lines.WriteString(line + "\n")
 	}
-	out, err := runGit(repo, []string{"update-ref", "--stdin"}, gitOptions{input: []byte(lines), allow: []int{128}})
+	out, err := runGit(repo, []string{"update-ref", "--stdin"}, gitOptions{input: []byte(lines.String()), allow: []int{128}})
 	if err != nil {
 		return false, err
 	}

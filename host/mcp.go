@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -240,7 +241,7 @@ func (m *MCP) Handle(data []byte, credential string) (any, error) {
 		supported := []string{"2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"}
 		version := supported[0]
 		var requested string
-		if json.Unmarshal(request.Params["protocolVersion"], &requested) == nil && contains(supported, requested) {
+		if json.Unmarshal(request.Params["protocolVersion"], &requested) == nil && slices.Contains(supported, requested) {
 			version = requested
 		}
 		instructions := m.instructions.Propose
@@ -328,8 +329,7 @@ func (m *MCP) call(g *grant, params map[string]json.RawMessage) map[string]any {
 	_ = json.Unmarshal(params["name"], &name)
 	result, err := m.run(g, name, params["arguments"])
 	if err != nil {
-		var known *HTTPError
-		if errors.As(err, &known) {
+		if known, ok := errors.AsType[*HTTPError](err); ok {
 			return textResult(known.Message, true)
 		}
 		return textResult("Project operation failed.", true)

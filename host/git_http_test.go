@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -134,4 +135,78 @@ func TestALargePushArrivesWhole(t *testing.T) {
 	if now := mustHead(t, read); now.Label != "Large" || now.Game.Files["large.bin"] != digest(large) {
 		t.Errorf("the push: %+v", now)
 	}
+}
+
+const base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+// nodeCredential is credential() in packages/server/git-http.ts as Node runs
+// it on a header's text, which it reads as Latin-1; it gives the bytes Node
+// decodes before it reads them as UTF-8, which changes only bytes no token holds.
+func nodeCredential(header string) string {
+	// /^Bearer (\S+)$/: JavaScript's white space in Latin-1 is these bytes.
+	if token, ok := strings.CutPrefix(header, "Bearer "); ok && token != "" {
+		spaced := false
+		for i := range len(token) {
+			spaced = spaced || strings.IndexByte("\t\n\v\f\r \xa0", token[i]) >= 0
+		}
+		if !spaced {
+			return token
+		}
+	}
+	encoded, ok := strings.CutPrefix(header, "Basic ")
+	if !ok || encoded == "" || strings.Trim(encoded, base64Alphabet+"=") != "" {
+		return ""
+	}
+	// Buffer.from(…, 'base64'): up to the first "=", four characters three bytes, and two or three at the end one or two.
+	var value [256]byte
+	var next byte
+	for _, c := range []byte(base64Alphabet) {
+		value[c] = next
+		next++
+	}
+	digits, _, _ := strings.Cut(encoded, "=")
+	var decoded []byte
+	for i := 0; i+1 < len(digits); i += 4 {
+		a, b := value[digits[i]], value[digits[i+1]]
+		decoded = append(decoded, a<<2|b>>4)
+		if i+2 < len(digits) {
+			c := value[digits[i+2]]
+			decoded = append(decoded, b<<4|c>>2)
+			if i+3 < len(digits) {
+				decoded = append(decoded, c<<6|value[digits[i+3]])
+			}
+		}
+	}
+	text := string(decoded)
+	return text[strings.IndexByte(text, ':')+1:]
+}
+
+// The token a git client sends as its Basic password or bearer token, as
+// credential reads it: what Node reads from the same header, and the password
+// or token the client put in it.
+func FuzzGitCredential(f *testing.F) {
+	for _, header := range []string{"Bearer abc", "Basic emlyYmVsOnNlY3JldA==", "Basic c2VjcmV0", "Basic emlyYmVsOg==", "Digest x", "Basic YTpiYw==YQ",
+		"Basic YQ==YTpi", "Basic YTpiYwZ", "Bearer a b", "Bearer a\xa0b", "Bearer a\vb", "Basic ", "bearer abc"} {
+		f.Add(header, "zirbel", "o.00000000-0000-4000-8000-000000000001."+strings.Repeat("A", 43))
+	}
+	f.Fuzz(func(t *testing.T, header, user, password string) {
+		got, want := credential(header), nodeCredential(header)
+		token := func(text string) bool { return grantToken.MatchString(text) || tokenShape.MatchString(text) }
+		// Go's \S differs from JavaScript's in \v and past ASCII alone, where no token is.
+		if exact := strings.IndexFunc(header, func(r rune) bool { return r == '\v' || r >= 0x80 }) < 0; (exact || token(got) || token(want)) && got != want {
+			t.Fatalf("%q: %q; Node reads %q", header, got, want)
+		}
+		if strings.Contains(user, ":") {
+			return
+		}
+		basic := base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
+		for _, sent := range []string{basic, strings.TrimRight(basic, "=")} {
+			if sent != "" && credential("Basic "+sent) != password {
+				t.Fatalf("Basic %s: %q, not %q", sent, credential("Basic "+sent), password)
+			}
+		}
+		if password != "" && strings.IndexFunc(password, func(r rune) bool { return r <= ' ' || r >= 0x7f }) < 0 && credential("Bearer "+password) != password {
+			t.Fatalf("Bearer %s: %q", password, credential("Bearer "+password))
+		}
+	})
 }

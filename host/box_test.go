@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 )
 
 func statusOf(err error) int {
-	var known *HTTPError
-	if errors.As(err, &known) {
+	if known, ok := errors.AsType[*HTTPError](err); ok {
 		return known.Status
 	}
 	return 0
@@ -394,4 +394,90 @@ func TestThePairingFormTakesOnlyItsFields(t *testing.T) {
 	if statusOf(read("application/json", "{}")) != http.StatusUnsupportedMediaType {
 		t.Fatal("a form of another kind is read")
 	}
+}
+
+// ligatures are the Latin ligatures ff to st, in upper case as SpecialCasing writes them.
+var ligatures = map[rune]string{0xfb00: "FF", 0xfb01: "FI", 0xfb02: "FL", 0xfb03: "FFI", 0xfb04: "FFL", 0xfb05: "ST", 0xfb06: "ST"}
+
+// nodeCodeText is input.toUpperCase().replace(/[\s-]/g, "") in JavaScript, a
+// code point at a time: upper case with the letters SpecialCasing gives sharp
+// s and the ligatures ff to st, and without white space, line terminators and -.
+func nodeCodeText(input string) string {
+	var out strings.Builder
+	for _, r := range input {
+		switch {
+		case r == '-' || r == ' ' || (r >= '\t' && r <= '\r') || r == 0xa0 || r == 0x1680 || (r >= 0x2000 && r <= 0x200a) ||
+			r == 0x2028 || r == 0x2029 || r == 0x202f || r == 0x205f || r == 0x3000 || r == 0xfeff:
+		case r == 0xdf:
+			out.WriteString("SS")
+		case ligatures[r] != "":
+			out.WriteString(ligatures[r])
+		default:
+			out.WriteRune(unicode.ToUpper(r))
+		}
+	}
+	return out.String()
+}
+
+// onlyOf reports whether text is n characters of alphabet.
+func onlyOf(text, alphabet string, n int) bool {
+	return len(text) == n && strings.Trim(text, alphabet) == ""
+}
+
+// A pairing code as a person types it reads as normalizeCode in
+// packages/server/box-pairing.ts reads it, and a code it reads is one this box
+// makes, read the same however it is typed.
+func FuzzPairingCode(f *testing.F) {
+	for _, typed := range []string{"abcd-efgh", " ABCD EFGH ", "0O1I-L2Z9", "ABCD\u00a0EFGH", "ABCD\vEFGH", "ABCD\u3000EFGH", "abcdef\ufb00",
+		"abcdef\u00df", "ABC\u0131EFGH", "ABCD\u0085EFGH", "ABCD\u200bEFGH", "ABCDEFGU", "ABCD-EFG\xff", ""} {
+		f.Add(typed)
+	}
+	f.Fuzz(func(t *testing.T, typed string) {
+		plain := strings.NewReplacer("O", "0", "I", "1", "L", "1").Replace(nodeCodeText(typed))
+		want := ""
+		if onlyOf(plain, codeAlphabet, 8) {
+			want = plain[:4] + "-" + plain[4:]
+		}
+		got := normalizeCode(typed)
+		if got != want {
+			t.Fatalf("%q reads as %q; Node reads %q", typed, got, want)
+		}
+		if got != "" && (normalizeCode(got) != got || normalizeCode(strings.ToLower(strings.ReplaceAll(got, "-", " \t"))) != got) {
+			t.Fatalf("%q, typed again, reads otherwise", got)
+		}
+	})
+}
+
+// A Cookie header's session, as sessionToken in packages/server/box-pairing.ts
+// reads the header's Latin-1 text: each part trimmed of white space, split at
+// "=", the value its second piece.
+func FuzzSessionCookie(f *testing.F) {
+	token := strings.Repeat("Ab0_-", 8) + "xyz"
+	for _, header := range []string{"zirbel_session=" + token, "other=1; zirbel_session=" + token + "; x=2", " zirbel_session=" + token + "=x",
+		"\xa0zirbel_session=" + token + "\xa0", "\u00a0zirbel_session=" + token, "zirbel_editor=" + token, "zirbel_session=short", ";;="} {
+		f.Add(header)
+	}
+	f.Fuzz(func(t *testing.T, header string) {
+		want := ""
+		for part := range strings.SplitSeq(header, ";") {
+			start, end := 0, len(part)
+			for start < end && strings.IndexByte("\t\n\v\f\r \xa0", part[start]) >= 0 {
+				start++
+			}
+			for end > start && strings.IndexByte("\t\n\v\f\r \xa0", part[end-1]) >= 0 {
+				end--
+			}
+			pieces := strings.Split(part[start:end], "=")
+			if len(pieces) > 1 && pieces[0] == sessionCookie && onlyOf(pieces[1], "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-", 43) {
+				want = pieces[1]
+				break
+			}
+		}
+		if got := sessionToken(header); got != want {
+			t.Fatalf("%q: %q; Node reads %q", header, got, want)
+		}
+		if got := sessionToken("a=1; " + sessionCookie + "=" + token + "; " + header); got != token {
+			t.Fatalf("the session before %q read as %q", header, got)
+		}
+	})
 }

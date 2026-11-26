@@ -1,0 +1,57 @@
+# Go's native fuzz tests of the parsers of outside input in host/ and contracts/, each target for 60 s, weekly and on
+# dispatch. Plain `go test` (pnpm test, pnpm check:go) runs only their seeds, from the f.Add calls and testdata/fuzz/.
+name: Fuzz
+on:
+  schedule:
+    - cron: '37 2 * * 3'
+  workflow_dispatch:
+permissions:
+  contents: read # checkout only
+# One run at a time: a dispatch while the weekly run goes waits for it.
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { package: ./host, target: FuzzSourceURL }
+          - { package: ./host, target: FuzzImportSource }
+          - { package: ./host, target: FuzzReleaseImport }
+          - { package: ./host, target: FuzzRefuseUpdate }
+          - { package: ./host, target: FuzzGitTokenHolder }
+          - { package: ./host, target: FuzzGitCredential }
+          - { package: ./host, target: FuzzGameFilePath }
+          - { package: ./host, target: FuzzDescribedGame }
+          - { package: ./host, target: FuzzWebSocketRead }
+          - { package: ./host, target: FuzzWebSocketMessage }
+          - { package: ./host, target: FuzzClientMessage }
+          - { package: ./host, target: FuzzPairingCode }
+          - { package: ./host, target: FuzzSessionCookie }
+          - { package: ./host, target: FuzzEditCode }
+          - { package: ./host, target: FuzzSessionCode }
+          - { package: ./host, target: FuzzLobbyInput }
+          - { package: ./contracts, target: FuzzParseURL }
+          - { package: ./contracts, target: FuzzIPv4 }
+          - { package: ./contracts, target: FuzzDecode }
+          - { package: ./contracts, target: FuzzValidate }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache: false # the module is stdlib-only
+      # The host embeds host/webfiles/web/, whose committed .gitkeep is enough to build it: no target reads the web files.
+      - name: Fuzz
+        env:
+          PACKAGE: ${{ matrix.package }}
+          TARGET: ${{ matrix.target }}
+        run: go test "$PACKAGE" -run '^$' -fuzz "^${TARGET}$" -fuzztime 60s

@@ -124,7 +124,7 @@ func fetchSource(repo, address, ref string) (string, error) {
 	}
 	if err != nil {
 		reason := "git could not fetch it"
-		for _, line := range strings.Split(stderr.String(), "\n") {
+		for line := range strings.SplitSeq(stderr.String(), "\n") {
 			if line = strings.TrimSpace(strings.TrimPrefix(line, "fatal: ")); line != "" {
 				reason = line
 				break
@@ -155,17 +155,27 @@ func (s *Projects) checkHead(repo, commit string, scene bool) (string, error) {
 	return "", nil
 }
 
+// importSource is what an import from a git URL asks for, checked: the
+// address the host fetches and the branch or tag, if it names one.
+func importSource(data []byte) (gitSource, error) {
+	var input gitSource
+	if err := decodeContract("import-git", data, &input); err != nil {
+		return gitSource{}, err
+	}
+	if input.Ref != "" && badRef.MatchString(input.Ref) {
+		return gitSource{}, fail(http.StatusBadRequest, "ref · Name a branch or tag.")
+	}
+	address, err := sourceURL(input.URL)
+	if err != nil {
+		return gitSource{}, err
+	}
+	return gitSource{address, input.Ref}, nil
+}
+
 // ImportGit is POST /api/projects/import-git: a new project from a public
 // repository, its history the source's.
 func (s *Projects) ImportGit(data []byte) (*Project, error) {
-	var input gitSource
-	if err := decodeContract("import-git", data, &input); err != nil {
-		return nil, err
-	}
-	if input.Ref != "" && badRef.MatchString(input.Ref) {
-		return nil, fail(http.StatusBadRequest, "ref · Name a branch or tag.")
-	}
-	address, err := sourceURL(input.URL)
+	source, err := importSource(data)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +185,7 @@ func (s *Projects) ImportGit(data []byte) (*Project, error) {
 		return nil, err
 	}
 	defer func() { _ = os.RemoveAll(making) }()
-	commit, err := fetchSource(making, address, input.Ref)
+	commit, err := fetchSource(making, source.URL, source.Ref)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +201,7 @@ func (s *Projects) ImportGit(data []byte) (*Project, error) {
 	if _, err := updateRefs(making, []refUpdate{{ref: "refs/heads/main", to: commit}}); err != nil {
 		return nil, err
 	}
-	return s.adopt(making, nil, projectMeta{title: sourceTitle(address), source: &gitSource{address, input.Ref}}, projectID)
+	return s.adopt(making, nil, projectMeta{title: sourceTitle(source.URL), source: &source}, projectID)
 }
 
 type sourceUpdate struct {
@@ -318,7 +328,7 @@ func sourceTitle(address string) string {
 		path = path[:end]
 	}
 	last := ""
-	for _, part := range strings.Split(path, "/") {
+	for part := range strings.SplitSeq(path, "/") {
 		if part != "" {
 			last = part
 		}

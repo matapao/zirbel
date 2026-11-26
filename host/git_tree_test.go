@@ -2,9 +2,15 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
+
+	"zirbel/contracts"
 )
 
 // A tree a game can't be is read as what it is, its problems said as the Node
@@ -150,4 +156,45 @@ func TestACommitReadsAsARevision(t *testing.T) {
 	if empty := revisionMeta(commitInfo{id: parent, message: "\n"}); empty.Label != "Untitled revision" || empty.Parent != nil || empty.Author != "Unknown" {
 		t.Errorf("an empty commit: %+v", empty)
 	}
+}
+
+// A game file's path, from a push, a folder import or an MCP write, as
+// isGameFilePath reads it: the Node host's gameFilePath (the game document
+// contract's file names) to the letter, and a path it takes stays inside the
+// game's folder, at most eight deep, hidden nowhere, with a type it serves.
+func FuzzGameFilePath(f *testing.F) {
+	for _, file := range []string{"index.html", "assets/sprite.png", "a/b/c/d/e/f/g/h.js", "a/b/c/d/e/f/g/h/i.js", ".git/config.json", "a/.hidden.js",
+		"../x.js", "a//b.js", "/abs.js", "a\\b.js", "x.exe", "x.JS", "_x.mjs", strings.Repeat("a", 237) + ".js", "a/./b.css"} {
+		f.Add(file)
+	}
+	f.Fuzz(func(t *testing.T, file string) {
+		taken := isGameFilePath(file)
+		if utf8.ValidString(file) {
+			document, _ := json.Marshal(map[string]any{"html": "<p>", "files": map[string]string{file: strings.Repeat("0", 64)}})
+			value, err := contracts.Decode(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if node := contracts.Validate("game-document", value) == nil; node != taken {
+				t.Fatalf("%q: taken %v, by Node's contract %v", file, taken, node)
+			}
+		}
+		if isGamePath(file) != (taken || file == "index.html") {
+			t.Fatalf("%q: a game's path %v", file, isGamePath(file))
+		}
+		if !taken {
+			return
+		}
+		segments := strings.Split(file, "/")
+		extension := file[strings.LastIndexByte(file, '.')+1:]
+		if len(file) > 240 || len(segments) > 8 || !filepath.IsLocal(file) || path.Clean(file) != file ||
+			gameFileTypes[extension] == "" || gameFileType(file) != gameFileTypes[extension] {
+			t.Fatalf("%q was taken", file)
+		}
+		for _, segment := range segments {
+			if segment == "" || segment[0] == '.' || strings.Trim(segment, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-") != "" {
+				t.Fatalf("%q was taken, with the part %q", file, segment)
+			}
+		}
+	})
 }

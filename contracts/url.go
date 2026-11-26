@@ -178,6 +178,26 @@ func ipv4Number(s string) (uint64, bool) {
 	return n, err == nil
 }
 
+// IPv4 is a host the URL parser reads as an IPv4 address, written as it writes
+// one: 127.1 and 0x7f.0.0.1 are 127.0.0.1. False for a host it reads as a
+// domain, or refuses.
+func IPv4(host string) (string, bool) {
+	if !endsInNumber(host) || !validIPv4(host) {
+		return "", false
+	}
+	parts := ipv4Labels(host)
+	var address uint64
+	for i, part := range parts {
+		n, _ := ipv4Number(part)
+		if i < len(parts)-1 {
+			n <<= 8 * (3 - i) // each part but the last is one byte, the first the highest
+		}
+		address += n
+	}
+	return strconv.FormatUint(address>>24, 10) + "." + strconv.FormatUint(address>>16&255, 10) + "." +
+		strconv.FormatUint(address>>8&255, 10) + "." + strconv.FormatUint(address&255, 10), true
+}
+
 func validIPv4(host string) bool {
 	parts := ipv4Labels(host)
 	if len(parts) > 4 {

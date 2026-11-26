@@ -204,7 +204,7 @@ func run() error {
 	}
 	var projects *Projects
 	if !o.hostOnly {
-		// Every game is a git repository (docs/git-store.md): no git, no editor. A host of releases alone needs none.
+		// Every game is a git repository (AGENTS.md: The git store): no git, no editor. A host of releases alone needs none.
 		if err := requireGit(); err != nil {
 			return err
 		}

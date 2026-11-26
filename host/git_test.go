@@ -80,7 +80,7 @@ func TestAnEditorNeedsGit(t *testing.T) {
 }
 
 // commitFiles writes a commit of these files alone on ref, its parent from: its id.
-func commitFiles(t *testing.T, repo, ref, from string, files map[string]string, message string) string {
+func commitFiles(t testing.TB, repo, ref, from string, files map[string]string, message string) string {
 	t.Helper()
 	stream := newFastImport()
 	changes := []treeChange{{op: "deleteall"}}

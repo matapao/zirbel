@@ -12,7 +12,7 @@ import (
 // a proposal is a commit on refs/zirbel/proposals/<id>, its parent its base;
 // applying moves the branch to it and deletes its ref in one compare-and-swap
 // transaction; a restore commits the earlier revision's tree on the head.
-// docs/git-store.md lists every way a revision is made.
+// The git store in AGENTS.md lists every way a revision is made.
 
 func proposalRef(id string) string { return "refs/zirbel/proposals/" + id }
 

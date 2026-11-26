@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
+	"slices"
 	"unicode/utf16"
 
 	"zirbel/contracts"
@@ -296,7 +297,7 @@ func (g *mosslight) tick(dt float64) bool {
 		changed = changed || x != player.X || y != player.Y
 		player.X, player.Y = x, y
 		for _, item := range g.lights {
-			if g.isCollected(item.id) || math.Hypot(x-item.x, y-item.y) >= 23 {
+			if slices.Contains(g.collected, item.id) || math.Hypot(x-item.x, y-item.y) >= 23 {
 				continue
 			}
 			g.collected = append(g.collected, item.id)
@@ -304,15 +305,6 @@ func (g *mosslight) tick(dt float64) bool {
 		}
 	}
 	return changed
-}
-
-func (g *mosslight) isCollected(id string) bool {
-	for _, item := range g.collected {
-		if item == id {
-			return true
-		}
-	}
-	return false
 }
 
 func (g *mosslight) snapshot() any {
@@ -346,15 +338,15 @@ func (g *tessellate) clear() {
 	g.board = [9]*string{}
 	g.winner, g.draw, g.turn = nil, false, nil
 	if len(g.order) == 2 {
-		g.turn = ptr(g.order[0])
+		g.turn = new(g.order[0])
 	}
 }
 
 func (g *tessellate) place(seat string, cell int) {
-	g.board[cell] = ptr(seat)
+	g.board[cell] = new(seat)
 	for _, line := range tileLines {
 		if owns(g.board[line[0]], seat) && owns(g.board[line[1]], seat) && owns(g.board[line[2]], seat) {
-			g.winner = ptr(seat)
+			g.winner = new(seat)
 		}
 	}
 	full := true
@@ -366,7 +358,7 @@ func (g *tessellate) place(seat string, cell int) {
 	if g.winner == nil && !g.draw {
 		for _, candidate := range g.order {
 			if candidate != seat {
-				g.turn = ptr(candidate)
+				g.turn = new(candidate)
 				break
 			}
 		}
@@ -400,7 +392,7 @@ func (g *tessellate) suspend(string) {}
 
 func (g *tessellate) apply(seat string, action json.RawMessage) string {
 	if fields, ok := strictFields(action, "type"); ok && literal(fields["type"], "reset") {
-		if (g.winner != nil || g.draw) && contains(g.order, seat) {
+		if (g.winner != nil || g.draw) && slices.Contains(g.order, seat) {
 			g.clear()
 			return ""
 		}
@@ -427,15 +419,6 @@ func (g *tessellate) apply(seat string, action json.RawMessage) string {
 		}
 	}
 	return ""
-}
-
-func contains(items []string, want string) bool {
-	for _, item := range items {
-		if item == want {
-			return true
-		}
-	}
-	return false
 }
 
 func (g *tessellate) tick(float64) bool { return false }

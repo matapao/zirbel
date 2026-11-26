@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -109,7 +108,7 @@ func NewEditors(folder string, now func() time.Time) (*Editors, error) {
 // normalizeEditCode reads a code as a person types it: any case, with or
 // without its dash or spaces. Empty when it is not a code.
 func normalizeEditCode(input string) string {
-	plain := codeSpacing.ReplaceAllString(strings.ToUpper(input), "")
+	plain := codeText(input)
 	if !editCodePattern.MatchString(plain) {
 		return ""
 	}
@@ -138,15 +137,7 @@ func hashToken(token string) string {
 }
 
 // editorToken is the editor session a Cookie header carries, in the form this box makes.
-func editorToken(cookie string) string {
-	for _, part := range strings.Split(cookie, ";") {
-		name, value, _ := strings.Cut(strings.TrimSpace(part), "=")
-		if name == editorCookie && sessionPattern.MatchString(value) {
-			return value
-		}
-	}
-	return ""
-}
+func editorToken(cookie string) string { return cookieToken(cookie, editorCookie) }
 
 // live reports whether a code is still good at a time.
 func (c editCode) live(at time.Time) bool {

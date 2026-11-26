@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -186,9 +187,7 @@ func (s *Projects) StageFiles(projectID string, args *writeFilesArgs, author ide
 	if base.Game != nil {
 		game.HTML, game.MaxPlayers, game.Net, game.Adapter, game.Controls, game.RegisterObjects, hasPage = base.Game.HTML, base.Game.MaxPlayers,
 			base.Game.Net, base.Game.Adapter, base.Game.Controls, base.Game.RegisterObjects, true
-		for name, hash := range base.Game.Files {
-			kept[name] = hash
-		}
+		maps.Copy(kept, base.Game.Files)
 	}
 	written := map[string][]byte{}
 	for _, change := range args.Files {

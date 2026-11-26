@@ -13,7 +13,7 @@ import (
 // The project model mirrors packages/sdk/contracts.ts, with fields in schema
 // order. Files written here are read by the Node editor and the other way round.
 //
-// A revision's id is its commit's hash (docs/git-store.md). A project lists its
+// A revision's id is its commit's hash (AGENTS.md: The git store). A project lists its
 // history with only the branch heads in full: a revision without its content
 // has nil Assets, and JSON leaves its scene, game and assets out.
 type Revision struct {

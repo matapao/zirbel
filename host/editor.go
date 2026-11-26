@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -279,7 +280,7 @@ func (f fields) permissions(key string) (Permissions, error) {
 // unknownKey finds a key outside the allowed set, as z.strictObject reports one.
 func unknownKey(fields map[string]json.RawMessage, allowed []string) (string, bool) {
 	for key := range fields {
-		if !contains(allowed, key) {
+		if !slices.Contains(allowed, key) {
 			return key, true
 		}
 	}

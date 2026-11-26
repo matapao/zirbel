@@ -222,3 +222,25 @@ func TestWrongEditCodesAreLimitedPerAddressAndAGameKeepsSoManyEditors(t *testing
 		}
 	}
 }
+
+// An edit code as a person types it reads as plainEditCode in
+// packages/server/box-editors.ts reads it, and one it reads is shown as
+// XXX-XXX and read the same however it is typed.
+func FuzzEditCode(f *testing.F) {
+	for _, typed := range []string{"abc-def", " ABC DEF ", "ABC\u00a0DEF", "ABC\u2028DEF", "abcd\u00df", "ab\ufb06de", "ABC0EF", "ABCDEF\xff", ""} {
+		f.Add(typed)
+	}
+	f.Fuzz(func(t *testing.T, typed string) {
+		want := nodeCodeText(typed)
+		if !onlyOf(want, editAlphabet, 6) {
+			want = ""
+		}
+		got := normalizeEditCode(typed)
+		if got != want {
+			t.Fatalf("%q reads as %q; Node reads %q", typed, got, want)
+		}
+		if shown := shownEditCode(got); got != "" && (len(shown) != 7 || normalizeEditCode(shown) != got || normalizeEditCode(strings.ToLower(shown)) != got) {
+			t.Fatalf("%q is shown as %q", got, shown)
+		}
+	})
+}

@@ -1,4 +1,4 @@
-# Go checks: golangci-lint v2 (bundles staticcheck, gosec, errcheck and more).
+# Go checks: golangci-lint v2 (bundles staticcheck, gosec, errcheck and more), the same file in every repository.
 # Run with `pnpm check:go`, which also runs deadcode, nilaway and (with --live) govulncheck.
 version: "2"
 linters:
@@ -12,11 +12,14 @@ linters:
     - gocritic
     - gosec
     - misspell
+    - modernize # newer Go's own forms where they are clearer (min/max, slices, maps, range over int)
     - nilerr
     - nilnil
     - noctx
+    - nolintlint # every //nolint names its linter and says why
     - unconvert
     - unparam
+    - usetesting # t.Context, t.TempDir, t.Setenv and t.Chdir in tests, which clean up after themselves
   settings:
     govet:
       enable-all: true
@@ -25,6 +28,9 @@ linters:
         - shadow # `err :=` shadowing is idiomatic Go
     gocritic:
       enabled-tags: [diagnostic] # performance hints are micro-optimizations
+    nolintlint:
+      require-explanation: true
+      require-specific: true
 formatters:
   enable:
     - gofmt

@@ -18,7 +18,7 @@ import (
 // and a bare git repository (git/<id>.git) whose commits are its revisions and
 // whose branches are its branches. Every save is a commit: a proposal is one on
 // refs/zirbel/proposals/<id> until it is applied (proposals.go), and applying
-// moves the branch to it, compare-and-swap. docs/git-store.md is the design.
+// moves the branch to it, compare-and-swap. The git store in AGENTS.md is the design.
 
 // validContract decodes JSON and validates it against a contract.
 func validContract(name string, data []byte) (any, error) {
@@ -167,8 +167,8 @@ func (s *Projects) ids() ([]string, error) {
 	}
 	ids := []string{}
 	for _, entry := range entries {
-		if strings.HasSuffix(entry.Name(), ".json") {
-			ids = append(ids, strings.TrimSuffix(entry.Name(), ".json"))
+		if id, ok := strings.CutSuffix(entry.Name(), ".json"); ok {
+			ids = append(ids, id)
 		}
 	}
 	return ids, nil

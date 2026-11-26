@@ -191,13 +191,11 @@ type settings struct {
 	capabilities string
 }
 
-func ptr(value string) *string { return &value }
-
 // templates mirrors packages/games/templates.ts.
 var templates = map[string]settings{
 	"blank":         {nil, 1, ""},
-	"mosslight":     {ptr("mosslight-v1"), 4, "multiplayer"},
-	"tessellate":    {ptr("tessellate-v1"), 2, "multiplayer"},
+	"mosslight":     {new("mosslight-v1"), 4, "multiplayer"},
+	"tessellate":    {new("tessellate-v1"), 2, "multiplayer"},
 	"lantern-quest": {nil, 1, "webgl"},
 	"orbit-garden":  {nil, 1, "webgl"},
 }
@@ -207,10 +205,10 @@ var templates = map[string]settings{
 func runtimeSettings(template string, game *Game) (settings, error) {
 	if game != nil {
 		if game.Net {
-			return settings{ptr(netSimulation), game.MaxPlayers, "multiplayer"}, nil
+			return settings{new(netSimulation), game.MaxPlayers, "multiplayer"}, nil
 		}
 		if game.MaxPlayers > 1 {
-			return settings{ptr("shared-state-v1"), game.MaxPlayers, "multiplayer"}, nil
+			return settings{new("shared-state-v1"), game.MaxPlayers, "multiplayer"}, nil
 		}
 		return settings{nil, game.MaxPlayers, ""}, nil
 	}
