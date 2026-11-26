@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
@@ -8,26 +9,24 @@ import (
 
 // The box's controllers in Box settings (--box), mirroring
 // packages/server/box-controllers.ts: its gamepads, USB and Bluetooth, and
-// Bluetooth pairing, as the box's controllers service (pi/controllers) sees
+// Bluetooth pairing, as the box's controller service (pi/controllers) sees
 // them, with the screen and place each one has. The service is reached over
-// the pads' local socket (--pads-socket), whose JSON control frames carry its
-// views and the owner's requests: GET /api/box/controllers lists them, and
-// POST …/scan ({on}), …/pair and …/forget ({address}) ask the service, which
-// answers each with its view, which the route answers with. With no service
+// the pads' local socket (--pads-socket, pads_local.go), whose JSON control
+// frames carry its views and the owner's requests: GET /api/box/controllers
+// lists them, and POST …/scan ({on}), …/pair and …/forget ({address}) ask the
+// service, which answers each with its view, which the route answers with. With no service
 // connected they answer 503. Owners alone use them: an editor of one game
 // never reaches /api/box/ (box_editor_access.go).
 
-// controllerService is what the routes need of the pads' local socket:
-// whether the service is connected, a JSON control frame to it, its JSON
-// control frames that the pads' routing leaves alone (its controllers views),
-// and where a box gamepad is now.
+// controllerService is what the routes need of the pads (pads_box.go):
+// whether the service is connected, its last view of the controllers (nil
+// while it isn't), a hook for each new view, a JSON control frame to it, and
+// where a box gamepad is now.
 type controllerService interface {
 	Connected() bool
-	// Send sends the connected service a JSON control frame; false when none is connected.
-	Send(message any) bool
-	// OnControl calls listener with each JSON control frame the service sends.
-	OnControl(listener func(message []byte))
-	// ScreenOf is the screen a box gamepad (by its device number) is on now.
+	Controllers() json.RawMessage
+	OnViewed(viewed func())
+	ToService(message any) bool
 	ScreenOf(device int) (controllerScreen, bool)
 }
 
@@ -70,45 +69,26 @@ const noControllerService = "The box’s controller service isn’t running."
 // before the route answers with the view it has.
 const controllerAnswer = 2 * time.Second
 
-// boxControllers keeps the service's latest view; changed closes when the
+// boxControllers waits for the service's views: changed closes when the
 // next one comes.
 type boxControllers struct {
 	service controllerService
 	answer  time.Duration
 	mu      sync.Mutex
-	view    *controllersView
 	changed chan struct{}
 }
 
 func newBoxControllers(service controllerService) *boxControllers {
 	c := &boxControllers{service: service, answer: controllerAnswer, changed: make(chan struct{})}
-	service.OnControl(c.take)
+	service.OnViewed(c.viewed)
 	return c
 }
 
-func (c *boxControllers) take(message []byte) {
-	var view controllersView
-	if decodeContract("controllers-view", message, &view) != nil {
-		return
-	}
+func (c *boxControllers) viewed() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.view = &view
 	close(c.changed)
 	c.changed = make(chan struct{})
-}
-
-// next waits for the service's next view, or after a while the one it has.
-func (c *boxControllers) next(changed chan struct{}) *controllersView {
-	timer := time.NewTimer(c.answer)
-	defer timer.Stop()
-	select {
-	case <-changed:
-	case <-timer.C:
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.view
 }
 
 func (c *boxControllers) waiter() chan struct{} {
@@ -117,46 +97,62 @@ func (c *boxControllers) waiter() chan struct{} {
 	return c.changed
 }
 
+// wait waits for the service's next view, or a while.
+func (c *boxControllers) wait(changed chan struct{}) {
+	timer := time.NewTimer(c.answer)
+	defer timer.Stop()
+	select {
+	case <-changed:
+	case <-timer.C:
+	}
+}
+
+// view is the service's view now, as the contract reads it.
+func (c *boxControllers) view() *controllersView {
+	raw := c.service.Controllers()
+	var view controllersView
+	if raw == nil || decodeContract("controllers-view", raw, &view) != nil {
+		return nil
+	}
+	return &view
+}
+
 // read is the box's controllers, each with its screen and place.
 func (c *boxControllers) read() (any, error) {
 	if !c.service.Connected() {
 		return nil, fail(http.StatusServiceUnavailable, noControllerService)
 	}
 	changed := c.waiter()
-	c.mu.Lock()
-	view := c.view
-	c.mu.Unlock()
-	if view == nil {
-		view = c.next(changed)
+	if c.view() == nil {
+		c.wait(changed)
 	}
-	return c.shown(view)
+	return c.shown()
 }
 
 // ask sends the service a request and answers with the view it sends back.
 func (c *boxControllers) ask(message any) (any, error) {
 	changed := c.waiter()
-	if !c.service.Send(message) {
+	if !c.service.ToService(message) {
 		return nil, fail(http.StatusServiceUnavailable, noControllerService)
 	}
-	return c.shown(c.next(changed))
+	c.wait(changed)
+	return c.shown()
 }
 
-func (c *boxControllers) shown(view *controllersView) (any, error) {
+func (c *boxControllers) shown() (any, error) {
+	view := c.view()
 	if view == nil || !c.service.Connected() {
 		return nil, fail(http.StatusServiceUnavailable, noControllerService)
 	}
-	shown := *view
-	shown.Devices = make([]controllerDevice, len(view.Devices))
 	for i, item := range view.Devices {
-		item.Screen = nil
+		view.Devices[i].Screen = nil
 		if item.Device != nil {
 			if screen, ok := c.service.ScreenOf(*item.Device); ok {
-				item.Screen = &screen
+				view.Devices[i].Screen = &screen
 			}
 		}
-		shown.Devices[i] = item
 	}
-	return shown, nil
+	return view, nil
 }
 
 // serveControllers answers GET /api/box/controllers and POST

@@ -11,7 +11,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
+import WebSocket from 'ws';
 import { hostsUnderTest, launch, tempDir } from './helpers.ts';
+import { padsService } from './pads-service.ts';
 
 const hosts = hostsUnderTest();
 /** This computer's address on a private network, which reaches the box as a device on its network would. */
@@ -28,11 +30,14 @@ async function startBox(t: TestContext, command: string[]) {
   mkdirSync(join(root, 'run'));
   const wake = join(root, 'run', 'request');
   const own = join(root, 'own-network.json');
-  // Its LAN player listener, which a box runs from start-up, on any free port.
-  const { ready } = launch(t, command, ['--data', join(root, 'data'), '--port', '0', '--player-port', '0', '--box'],
+  const pads = join(root, 'host.sock');
+  // Its LAN player listener, which a box runs from start-up, on any free port, and the local socket for its controller
+  // service.
+  const { ready } = launch(t, command, ['--data', join(root, 'data'), '--port', '0', '--player-port', '0', '--box',
+    '--pads-socket', pads],
     (line) => typeof line.editor === 'string' ? line.editor : undefined,
     { ZIRBEL_ACCOUNT_DIR: account, ZIRBEL_SETUP_REQUEST: wake, ZIRBEL_OWN_NETWORK: own });
-  return { editor: await ready, wake, own, network: join(root, 'run', 'network'), account };
+  return { editor: await ready, wake, own, network: join(root, 'run', 'network'), account, pads };
 }
 type Started = Awaited<ReturnType<typeof startBox>>;
 
@@ -96,7 +101,7 @@ function normalizer() {
     headers: step.headers ?? null, ...(step.status >= 300 ? {} : { body: walk(step.body) }) });
 }
 
-async function session({ editor: base, wake, own, network }: Started) {
+async function session(_t: TestContext, { editor: base, wake, own, network }: Started) {
   const steps: Step[] = [];
   const box = client(base);
   const record = async (step: Promise<Step>) => { const result = await step; steps.push(result); return result; };
@@ -212,7 +217,7 @@ type Game = { id: string; title: string; branches: { main: string }; revisions: 
 
 /** The editors of one game: the owner makes its code, other devices redeem it and edit that game alone, and their
  *  sessions end when the owner removes them, the code stops or expires, or the game goes. */
-async function editorsSession({ editor: base, account }: Started) {
+async function editorsSession(_t: TestContext, { editor: base, account }: Started) {
   const steps: Step[] = [];
   const box = client(base);
   const record = async (step: Promise<Step>) => { const result = await step; steps.push(result); return result; };
@@ -369,9 +374,15 @@ async function editorsSession({ editor: base, account }: Started) {
   return steps;
 }
 
-/** The box's controllers (box-controllers.ts), which owners list and pair in Box settings: with no controllers service
- *  on the box, there are none to list or pair (503), and a request is checked first. */
-async function controllersSession({ editor: base }: Started) {
+const VIEW = { type: 'controllers', scanning: false, bluetooth: true, pairing: null, error: null,
+  devices: [{ name: 'USB gamepad', kind: 'usb', connected: true, device: 0 },
+    { name: 'Arcade stick', kind: 'bluetooth', connected: false, address: '11:22:33:44:55:66' }],
+  found: [{ address: '77:88:99:AA:BB:CC', name: 'Pro pad' }] };
+
+/** The box's controllers (box-controllers.ts), which owners list and pair in Box settings: with no controller service on
+ *  the box, there are none to list or pair (503), and a request is checked first; with one on its local socket, its
+ *  view with each gamepad's screen and place, and each request relayed to it and answered with its next view. */
+async function controllersSession(t: TestContext, { editor: base, pads }: Started) {
   const steps: Step[] = [];
   const box = client(base);
   const record = async (step: Promise<Step>) => { const result = await step; steps.push(result); return result; };
@@ -384,6 +395,37 @@ async function controllersSession({ editor: base }: Started) {
   await record(box('POST', '/api/box/controllers/pair', { raw: '{"address":"A0:B1:C2:D3:E4:F5","more":1}', origin: true }));
   await record(box('GET', '/api/box/controllers/scan'));
   await record(box('POST', '/api/box/controllers/connect', { json: {}, origin: true }));
+  if (process.platform === 'win32') return steps;
+  const service = await padsService(t, pads, (message) => message.type === 'device' || message.type === 'controllers' ? undefined
+    : { ...VIEW, scanning: message.type === 'scan' && message.on === true, pairing: message.type === 'pair' ? message.address : null });
+  service.json({ type: 'device', device: 0, name: 'USB gamepad', standard: true, uid: 'usb-0000:01:00.0-1.2/input0' });
+  service.json(VIEW);
+  // The box's own screen (the TV), on its LAN listener from loopback, takes the box's gamepad.
+  const lobby = new URL(((await box('GET', '/api/lobby')).body as { link: string }).link);
+  const tv = new WebSocket('ws://127.0.0.1:' + lobby.port + '/pads?role=screen');
+  t.after(() => tv.terminate());
+  const code = await new Promise<string>((resolve) => tv.on('message', (data: Buffer, binary) => {
+    const message = binary ? undefined : JSON.parse(data.toString('utf8')) as { type: string; code?: string };
+    if (message?.type === 'screen') resolve(message.code!);
+  }));
+  const listed = async (step: Promise<Step>) => {
+    const result = await step;
+    steps.push({ ...result, body: JSON.parse(JSON.stringify(result.body).replaceAll('"' + code + '"', '"<screen>"')) });
+    return result;
+  };
+  const seen = await listed(box('GET', '/api/box/controllers'));
+  assert.deepEqual((seen.body as { devices: { screen: unknown }[] }).devices.map((item) => item.screen),
+    [{ code, tv: true, place: 0 }, null]);
+  assert.equal(((await listed(box('POST', '/api/box/controllers/scan', { json: { on: true }, origin: true }))).body as
+    { scanning: boolean }).scanning, true);
+  await listed(box('POST', '/api/box/controllers/pair', { json: { address: '77:88:99:AA:BB:CC' }, origin: true }));
+  await listed(box('POST', '/api/box/controllers/forget', { json: { address: '11:22:33:44:55:66' }, origin: true }));
+  assert.deepEqual(service.heard, [{ type: 'scan', on: true }, { type: 'pair', address: '77:88:99:AA:BB:CC' },
+    { type: 'forget', address: '11:22:33:44:55:66' }]);
+  // The service gone, its controllers go with it.
+  await service.close();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  await record(box('GET', '/api/box/controllers'));
   return steps;
 }
 
@@ -396,7 +438,7 @@ const SESSIONS = [['session', session, results], ['editors session', editorsSess
 for (const host of hosts) {
   for (const [name, run, kept] of SESSIONS) {
     test(host.name + ' box runs the scripted ' + name, async (t) => {
-      const steps = await run(await startBox(t, host.command));
+      const steps = await run(t, await startBox(t, host.command));
       // No controllers service runs beside these hosts: its routes say so.
       for (const [index, step] of steps.entries()) assert.ok(step.status < 500 || (step.status === 503 && kept === controlling),
         'step ' + index + ': ' + step.status + ' ' + JSON.stringify(step.body));
