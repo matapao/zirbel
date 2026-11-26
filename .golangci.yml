@@ -1,6 +1,6 @@
 # Go checks: golangci-lint v2 (bundles staticcheck, gosec, errcheck and more), the same file in every repository.
 # Run with `pnpm check:go`, which also runs deadcode, nilaway and (with --live) govulncheck.
-version: "2"
+version: '2'
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused
   enable:

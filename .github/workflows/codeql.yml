@@ -12,6 +12,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:
@@ -20,9 +23,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
-      contents: read
-      actions: read
-      security-events: write
+      contents: read # the code it analyses
+      actions: read # the workflow run it reports for
+      security-events: write # the results, as code scanning alerts
     strategy:
       fail-fast: false
       matrix:

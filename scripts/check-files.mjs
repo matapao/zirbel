@@ -61,7 +61,9 @@ for (const file of files) {
     continue;
   }
   if (/\.mdx?$/i.test(file) && !(file in DOC_LIMITS) && !own.has('content')) {
-    problems.push(`${file}: only README.md, AGENTS.md and .github/SECURITY.md document the repository; fold it into one of them`);
+    problems.push(
+      `${file}: only README.md, AGENTS.md and .github/SECURITY.md document the repository; fold it into one of them`,
+    );
   }
   if (own.has('linguist-generated') || own.has('linguist-vendored') || own.has('data')) continue;
   let text;
@@ -90,5 +92,7 @@ if (problems.length) {
   console.error(`check:files found ${problems.length} problem(s):\n  ${problems.sort().join('\n  ')}`);
   process.exitCode = 1;
 } else {
-  console.log(`check:files: ${counted} hand-written files within their limits, and the repository's Markdown in order.`);
+  console.log(
+    `check:files: ${counted} hand-written files within their limits, and the repository's Markdown in order.`,
+  );
 }

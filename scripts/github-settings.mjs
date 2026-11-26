@@ -40,7 +40,10 @@ const want = (label, ok, fix) => {
 // Merging, and what GitHub scans.
 want(
   'squash or rebase merges only, branch deleted once merged, auto-merge off',
-  !info.allow_merge_commit && info.allow_squash_merge && info.allow_rebase_merge && info.delete_branch_on_merge &&
+  !info.allow_merge_commit &&
+    info.allow_squash_merge &&
+    info.allow_rebase_merge &&
+    info.delete_branch_on_merge &&
     !info.allow_auto_merge,
   () =>
     api(`repos/${repo}`, 'PATCH', {

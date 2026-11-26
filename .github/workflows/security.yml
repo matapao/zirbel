@@ -78,10 +78,9 @@ jobs:
           # For zizmor's online audits, which read the actions' own repositories (--live only).
           GH_TOKEN: ${{ github.token }}
         run: pnpm check:security --strict ${MODE:+"$MODE"}
-      # Zirbel's stricter reading of its own workflows, on top of the shared script's: zizmor's auditor persona,
-      # offline. The standard's shared workflows (codeql, dependency-review, scorecard) keep the shared reading.
+      # zizmor's stricter auditor persona on every workflow, offline, on top of the shared script's default reading.
       - name: zizmor, auditor persona
-        run: zizmor --offline --persona=auditor .github/workflows/checks.yml .github/workflows/security.yml .github/workflows/fuzz.yml
+        run: zizmor --offline --persona=auditor .github/workflows
 
       # govulncheck reads the standard library of the Go it runs on, go.mod's, as the Check workflow builds with.
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0

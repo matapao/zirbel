@@ -12,15 +12,3 @@ pnpm-lock.yaml
 packages/server/guides/
 packages/net/README.md
 skills/
-# and the standard's shared files, kept byte for byte as it writes them.
-.golangci.yml
-.oxlintrc.json
-.github/SECURITY.md
-.github/zizmor.yml
-.github/workflows/codeql.yml
-.github/workflows/dependency-review.yml
-.github/workflows/scorecard.yml
-scripts/check.mjs
-scripts/check-files.mjs
-scripts/check-go.mjs
-scripts/github-settings.mjs

@@ -5,7 +5,10 @@ on:
   pull_request:
   merge_group:
 permissions:
-  contents: read
+  contents: read # the pull request's dependency changes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   review:

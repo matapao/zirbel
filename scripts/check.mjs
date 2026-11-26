@@ -16,7 +16,7 @@ const pnpm = (args) => {
   if (exec && !/\.[cm]?js$/.test(exec)) return spawnSync(exec, args, { stdio: 'inherit' });
   return exec
     ? spawnSync(process.execPath, [exec, ...args], { stdio: 'inherit' })
-    : spawnSync('pnpm', args, { stdio: 'inherit', shell: process.platform === 'win32' });
+    : spawnSync('pnpm', args, { stdio: 'inherit' });
 };
 
 const results = [];

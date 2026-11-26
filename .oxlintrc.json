@@ -25,7 +25,10 @@
     "typescript/restrict-template-expressions": "error",
     "typescript/switch-exhaustiveness-check": ["error", { "considerDefaultExhaustiveForUnions": true }],
     "typescript/unbound-method": "error",
-    "typescript/ban-ts-comment": ["error", { "ts-expect-error": "allow-with-description", "minimumDescriptionLength": 10 }],
+    "typescript/ban-ts-comment": [
+      "error",
+      { "ts-expect-error": "allow-with-description", "minimumDescriptionLength": 10 }
+    ],
     "unicorn/require-post-message-target-origin": "error",
     "vitest/no-focused-tests": "error",
     "vitest/no-identical-title": "error"
