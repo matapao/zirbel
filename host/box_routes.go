@@ -27,6 +27,9 @@ type Box struct {
 	settings     *BoxSettings
 	capabilities boxCapabilities
 	port         func() int
+	// lobbyPort is the LAN player listener's, where the lobby is: the door
+	// sends a device that isn't paired there from /.
+	lobbyPort func() int
 	// setupRequest is the file that wakes the box's setup service (pi/setup)
 	// for its Wi-Fi setup: a systemd path unit starts the service when it
 	// appears. Beside it, the one for the box's own Wi-Fi (networkWake).
@@ -183,6 +186,11 @@ func (b *Box) door(w http.ResponseWriter, r *http.Request) (access boxAccess, ha
 	}
 	if paired {
 		return boxAccess{device: device.ID}, false, nil
+	}
+	if r.Method == http.MethodGet && pathname == "/" && b.lobbyPort != nil && b.lobbyPort() != 0 {
+		// Players never pair: the box's front door is the lobby, on the name the device asked by.
+		redirect(w, "http://"+hostnameOf(r.Host)+":"+strconv.Itoa(b.lobbyPort())+"/")
+		return access, true, nil
 	}
 	if r.Method == http.MethodGet && !strings.HasPrefix(pathname, "/api/") {
 		redirect(w, "/pair")

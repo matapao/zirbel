@@ -16,6 +16,7 @@ type EditorServer struct {
 	*Editor
 	rooms     *Rooms
 	players   *Players
+	lobby     *Lobby
 	mcp       *MCP // nil unless --enable-mcp or --box
 	enableMCP bool // --enable-mcp: on a box, /mcp also answers while external MCP access is off, from the box itself
 	box       *Box // nil unless --box
@@ -133,6 +134,8 @@ func (s *EditorServer) serve(w http.ResponseWriter, r *http.Request) error {
 		return s.serveReleases(w, r, pathID, action)
 	case "rooms":
 		return s.serveRooms(w, r, pathID, action)
+	case "lobby":
+		return s.serveLobby(w, r, pathID, action)
 	}
 	return fail(http.StatusNotFound, "Editor route does not exist.")
 }

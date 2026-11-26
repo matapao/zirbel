@@ -170,6 +170,22 @@ func compress(name string, file *File) {
 	file.gzip.Store(&data)
 }
 
+// LobbyFiles are the lobby's page and what it loads, which every player
+// listener serves beside its rooms: the host's own, not a release's runtime.
+var LobbyFiles = []string{"lobby.html", "lobby.js", "lobby.css"}
+
+// Lobby holds the lobby files the build has, by name.
+var Lobby = sync.OnceValue(func() map[string]*File {
+	files := map[string]*File{}
+	for _, name := range LobbyFiles {
+		if data, err := fs.ReadFile(embedded, "web/"+name); err == nil {
+			files[name] = newFile(data)
+			compress(name, files[name])
+		}
+	}
+	return files
+})
+
 // Net is zirbel-net.js, the client a game with its own netcode imports to
 // reach the relay, or nil when the build has none. The host provides it to
 // every game like game-sdk.js, but it is not part of a release's runtime.

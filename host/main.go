@@ -235,6 +235,10 @@ func run() error {
 		held.release()
 	}()
 
+	lobby, err := NewLobby(o.root, rooms, releases)
+	if err != nil {
+		return err
+	}
 	for _, file := range o.imports {
 		if err := releases.Import(file); err != nil {
 			return err
@@ -262,7 +266,7 @@ func run() error {
 			return err
 		}
 	}
-	localPort, config := o.playerPort, listenerConfig{}
+	localPort, config := o.playerPort, listenerConfig{lobby: lobby}
 	if o.lan || !o.hostOnly {
 		localPort = 0
 	}
@@ -286,7 +290,16 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	players = &Players{rooms: rooms, runtime: runtimeFiles, local: local, lanHost: o.lanHost, lanPort: o.playerPort}
+	players = &Players{rooms: rooms, runtime: runtimeFiles, local: local, lanHost: o.lanHost, lanPort: o.playerPort, lobby: lobby}
+	if box != nil {
+		// A box's lobby is on its LAN player port from the start: its door
+		// sends the devices that aren't paired there.
+		players.box = config.box
+		box.lobbyPort = players.LANPort
+		if _, err := players.StartLAN(ctx); err != nil {
+			return err
+		}
+	}
 
 	var handler *EditorServer
 	if !o.hostOnly {
@@ -297,7 +310,7 @@ func run() error {
 				return err
 			}
 		}
-		handler = &EditorServer{Editor: &Editor{projects: projects, releases: releases}, rooms: rooms, players: players,
+		handler = &EditorServer{Editor: &Editor{projects: projects, releases: releases}, rooms: rooms, players: players, lobby: lobby,
 			mcp: mcp, enableMCP: o.enableMCP, box: box, files: editorFiles, port: editorPort, boot: self.Boot}
 		editorServer = &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 25 * time.Second, IdleTimeout: 5 * time.Second}
 		go func() { _ = editorServer.Serve(editorSocket) }()

@@ -11,13 +11,18 @@ import (
 
 // Players owns the player listeners, like Players in
 // packages/server/hosting.ts: the loopback listener that always runs, and the
-// LAN listener, which starts with --lan or when the editor first shares a room.
+// LAN listener, which starts with --lan, on a box, or when the editor first
+// shares a room. Both serve the lobby.
 type Players struct {
 	rooms   *Rooms
 	runtime map[string]*webfiles.File
 	local   *Listener
 	lanHost string // the host name for LAN links; empty means the first LAN address
 	lanPort int
+	lobby   *Lobby
+	// box, on a box: the LAN listener answers the box's network by its names,
+	// IPv6 too, for the guests its door sends to the lobby.
+	box *playerReach
 
 	mu  sync.Mutex // editor requests may start the LAN listener at the same time
 	lan *Listener
@@ -32,7 +37,13 @@ func (p *Players) StartLAN(ctx context.Context) (*Listener, error) {
 		if p.lanHost != "" {
 			extra = append(extra, p.lanHost)
 		}
-		listener, err := Listen(ctx, p.rooms, p.runtime, "0.0.0.0", p.lanPort, listenerConfig{lan: true, extraHosts: extra})
+		config, bind := listenerConfig{lan: true, extraHosts: extra, lobby: p.lobby}, "0.0.0.0"
+		if box := p.box; box != nil {
+			config.box = &playerReach{hosts: func() []string { return append(box.hosts(), extra...) }, network: box.network,
+				editorOrigins: func(string) []string { return nil }}
+			bind = everyInterface
+		}
+		listener, err := Listen(ctx, p.rooms, p.runtime, bind, p.lanPort, config)
 		if err != nil {
 			return nil, err
 		}
@@ -71,6 +82,16 @@ func (p *Players) Describe(ctx context.Context, room *Room, host string) (any, e
 		LocalLink string  `json:"localLink"`
 		QR        *string `json:"qr"`
 	}{room.Summary(), address != "", roomLink("http://"+linked+port, room), roomLink("http://"+host+port, room), nil}, nil
+}
+
+// LANPort is the LAN listener's port, 0 until it has started.
+func (p *Players) LANPort() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.lan == nil {
+		return 0
+	}
+	return p.lan.port
 }
 
 // Close lets seated sockets flush, then stops both listeners.

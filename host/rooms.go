@@ -109,16 +109,34 @@ func (rs *Rooms) Create(release *Release, access string) (*Room, error) {
 	return rs.Open(release, false, access, false)
 }
 
+// opening is how a room is opened: by the owner, or from the lobby by the
+// guest at starter.
+type opening struct {
+	solo, development bool
+	access            string
+	starter           string // the address that started a lobby session; empty for the owner's rooms
+}
+
 // Open mirrors Rooms.create in packages/core/rooms.ts, including solo
 // playtests and development rooms.
 func (rs *Rooms) Open(release *Release, solo bool, access string, development bool) (*Room, error) {
-	if !solo && !release.Manifest.Permissions.Play {
-		return nil, fail(http.StatusUnprocessableEntity, "The creator has disabled play for this release.")
-	}
 	if solo && access == "lan" {
 		return nil, fail(http.StatusBadRequest, "Solo playtests use the local player service.")
 	}
-	room, evicted, err := rs.add(release, solo, access, development)
+	return rs.open(release, opening{solo: solo, development: development, access: access})
+}
+
+// OpenSession starts a lobby session of an offered release for the guest at
+// starter: a shared room with a code, or for a one-player release a solo room.
+func (rs *Rooms) OpenSession(release *Release, access, starter string) (*Room, error) {
+	return rs.open(release, opening{solo: !multiplayer(release), access: access, starter: starter})
+}
+
+func (rs *Rooms) open(release *Release, how opening) (*Room, error) {
+	if (!how.solo || how.starter != "") && !release.Manifest.Permissions.Play {
+		return nil, fail(http.StatusUnprocessableEntity, "The creator has disabled play for this release.")
+	}
+	room, evicted, err := rs.add(release, how)
 	if evicted != nil {
 		evicted.close()
 	}
@@ -128,9 +146,14 @@ func (rs *Rooms) Open(release *Release, solo bool, access string, development bo
 // add registers a new room under one lock. At the limit it makes way by taking
 // out the oldest solo playtest nobody is playing (those are not listed in
 // Share), which the caller closes after the lock is released.
-func (rs *Rooms) add(release *Release, solo bool, access string, development bool) (room, evicted *Room, err error) {
+func (rs *Rooms) add(release *Release, how opening) (room, evicted *Room, err error) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
+	if how.starter != "" {
+		if err := rs.sessionLimits(how.starter); err != nil {
+			return nil, nil, err
+		}
+	}
 	if len(rs.rooms) >= maxRooms {
 		for _, id := range rs.order {
 			if idle := rs.rooms[id]; idle != nil && idle.Solo && !idle.Connected() {
@@ -144,7 +167,13 @@ func (rs *Rooms) add(release *Release, solo bool, access string, development boo
 	}
 	playable := *release
 	playable.files, playable.canonical = nil, nil
-	room = newRoom(&playable, solo, access, development)
+	room = newRoom(&playable, how.solo, how.access, how.development)
+	room.starter = how.starter
+	// A session has a code: a multiplayer room started from the lobby, or one
+	// the owner opened on the LAN.
+	if !how.solo && multiplayer(release) && (how.starter != "" || how.access == "lan") {
+		room.Code = rs.freeCode()
+	}
 	rs.rooms[room.ID] = room
 	rs.order = append(rs.order, room.ID)
 	return room, evicted, nil
@@ -186,6 +215,31 @@ func (rs *Rooms) List() []summary {
 	for _, room := range rs.list() {
 		if !room.Solo {
 			list = append(list, room.Summary())
+		}
+	}
+	return list
+}
+
+// Session finds the open session with a code on the listener for access.
+func (rs *Rooms) Session(code, access string) *Room {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	for _, room := range rs.rooms {
+		if room.Code != "" && same(room.Code, code) && room.Access == access {
+			return room
+		}
+	}
+	return nil
+}
+
+// Sessions are the open sessions with a code on the listener for access,
+// newest first.
+func (rs *Rooms) Sessions(access string) []*Room {
+	list := []*Room{}
+	rooms := rs.list()
+	for i := len(rooms) - 1; i >= 0; i-- {
+		if room := rooms[i]; room.Code != "" && room.Access == access {
+			list = append(list, room)
 		}
 	}
 	return list

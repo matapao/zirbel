@@ -18,6 +18,9 @@ type Room struct {
 	Solo          bool
 	Access        string // "local" or "lan"
 	Development   bool   // a LAN room pinned to an editor revision
+	Code          string // a session's code (sessions.go); empty for other rooms
+	Started       time.Time
+	starter       string // the address that started it from the lobby; empty for the owner's rooms
 
 	mu        sync.Mutex
 	sim       simulation
@@ -35,7 +38,7 @@ func newRoom(release *Release, solo bool, access string, development bool) *Room
 	now := time.Now()
 	return &Room{
 		ID: hex.EncodeToString(randomBytes(6)), Invite: secret(), DocumentKey: secret(),
-		InviteExpires: now.Add(inviteLifetime), Release: release, Solo: solo, Access: access, Development: development,
+		InviteExpires: now.Add(inviteLifetime), Release: release, Solo: solo, Access: access, Development: development, Started: now,
 		sim: newSimulation(release, solo), seats: map[string]*seat{}, pending: map[string]ticket{}, activity: now,
 		relay: relayRoom{seats: map[byte]*relaySeat{}},
 	}
@@ -70,6 +73,7 @@ type summary struct {
 	Access      string          `json:"access"`
 	Seats       []SeatInfo      `json:"seats"`
 	Status      string          `json:"status"`
+	Code        string          `json:"code,omitempty"`
 }
 
 // seated returns the seats in join order. order and seats change together,
@@ -100,7 +104,7 @@ func (r *Room) Summary() summary {
 	} else if r.connectedLocked() {
 		status = "active"
 	}
-	return summary{r.ID, r.Release.ManifestRaw, r.Solo, r.Development, r.Access, seats, status}
+	return summary{r.ID, r.Release.ManifestRaw, r.Solo, r.Development, r.Access, seats, status, r.Code}
 }
 func (r *Room) MayView(credential string) bool {
 	r.mu.Lock()
@@ -153,22 +157,58 @@ func (r *Room) Reserve(invite, name, role string) (string, error) {
 		return "", fail(http.StatusForbidden, "This is a local playtest.")
 	}
 	r.prune()
+	if !r.free(role) {
+		if role == "player" {
+			return "", fail(http.StatusConflict, "All player seats are reserved.")
+		}
+		return "", fail(http.StatusConflict, "The spectator seats are full.")
+	}
+	return r.hold(name, role, ticketLifetime), nil
+}
+
+// Seat reserves a seat for a guest the lobby sends in, without the
+// invitation, which may have expired: a player's while there is one, else a
+// spectator's.
+func (r *Room) Seat(name string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return "", fail(http.StatusNotFound, "This room has closed.")
+	}
+	r.prune()
+	if r.free("player") {
+		return r.hold(name, "player", seatTicketLifetime), nil
+	}
+	if !r.Solo && r.free("spectator") {
+		return r.hold(name, "spectator", seatTicketLifetime), nil
+	}
+	return "", fail(http.StatusConflict, "This session is full.")
+}
+
+// free reports a seat of role that is neither taken nor reserved.
+func (r *Room) free(role string) bool {
 	held := 0
 	for _, item := range r.pending {
 		if item.role == role {
 			held++
 		}
 	}
-	if r.used(role)+held >= r.capacity(role) {
-		if role == "player" {
-			return "", fail(http.StatusConflict, "All player seats are reserved.")
-		}
-		return "", fail(http.StatusConflict, "The spectator seats are full.")
-	}
+	return r.used(role)+held < r.capacity(role)
+}
+
+// hold reserves a seat of role for name: the ticket that takes it.
+func (r *Room) hold(name, role string, lifetime time.Duration) string {
 	key := secret()
-	r.pending[key] = ticket{name, role, time.Now().Add(ticketLifetime)}
+	r.pending[key] = ticket{name, role, time.Now().Add(lifetime)}
 	r.activity = time.Now()
-	return key, nil
+	return key
+}
+
+// players counts the player seats taken.
+func (r *Room) players() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.used("player")
 }
 
 type hello struct {
@@ -370,8 +410,9 @@ func (r *Room) step() bool {
 	defer r.mu.Unlock()
 	r.prune()
 	now := time.Now()
-	// A shared room stays open as long as its invitation is valid.
-	if !r.connectedLocked() && now.Sub(r.activity) > idleLimit && (r.Solo || !now.Before(r.InviteExpires)) {
+	// A shared room stays open as long as its invitation is valid; a lobby
+	// session, whose invitation nobody holds, only while it is played.
+	if !r.connectedLocked() && now.Sub(r.activity) > idleLimit && (r.Solo || r.starter != "" || !now.Before(r.InviteExpires)) {
 		return false
 	}
 	if r.sim != nil && r.sim.tick(tickInterval.Seconds()) {

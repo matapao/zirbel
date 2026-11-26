@@ -32,6 +32,8 @@ type listenerConfig struct {
 	// box, on a box: the player answers the box's network by its names, and
 	// the editor that may frame it is on the host name the device reached.
 	box *playerReach
+	// lobby, when set, answers / and /lobby/... (lobby_routes.go).
+	lobby *Lobby
 }
 
 // playerReach mirrors PlayerReach in packages/server/player-listener.ts.
@@ -70,6 +72,7 @@ type Listener struct {
 	rooms      *Rooms
 	runtime    map[string]*webfiles.File
 	net        *webfiles.File // zirbel-net.js, if the build has it
+	lobbyFiles map[string]*webfiles.File
 	config     listenerConfig
 	port       int
 	playerPage string
@@ -148,6 +151,11 @@ func (l *Listener) serve(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("access-control-allow-origin", "*")
 		sendFile(w, r, "text/javascript; charset=utf-8", "no-cache", l.net)
 		return nil
+	}
+	if l.config.lobby != nil {
+		if handled, err := l.serveLobby(w, r, pathname); handled {
+			return err
+		}
 	}
 	segments := strings.Split(pathname, "/")
 	route, roomID, parts := "", "", []string{}
@@ -277,7 +285,8 @@ func Listen(ctx context.Context, rooms *Rooms, runtime map[string]*webfiles.File
 	if err != nil {
 		return nil, err
 	}
-	l := &Listener{rooms: rooms, runtime: runtime, net: webfiles.Net(), config: config, port: port, playerPage: string(page.Bytes)}
+	l := &Listener{rooms: rooms, runtime: runtime, net: webfiles.Net(), lobbyFiles: webfiles.Lobby(), config: config, port: port,
+		playerPage: string(page.Bytes)}
 	l.server = &http.Server{Handler: l, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 20 * time.Second, IdleTimeout: 5 * time.Second}
 	go func() { _ = l.server.Serve(&limitListener{socket, make(chan struct{}, 256)}) }()
 	return l, nil
