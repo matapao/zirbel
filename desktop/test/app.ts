@@ -15,7 +15,7 @@ import { alive, claim, folders, launchEnv, removeFolders, until } from './suppor
 const ELECTRON = createRequire(import.meta.url)('electron') as unknown as string;
 const DESKTOP = path.join(import.meta.dirname, '..', '..');
 const SERVER = path.join(DESKTOP, '..', 'dist', 'server.mjs');
-const EXAMPLE = path.join(DESKTOP, '..', 'examples', 'moon-tiles.zirbel-project.json');
+const EXAMPLE = path.join(DESKTOP, '..', 'test', 'fixtures', 'moon-tiles.zirbel-project.json');
 const made = folders('zirbel-desktop-app-');
 const env = launchEnv(made);
 const launch = () => electron.launch({ executablePath: ELECTRON, args: [DESKTOP, '--use-mock-keychain'], env });

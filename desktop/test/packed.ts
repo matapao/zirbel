@@ -95,7 +95,7 @@ test('the packed app is hardened as from desktop/', async () => {
   const child = await openPlaytest(
     app,
     page,
-    JSON.parse(fs.readFileSync(path.join(REPO, 'examples', 'moon-tiles.zirbel-project.json'), 'utf8')),
+    JSON.parse(fs.readFileSync(path.join(REPO, 'test', 'fixtures', 'moon-tiles.zirbel-project.json'), 'utf8')),
   );
   await checkHardening(app, child);
   await child.close();
