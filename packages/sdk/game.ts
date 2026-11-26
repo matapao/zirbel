@@ -27,7 +27,7 @@ const segment = '[A-Za-z0-9_][A-Za-z0-9._-]*';
 const pathWith = (extensions: string[]) => z.string().max(240)
   .regex(new RegExp('^(?:' + segment + '/){0,7}' + segment + '\\.(?:' + extensions.join('|') + ')$'));
 export const gameFilePath = pathWith(Object.keys(GAME_FILE_TYPES));
-// A game with net may name its adapter, the module that connects it to zirbel-net: one of its own scripts, which the
+// A game with net may name its adapter, the module that connects it to the net module: one of its own scripts, which the
 // game page loads after the game's document, so the game itself carries nothing of Zirbel's.
 export const adapterPath = pathWith(['js', 'mjs']);
 export const MAX_GAME_FILES = 1000;
@@ -50,7 +50,7 @@ export const SHARED_PLAYERS = 4;
 export const NET_PLAYERS = 16;
 
 // The document owns the game's rendering, input, objects and rules. A game with net brings its own
-// netcode over the host's relay (/zirbel-net.js, protocol v2): up to 16 players. Without it, players
+// netcode, in a space of the spaces kernel the host runs (/.skalet/net.js): up to 16 players. Without it, players
 // share state through window.zirbel: up to 4.
 const gameFields = z.strictObject({
   html: z.string().trim().min(1).max(400_000),

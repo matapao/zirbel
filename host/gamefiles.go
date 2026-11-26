@@ -40,8 +40,8 @@ const maxGameFiles = 1000
 
 // sharedPlayers and netPlayersMax mirror SHARED_PLAYERS and NET_PLAYERS in
 // packages/sdk/game.ts: the most players of a game sharing state, and of a game
-// with its own netcode (net), which plays over the relay (relay.go) and
-// releases with netSimulation.
+// with its own netcode (net), which plays in a space of the spaces kernel
+// (rooms_spaces.go) and releases with netSimulation.
 const (
 	sharedPlayers = 4
 	netPlayersMax = 16

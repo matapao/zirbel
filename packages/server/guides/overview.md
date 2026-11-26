@@ -24,7 +24,7 @@ Sharing publishes a release: a fixed copy of one revision, with what others may 
 
 Every Zirbel host has a player side, apart from the editor. Its front page is the lobby: the games the owner offers there, and the sessions being played. Anyone who reaches it may start a session of an offered game. A multiplayer session gets a short code of four letters and digits, and others join it by typing the code; the lobby lists the sessions but never their codes. The lobby keeps up to 16 sessions open, and up to 3 started from one address.
 
-A game for one player is played alone in its session. A game for several players shares state through the host (up to 4 players), or brings its own netcode over the host's relay (up to 16): see `zirbel://guide/game-format` and `zirbel://guide/multiplayer`.
+A game for one player is played alone in its session. A game for several players shares state through the host (up to 4 players), or brings its own netcode in a space of the spaces kernel the host runs (up to 16): see `zirbel://guide/game-format` and `zirbel://guide/multiplayer`.
 
 ## A box
 

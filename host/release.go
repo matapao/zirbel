@@ -84,7 +84,7 @@ type Scene struct {
 type Game struct {
 	HTML            string            `json:"html"`
 	MaxPlayers      int               `json:"maxPlayers"`
-	Net             bool              `json:"net,omitempty"`     // only true: the game brings its own netcode (zirbel-net)
+	Net             bool              `json:"net,omitempty"`     // only true: the game brings its own netcode (the net module)
 	Adapter         string            `json:"adapter,omitempty"` // with net: one of its files, which its game page loads
 	Controls        *Controls         `json:"controls,omitempty"`
 	RegisterObjects *bool             `json:"registerObjects,omitempty"`

@@ -39,7 +39,7 @@ A game says how many play:
 
 - `maxPlayers`: 1 to 16, 1 unless it says otherwise.
 - Without `net`, up to 4 players share state through the host: each sends its own small state with `window.zirbel.send`, and every player gets them all with `window.zirbel.onRoom` (below). The game applies its own rules; the host only relays the states.
-- With `net: true`, the game brings its own netcode over the host's relay with zirbel-net, for up to 16 players. More than 4 players needs `net`. How to make a game multiplayer this way is in `zirbel://guide/multiplayer`, and the client's API in `zirbel://guide/net-api`.
+- With `net: true`, the game brings its own netcode, for up to 16 players: a session of it is a space of the spaces kernel every host runs, and the game joins that space through the player page around it with the net module (`/.skalet/net.js`). More than 4 players needs `net`. How to make a game multiplayer this way is in `zirbel://guide/multiplayer`, and the net module's API in `zirbel://guide/net-api`.
 
 A game without files sets them in `propose`'s `writeGame` (`maxPlayers`, `net`). A folder game sets them with `zirbel.json`.
 
@@ -87,7 +87,7 @@ The frame has an opaque origin of its own and a strict content policy. A game ca
 - make and read `data:` and `blob:` URLs, as loaders do with embedded textures and decoders;
 - import three.js as `three`, and its addons as `three/addons/…` (for example `three/addons/loaders/GLTFLoader.js`), both from the host's own build: the import map is there already, so bundle `three` as an external or import it by those names. `THREE.REVISION` says which three.js it is.
 - lock the pointer, from a click in the game (the browser shows how to leave it);
-- as a net game, import `/zirbel-net.js` and open the relay at `/mp` on its host, and nothing else there.
+- as a net game, import `/.skalet/net.js` and `/.skalet/spaces.js` from its host and reach `/.skalet/spaces`, and nothing else there.
 
 A game can't:
 

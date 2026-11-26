@@ -1,76 +1,78 @@
 ---
 name: zirbel-multiplayer
-description: Make a web game multiplayer on Zirbel with a thin adapter over zirbel-net, Zirbel's multiplayer client and relay. Use when a browser game (canvas, WebGL, three.js, any framework) should play with several people on a Zirbel host, box or desktop app, while it still runs alone anywhere else; when picking a netcode mode (snapshot, predict, actions, events, lockstep) for a kind of game; when writing or reviewing a game's zirbel-adapter.js or its zirbel.json; or when testing a game with two browsers and a simulated bad network on a local Zirbel host.
+description: Make a web game multiplayer on Zirbel with a thin adapter over the net module's sync(), in a space of the spaces kernel every Zirbel host runs. Use when a browser game (canvas, WebGL, three.js, any framework) should play with several people on a Zirbel host, box or desktop app, while it still runs alone anywhere else; when picking a netcode mode (snapshot, predict, actions, events, lockstep) for a kind of game; when writing or reviewing a game's zirbel-adapter.js or its zirbel.json; or when testing a game with two browsers and a simulated bad network on a local Zirbel host.
 ---
 
 # Multiplayer on Zirbel
 
-Zirbel plays a game's multiplayer over **zirbel-net** (protocol v2): every Zirbel host serves the client as `/zirbel-net.js` and runs a relay at `/mp`. The relay only seats players and passes their messages on. Your game is the simulation, and one player's page, the host's, runs it.
+Zirbel plays a game's multiplayer in a **space** of the spaces kernel that every Zirbel host runs beside it: a session of the game is a space, its players are the space's members, and one of them leads. Every Zirbel host serves the net module as `/.skalet/net.js`, the client for real-time games. The space only seats members and passes their messages on. Your game is the simulation, and one member's page, the leader's, runs it.
+
+On Zirbel the game runs in a sandboxed frame inside the player page. The player page joins the space (its link holds the invitation or ticket) and shares it with the frame, and the game joins **through its parent**, so it never holds a credential.
 
 Keep multiplayer a thin, separate layer:
 
 - **The game knows nothing about networks.** It runs alone, hosted anywhere, as a single-player game. It imports no network code.
 - **The game exposes a few hooks** on `globalThis.gameHooks`: plain functions over plain data (state out and in, input out and in, players joining and leaving). They are useful without a network too: saves, replays, tests.
-- **One small adapter beside it** (`zirbel-adapter.js`) is the only file that knows Zirbel. It calls zirbel-net's `play()` with the hooks and a mode, and play() does the netcode.
+- **One small adapter beside it** (`zirbel-adapter.js`) is the only file that knows Zirbel. It calls the net module's `sync()` with the hooks and a mode, and sync() does the netcode.
 
 ## 1. zirbel.json
 
-Put `zirbel.json` beside `index.html` in the built folder. A `players.max` above 1 (up to 16) makes Zirbel import the folder as a net game, and `multiplayer.adapter` names the adapter Zirbel imports in a multiplayer room:
+Put `zirbel.json` beside `index.html` in the built folder. A `players.max` above 1 (up to 16) makes Zirbel import the folder as a net game, and `multiplayer.adapter` names the adapter Zirbel's game page loads as a module after the game's own document:
 
 ```json
 { "players": { "min": 1, "max": 8 }, "multiplayer": { "adapter": "zirbel-adapter.js" } }
 ```
 
-Zirbel opens a net game's page with `?room=<room>&key=<key>`. Hosted anywhere else, the adapter never loads, and the game is the single-player game it always was. On a host that doesn't read `multiplayer.adapter`, the game's entry module loads it itself: `if (new URLSearchParams(location.search).has('room')) import('./zirbel-adapter.js');`. Set `globalThis.gameHooks` in the game's first module, before the adapter can run. If a bundler builds the entry into a subfolder, keep `zirbel-adapter.js` beside `index.html` as it is (for Vite, in `public/`).
+Hosted anywhere else, nothing loads the adapter, and the game is the single-player game it always was. On a host that doesn't read `multiplayer.adapter`, the game's entry module may import it itself: where no host serves `/.skalet/net.js`, the adapter's import of it fails and the game plays alone, so let the adapter import it with `await import()` in a `try`. Set `globalThis.gameHooks` in the game's first module, before the adapter can run. If a bundler builds the entry into a subfolder, keep `zirbel-adapter.js` beside `index.html` as it is (for Vite, in `public/`).
 
 ## 2. Pick a mode
 
 | Mode | For | What travels |
 | --- | --- | --- |
-| `snapshot` (default) | arcade, casual, physics, party games | The host steps the game and streams state; others send inputs and draw the state, smoothed |
-| `predict` | action: shooters, racing, anything you steer at speed | `snapshot`, plus each screen moves its own player at once and corrects it when the host's state comes |
-| `actions` | turn-based, cards, board games | Reliable actions to the host, checked there, applied in the host's order on every seat. Tiny and exact |
-| `lockstep` | deterministic simulations, strategy, many units | Each tick's inputs reach every seat, and every seat steps the same simulation. Needs a deterministic game |
-| `events` | big or destructible worlds, sandboxes | The host runs the world; changes go as reliable events; a newcomer gets the world in chunks, then the events since |
+| `snapshot` (default) | arcade, casual, physics, party games | The leader steps the game and streams state; the others send inputs and draw the state, smoothed |
+| `predict` | action: shooters, racing, anything you steer at speed | `snapshot`, plus each screen moves its own player at once and corrects it when the leader's state comes |
+| `actions` | turn-based, cards, board games | Reliable actions to the leader, checked there, applied in the leader's order on every member. Tiny and exact |
+| `lockstep` | deterministic simulations, strategy, many units | Each tick's inputs reach every member, and every member steps the same simulation. Needs a deterministic game |
+| `events` | big or destructible worlds, sandboxes | The leader runs the world; changes go as reliable events; a newcomer gets the world in chunks, then the events since |
 
 Unsure: `snapshot`. Your own player feels laggy over the network: `predict`. Nothing moves between turns: `actions`.
 
 ## 3. The hooks
 
-Player ids are seats, 1 to 253. Alone, the game's own player is 1; once seated, play() moves it to its seat (`leave(1)`, `join(seat)`). A hook a mode doesn't use is never called.
+Player ids are member numbers, 1 to 253. Alone, the game's own player is 1; once in the space, sync() moves it to its number (`leave(1)`, `join(n)`). A hook a mode doesn't use is never called.
 
 | Hook | Modes | Does |
 | --- | --- | --- |
 | `me(id)` | all | Says which player this screen controls and follows. |
-| `join(id)` / `leave(id)` | all | Adds or removes a player. `join` must ignore a player already there. snapshot and predict: join on the host, leave everywhere; the others: on every seat at the same point of the game. |
-| `simulate(on)` | snapshot, predict, events | `true`: run the game. `false`: stop stepping and only draw what arrives (predict: play() moves this screen's own player through `predict`). |
+| `join(id)` / `leave(id)` | all | Adds or removes a player. `join` must ignore a player already there. snapshot and predict: join on the leader, leave everywhere; the others: on every member at the same point of the game. |
+| `simulate(on)` | snapshot, predict, events | `true`: run the game. `false`: stop stepping and only draw what arrives (predict: sync() moves this screen's own player through `predict`). |
 | `snapshot()` / `restore(state)` | all | The state out and in. snapshot and predict: **entities by a key that stays the same**, `{ p1: {…}, p2: {…}, rock7: {…} }`, each sent only when it changed. The others: everything a newcomer needs (events: may be a `Uint8Array`). predict: `restore` brings back everything `predict` reads. |
-| `input()` / `control(id, input)` | snapshot, predict, lockstep | The local player's input now: **read the devices here**, as play() samples it each tick in its own frame callback, which may run before the game's. Steer player `id` with an input (`null`: none). |
-| `step(dt)` | predict, lockstep (snapshot if given) | Advance the whole game one tick of `dt` seconds. play() calls it at a fixed rate, also alone; the game's own loop then only draws. |
-| `draw(alpha)` | where play() steps | Each frame after play()'s ticks, alone, on the host and every seat in lockstep: `alpha`, 0 to 1, is how far the frame is from the last tick to the next, to draw between the two. Optional. |
+| `input()` / `control(id, input)` | snapshot, predict, lockstep | The local player's input now: **read the devices here**, as sync() samples it each tick in its own frame callback, which may run before the game's. Steer player `id` with an input (`null`: none). |
+| `step(dt)` | predict, lockstep (snapshot if given) | Advance the whole game one tick of `dt` seconds. sync() calls it at a fixed rate, also alone; the game's own loop then only draws. |
+| `draw(alpha)` | where sync() steps | Each frame after sync()'s ticks, alone, on the leader and every member in lockstep: `alpha`, 0 to 1, is how far the frame is from the last tick to the next, to draw between the two. Optional. |
 | `predict(input, dt)` | predict | Move this screen's own player one tick with its own input. |
-| `player(id)` | predict | The key of player `id`'s entity. Default `'p' + id`. |
+| `member(id)` | predict | The key of player `id`'s entity. Default `'p' + id`. |
 | `blend(a, b, t, key)` | snapshot, predict | One entity between two states, `t` from 0 to 1, for smooth drawing. |
-| `interest(seat, key, entity)` | snapshot, predict | Whether `seat` gets this entity at all (fog of war, distance). |
-| `validate(id, action)` / `apply(id, action)` | actions, events | On the host: may player `id` do this now? On every seat, in order: do it. |
-| `checksum()` | lockstep | A number summing up the state; seats that differ from the host are reported as drift. |
+| `interest(member, key, entity)` | snapshot, predict | Whether `member` gets this entity at all (fog of war, distance). |
+| `validate(id, action)` / `apply(id, action)` | actions, events | On the leader: may player `id` do this now? On every member, in order: do it. |
+| `checksum()` | lockstep | A number summing up the state; members that differ from the leader are reported as drift. |
 
 ## 4. The adapter, snapshot mode
 
 ```js
 // zirbel-adapter.js: the only file that knows Zirbel.
-import { play } from '/zirbel-net.js';            // the host's own, never bundled
-play(globalThis.gameHooks, { mode: 'snapshot', rate: 20 });
+const { sync } = await import('/.skalet/net.js');   // the host's own, never bundled
+sync(globalThis.gameHooks, { mode: 'snapshot', rate: 20, join: { via: 'parent' } });
 ```
 
-That is all of it. The game beside it keeps its own loop and steps only while it simulates:
+That is all of it: `join: { via: 'parent' }` joins the space the player page shares with the game's frame. The game beside it keeps its own loop and steps only while it simulates:
 
 ```js
 const world = { players: new Map([[1, newPlayer()]]) };
 let me = 1, simulating = true;
 function frame() {
   const self = world.players.get(me);
-  if (self) self.input = readKeys();        // the local player is steered locally, also on the host
+  if (self) self.input = readKeys();        // the local player is steered locally, also on the leader
   if (simulating) step(world, 1 / 60);
   draw(world, me);
   requestAnimationFrame(frame);
@@ -89,16 +91,16 @@ globalThis.gameHooks = {
 requestAnimationFrame(frame);
 ```
 
-Arrays (`[x, y, hp]`) are smaller on the wire than objects with names. Keep each entity small; the host sends an entity only when its bytes changed since the state that seat last confirmed, the whole state when a seat joins, and every 10 seconds as a safety net.
+Arrays (`[x, y, hp]`) are smaller on the wire than objects with names. Keep each entity small; the leader sends an entity only when its bytes changed since the state that member last confirmed, the whole state when a member joins, and every 10 seconds as a safety net.
 
 ## 5. The adapter, predict mode
 
 ```js
-import { play } from '/zirbel-net.js';
-play(globalThis.gameHooks, { mode: 'predict', tick: 60, rate: 20, f32: true });   // f32: section 8
+const { sync } = await import('/.skalet/net.js');
+sync(globalThis.gameHooks, { mode: 'predict', tick: 60, rate: 20, f32: true, join: { via: 'parent' } });   // f32: section 8
 ```
 
-The game still runs alone, with its own loop. It moves players in one function, which the host's `step` and this screen's `predict` share, so the prediction matches the host. Once play() calls `step()`, the loop stops stepping; once it calls `input()`, the loop stops reading the devices:
+The game still runs alone, with its own loop. It moves players in one function, which the leader's `step` and this screen's `predict` share, so the prediction matches the leader. Once sync() calls `step()`, the loop stops stepping; once it calls `input()`, the loop stops reading the devices:
 
 ```js
 const move = (p, input, dt) => { p.vx += (input?.x ?? 0) * ACCEL * dt; p.x += p.vx * dt; };   // reads p.vx too
@@ -124,9 +126,9 @@ globalThis.gameHooks = {
 requestAnimationFrame(frame);
 ```
 
-play() numbers each input, applies it at once on this screen, and sends it with the last few (in case one is lost). The host applies one input a tick per player (two while more than two wait, so a burst at the start leaves no lag; with none waiting, the player keeps its last input) and says in each state which it reached; this screen takes its own player from that state and replays the inputs after it. On a screen faster than the tick rate, play() draws this screen's player between its last two ticks with `blend`, so it moves every frame. Others are drawn a little in the past, blended.
+sync() numbers each input, applies it at once on this screen, and sends it with the last few (in case one is lost). The leader applies one input a tick per player (two while more than two wait, so a burst at the start leaves no lag; with none waiting, the player keeps its last input) and says in each state which it reached; this screen takes its own player from that state and replays the inputs after it. On a screen faster than the tick rate, sync() draws this screen's player between its last two ticks with `blend`, so it moves every frame. Others are drawn a little in the past, blended.
 
-**restore brings back everything predict reads.** A follower restores the host's state and plays its unconfirmed inputs on it, so `predict` must find exactly what the host's `step` had: velocities, timers, a physics engine's own memory of a body (contacts, sleep, slip), module variables. What `snapshot()` leaves out, `restore` can't bring back, and the prediction drifts.
+**restore brings back everything predict reads.** A follower restores the leader's state and plays its unconfirmed inputs on it, so `predict` must find exactly what the leader's `step` had: velocities, timers, a physics engine's own memory of a body (contacts, sleep, slip), module variables. What `snapshot()` leaves out, `restore` can't bring back, and the prediction drifts.
 
 **Keep effects and display out of predict.** The same inputs are played again and again, on each new state, so whatever `predict` does besides moving the player repeats: a sound or a spark in it plays several times, and display values it adds up (wheel spin, a skid mark, a trip counter) run fast. Let `predict` change state only, and let the game's own frame turn state into effects, once:
 
@@ -139,74 +141,78 @@ function effects() {                        // in the frame, from what the state
 }
 ```
 
-**One-off actions ride in the input** (respawn, pick a car, honk): as a counter or a field, `{ x, y, respawns: 3, car: 2 }`, never as a flag in one input only. The host may skip inputs that pile up, and keeps the last one when none come, so a one-tick flag can be lost or repeated; the host's `control` acts when the counter differs from the last it saw.
+**One-off actions ride in the input** (respawn, pick a car, honk): as a counter or a field, `{ x, y, respawns: 3, car: 2 }`, never as a flag in one input only. The leader may skip inputs that pile up, and keeps the last one when none come, so a one-tick flag can be lost or repeated; the leader's `control` acts when the counter differs from the last it saw.
 
 ## 6. The other modes
 
 ```js
+const { sync } = await import('/.skalet/net.js');
+const join = { via: 'parent' };
+
 // actions: the game calls act() for every move instead of applying it itself.
-const session = play(globalThis.gameHooks, { mode: 'actions' });
+const session = sync(globalThis.gameHooks, { mode: 'actions', join });
 globalThis.gameHooks.act = (move) => session.act(move);   // alone, act() checks and applies at once
 // hooks: validate(id, move), apply(id, move), snapshot(), restore(state), join(id), leave(id), me(id)
 
-// lockstep: a deterministic game; play() steps it with every player's input for each tick.
-play(globalThis.gameHooks, { mode: 'lockstep', tick: 20, delay: 2 })
-  .on('drift', (seat, tick) => console.warn('Player', seat, 'drifted at tick', tick));
+// lockstep: a deterministic game; sync() steps it with every player's input for each tick.
+sync(globalThis.gameHooks, { mode: 'lockstep', tick: 20, delay: 2, join })
+  .on('drift', (member, tick) => console.warn('Player', member, 'drifted at tick', tick));
 // hooks: input(), control(id, input), step(dt), snapshot(), restore(state), join(id), leave(id), checksum()
 
-// events: the host runs the world, and every change others must see is an act(), on the host too.
-const world = play(globalThis.gameHooks, { mode: 'events' });
+// events: the leader runs the world, and every change others must see is an act(), on the leader too.
+const world = sync(globalThis.gameHooks, { mode: 'events', join });
 // hooks: simulate(on), validate(id, change), apply(id, change), snapshot() (a Uint8Array is fine), restore(world)
 ```
 
-Lockstep needs the same result from the same inputs on every machine: no `Math.random()` (seed your own, and keep its state in `snapshot()`), no wall-clock time, no iteration over unordered data. A tick waits until every player's input for it is in, so a player whose link drops pauses the game until it is back or gone (15 seconds at most).
+Lockstep needs the same result from the same inputs on every machine: no `Math.random()` (seed your own, and keep its state in `snapshot()`), no wall-clock time, no iteration over unordered data. A tick waits until every player's input for it is in, so a player whose link drops pauses the game until it is back or gone (the space's grace, 90 seconds at most).
 
-## 7. What play() covers
+## 7. What sync() covers
 
-- **Solo fallback.** The game starts alone at once. It stays alone without `?room=`, when the relay refuses it (wrong room or key, full), when no seat comes within `timeout` (10 seconds), and when the room ends; then the other players leave and this screen runs the game. `await session.ready` is `true` once seated.
-- **Seats and the host.** The first player is host and runs the game. When the host leaves, or stays away for 2.5 seconds, the relay names another seat host, and it carries on from the last state it has (predict: with its own player where it drove it; a follower keeps 4 seconds of unconfirmed inputs, so it drives on while an away host keeps the role).
-- **Leaving with the page.** A page that goes away (`pagehide`) leaves the room at once, so its player goes and another seat takes over the host role in milliseconds, not 2.5 seconds. In Zirbel's sandbox a reload takes a new seat anyway. `keepSeat: true` keeps the seat for 15 seconds instead, for a page that can resume it.
-- **Late join.** A newcomer gets the whole current state (snapshot and predict: every entity; the others: `snapshot()`, in chunks within the relay's message limit, then what happened since).
-- **Away, back, resume.** A dropped link reconnects by itself and keeps its seat for 15 seconds. The session emits `away` and `back`; a host may stop an away player: `session.on('away', (id) => game.control(id, null))`.
-- **Leaving.** `session.leave()` leaves the room for good and plays on alone; `session.stop()` also stops driving the game.
-- **Ticks.** play() ticks by each frame's own time, so a screen at the tick rate gets one tick every frame.
+- **Solo fallback.** The game starts alone at once. It stays alone when the player page shares only a space of its own (the editor's playtests, a host without the kernel), when the space refuses it, when none could be joined within `timeout` (10 seconds), and when the space ends; then the other players leave and this screen runs the game. `await session.ready` is `true` once in the space.
+- **Members and the leader.** The first participant leads and runs the game. When the leader leaves, or stays away for 2.5 seconds, the space names the lowest connected member leader, and it carries on from the last state it has (predict: with its own player where it drove it; a follower keeps 4 seconds of unconfirmed inputs, so it drives on while an away leader keeps the role). Observers watch: their input is never used.
+- **Leaving with the page.** A page that goes away (`pagehide`) leaves the space at once, so its player goes and another member takes over the lead in milliseconds, not 2.5 seconds. `keepMember: true` keeps the member for the space's grace instead, for a page that can resume it.
+- **Late join.** A newcomer gets the whole current state (snapshot and predict: every entity; the others: `snapshot()`, in chunks within the space's message limit, then what happened since).
+- **Away, back, resume.** A dropped link reconnects by itself and keeps its member for the space's grace (90 seconds). The session emits `away` and `back`; a leader may stop an away player: `session.on('away', (id) => game.control(id, null))`.
+- **Leaving.** `session.leave()` leaves the space for good and plays on alone; `session.stop()` also stops driving the game.
+- **Ticks.** sync() ticks by each frame's own time, so a screen at the tick rate gets one tick every frame.
 
-Session events: `online`, `offline`, `host`, `away`, `back`, `drift`, `message`. `session.id` is this screen's player, `session.isHost()` whether it runs the game, `session.net` the connection.
+Session events: `online`, `offline`, `leader`, `away`, `back`, `drift`, `message`. `session.id` is this screen's player, `session.isLeader()` whether it runs the game, `session.net` the connection.
 
 ## 8. Your own messages
 
-Name them; every seat maps the names to message types in the order you declare them:
+Name them; every member maps the names to channels in the order you declare them:
 
 ```js
-const session = play(globalThis.gameHooks, { channels: ['chat', 'boom'] });
-session.send('boom', { x, y });                  // reliable, to everyone else; or send(name, value, seat)
+const session = sync(globalThis.gameHooks, { channels: ['chat', 'boom'], join: { via: 'parent' } });
+session.send('boom', { x, y });                  // reliable, to everyone else; or send(name, value, member)
 session.stream('chat', 'gg');                    // unreliable, latest wins
 session.on('message', (channel, value, from) => { if (channel === 'boom') game.explode(value); });
 ```
 
-Everything play() sends is **binary by default** (`pack`: exact numbers, one byte for small whole numbers, UTF-8 strings). `f32: true` (snapshot and predict) sends numbers that aren't whole as 32-bit floats in states and inputs: about 7 digits, 5 bytes instead of 9, whole numbers still exact; a physics game's state needs no rounding of its own. `json: true` sends JSON text instead. For the tightest states, give your own codec: `codecs: { state: { write(w, v) { w.q16(v[0], 0, 960).q16(v[1], 0, 540); }, read: (r) => [r.q16(0, 960), r.q16(0, 540)] } }` (`w` and `r` are zirbel-net's `Writer` and `Reader`). Rates: inputs 20 to 60 a second, states 10 to 30. A state that changes a lot every tick should stay under 1000 bytes (larger ones go reliably); a world bigger than that belongs in `events`.
+Everything sync() sends is **binary by default** (`pack`: exact numbers, one byte for small whole numbers, UTF-8 strings). `f32: true` (snapshot and predict) sends numbers that aren't whole as 32-bit floats in states and inputs: about 7 digits, 5 bytes instead of 9, whole numbers still exact; a physics game's state needs no rounding of its own. `json: true` sends JSON text instead. For the tightest states, give your own codec: `codecs: { state: { write(w, v) { w.q16(v[0], 0, 960).q16(v[1], 0, 540); }, read: (r) => [r.q16(0, 960), r.q16(0, 540)] } }` (`w` and `r` are the net module's `Writer` and `Reader`). Rates: inputs 20 to 60 a second, states 10 to 30. A state that changes a lot every tick should stay under 1000 bytes (larger ones go reliably); a message can be up to 1 MiB on Zirbel; a world bigger than that belongs in `events`.
 
-## 9. What the relay does, and never does
+## 9. What the space does, and never does
 
-The relay checks the room's key, gives out seats (the first player is host), routes each message to everyone, the host or a seat with the sender's seat on it, keeps an away seat for 15 seconds, hands the host role on, and shares its clock. It **never reads, checks, changes or keeps game data**: your messages are bytes to it. It runs no game code: no server authority, no anti-cheat, no saves. Whatever must be true, the host's page decides. A `zirbel.json` `authority` is ignored, and no seat 254 (`SERVER`) ever joins.
+The space seats members with the link's invitation or a one-time ticket (the first participant leads), routes each message to everyone, the leader or a member with the sender's number on it, keeps an away member for its grace, hands the lead on, and shares its clock. It **never reads, checks, changes or keeps game data**: your messages are bytes to it. A Zirbel net game's space runs no game code: no server authority, no anti-cheat, no saves. Whatever must be true, the leader's page decides. A `zirbel.json` `authority` is ignored.
 
 ## 10. The page's sandbox
 
 A game runs in a sandboxed frame with its own opaque origin and a strict content policy:
 
-- Load scripts, styles, images, fonts and `fetch` only from your own folder, by relative path (for Vite: `--base ./`), plus `/zirbel-net.js` and the relay. No CDNs: bundle every dependency. `import 'three'` and `three/addons/…` resolve to the host's three.js.
+- Load scripts, styles, images, fonts and `fetch` only from your own folder, by relative path (for Vite: `--base ./`), plus `/.skalet/net.js` and `/.skalet/spaces.js`. No CDNs: bundle every dependency. `import 'three'` and `three/addons/…` resolve to the host's three.js.
 - Your files come from another origin than the page's, with CORS: an image you read back from a canvas (`getImageData`, `toDataURL`, a WebGL texture) needs `img.crossOrigin = 'anonymous'` before its `src`, or the canvas is tainted. three.js's loaders set it.
 - No `<link rel="manifest">`: the page's policy allows none.
 - File types: `html`, `js`, `mjs`, `css`, `json`, `map`, `txt`, `csv`, `wasm`; `glb`, `gltf`, `bin`, `ktx2`, `obj`, `mtl`, `fbx`, `hdr`, `exr`; `glsl`, `vert`, `frag`, and source as text (`ts`, `tsx`, `jsx`); `png`, `jpg`, `jpeg`, `webp`, `gif`, `avif`, `svg`, `ico`; `woff2`, `woff`, `ttf`, `otf`; `mp3`, `ogg`, `opus`, `wav`, `m4a`, `aac`, `flac`, `mp4`, `webm`. A format of your own goes as `.bin`.
-- `localStorage`, `sessionStorage`, IndexedDB and cookies throw: wrap them in `try`. A reload takes a new seat.
+- `localStorage`, `sessionStorage`, IndexedDB and cookies throw: wrap them in `try`. The player page around the frame holds the member: a reload of the player page resumes it.
 - No popups or navigation of the page around the frame. Pointer lock works, after a click in the game.
-- `session.net.data('rules.json')` reads `data/rules.json` from your folder.
+- Read your own data files with `fetch('./data/rules.json')`, beside the game's document.
 
 ## 11. Controllers: phones, gamepads and the keyboard
 
 Every screen that shows a game (a laptop, a TV's browser, the box's own TV) takes controllers: gamepads on that device, phones that open the screen's pad page (`/pad/<code>`, from the QR code in the player's **Controllers** panel), and gamepads on the box. **The game reads them all through the standard Gamepad API**, `navigator.getGamepads()` and `gamepadconnected`/`gamepaddisconnected`, so a game's gamepad code reaches phones and box gamepads unchanged, and the game imports nothing for it.
 
 - Each controller holds a **place**, P1 to P8, and its gamepad `index` is its place (0 to 7), with `null` at empty places: "gamepad i is player i + 1" puts P1 on player 1, P2 on player 2. The screen shows each place, its controller and what it drives; people swap places there.
+- Several players on one screen (places with local players) are the game's own: one member of the space drives them all, as the net module has no members for them. Give each place its player in the game, and send their inputs as one member's.
 - Phones have the standard layout (`mapping: 'standard'`, 17 buttons, 4 axes: a left stick, a d-pad, A B X Y, LB RB LT RT, Select and Start). A phone's or box gamepad's `vibrationActuator.playEffect('dual-rumble', { duration, strongMagnitude, weakMagnitude })` rumbles it.
 - A gamepad press is no user gesture in every browser: unlock audio and fullscreen on a click, a tap or a key (a TV remote's OK arrives as Enter), never only on a gamepad's button.
 - **A game that reads only the keyboard** gets keys from its `zirbel.json`, written beside the game and never in it: `controls.keys` are P1's, and `controls.players` gives each place its own keys, and the name and colour the screen and that place's phone show:
@@ -220,11 +226,12 @@ Every screen that shows a game (a laptop, a TV's browser, the box's own TV) take
 
   Inputs are `a b x y lb rb lt rt select start ls rs up down left right home` (`up`/`down`/`left`/`right` are the d-pad and the left stick past half way); values are `KeyboardEvent.code`s. Each press is one `keydown` and each release one `keyup`, with the `key` and `keyCode` a keyboard gives, at the focused element. Up to 8 players; a name is at most 24 characters, a colour `#rrggbb`.
 - An adapter that knows what each place drives at run time names it with `zirbel.place(k, { name, color })` (`window.zirbel` is in every game's frame), which the screen and that place's phone show; a game itself never needs it.
+- **Show on TV** moves the game from a laptop to the box's TV: the TV takes the laptop's member in the space, its number and its player, and the laptop becomes its controller. The game sees nothing of it but its own screen going away and another coming back as the same member.
 
 ## 12. Test with two browsers, then a bad network
 
 1. Build the game to a folder with `index.html`, `zirbel.json` and the adapter at its top. Zirbel takes the file types in section 10 (no hidden files), up to 1000 files and 36 MB.
-2. Start a Zirbel host from its repository (`pnpm build` first): `node dist/server.mjs --data /tmp/zirbel-test`. It prints one JSON line with `editor` (default `http://127.0.0.1:4173`) and `player` (`http://127.0.0.1:4174`). The Go host, `host/bin/zirbel-host`, takes the same flags. Add `--lan` to play from phones on your network.
+2. Start a Zirbel host from its repository (`git submodule update --init && pnpm run deps`, then `pnpm build`, which build the spaces kernel and Zirbel): `node dist/server.mjs --data /tmp/zirbel-test`. It prints one JSON line with `editor` (default `http://127.0.0.1:4173`) and `player` (`http://127.0.0.1:4174`). The Go host, `host/bin/zirbel-host`, takes the same flags. Add `--lan` to play from phones on your network. Without the kernel's binary the lobby says multiplayer isn't available, and net games play alone.
 3. In the editor: **Import a game folder…**, then **Share**, and **Publish to this host’s library** with **Offer in the lobby** checked. Or through its API, from the editor's origin:
 
 ```js
@@ -236,19 +243,19 @@ await post('/api/lobby/offer', { release: releaseId, offered: true });
 ```
 
 4. Open the lobby, `http://127.0.0.1:4174/`, in two browser windows. Start a session of the game in one, and join it with its code in the other.
-5. Check in both: the adapter loaded, one window hosts and the other follows, play moves in both. Close the host's window: the other takes over at once (play() leaves at `pagehide`); drop the host's network instead, and it takes over after 2.5 seconds. The console shows no content-policy or script errors.
-6. **Now on a bad network.** Add `?net=lag:120,jitter:30,loss:5,kbps:256,stats` to the lobby's address (`http://127.0.0.1:4174/?net=…`): the lobby carries it onto the session it starts or joins by code. Or add it to the player page's own address, `/join/<room>?net=…#…`, before the `#`, which holds the seat. The player page hands it on to the game's frame. While testing, `play(hooks, { mode: 'predict', net: 'lag:120,jitter:30,loss:5,stats' })` does the same. `lag` is the added round trip in ms, `jitter` up to that many ms more each way, `loss` the percent of unreliable messages dropped (never reliable ones), `kbps` a bandwidth cap each way, and `stats` a small overlay with the round trip, jitter, traffic and drops. Play: others should stay smooth, your own player responsive in `predict`, nothing lost in `actions`. Without `net`, nothing is simulated.
+5. Check in both: the adapter loaded, one window leads and the other follows, play moves in both. Close the leader's window: the other takes over at once (sync() leaves at `pagehide`); drop the leader's network instead, and it takes over after 2.5 seconds. The console shows no content-policy or script errors.
+6. **Now on a bad network.** Add `?net=lag:120,jitter:30,loss:5,kbps:256,stats` to the lobby's address (`http://127.0.0.1:4174/?net=…`): the lobby carries it onto the session it starts or joins by code. Or add it to the player page's own address, `/join/<room>?net=…#…`, before the `#`, which holds the credential. The player page holds the space's connection, so it puts the simulator under it, and hands `?net=` on to the game's frame, where `stats` shows a small overlay. `lag` is the added round trip in ms, `jitter` up to that many ms more each way, `loss` the percent of unreliable messages dropped (never reliable ones), `kbps` a bandwidth cap each way, and `stats` the overlay with the round trip, jitter, traffic and drops. Play: others should stay smooth, your own player responsive in `predict`, nothing lost in `actions`. Without `net`, nothing is simulated.
 
 For automated checks, Playwright with two browser contexts does the same; on macOS, start Chromium with `--use-angle=metal` for WebGL.
 
 ## When you need more
 
-A game with its own netcode uses zirbel-net's client directly, still only in a module that is loaded in a Zirbel room:
+A game with its own netcode uses the net module's connection directly, still only in a module that is loaded in a Zirbel room:
 
-- `const net = zn.connect({ ...zn.launchParams(), loopback: true })`: `loopback` also delivers your own `ALL` and `HOST` messages to you, so the host plays through the same message path as everyone else. `autoFlush: false` sends only on `net.flush()`, once per tick.
-- Events: `open` `{ id, hostId, peers }`, `peer`, `leave`, `away`, `back`, `host`, `message` `(from, type, reader, reliable)`, `close`, and your own `disconnect` and `resume`.
-- `net.send(to, type, data)` is reliable and ordered, `net.stream(to, type, data)` unreliable and latest wins; `to` is `zn.ALL`, `zn.HOST` or a seat; `type` is 0 to 223. `net.begin()` gives a scratch `Writer` (`u8`, `u16`, `f32`, `varint`, `str`, `q16(v, min, max)`…), read back in the same order. `zn.channels(net, ['shot', 'chat'])` names the types for you.
-- `net.isHost()`, `net.id`, `net.hostId`, `net.peers`, `zn.players(net)`, `net.now()` (a clock every seat shares), `net.rtt`, `zn.Interp` for smoothing. The host sends full state after `resume`.
-- `zn.netsim({ lag: 120, loss: 5 })` is the simulator as a WebSocket class for `connect({ WebSocket })`, and `zn.overlay(net)` the stats overlay.
+- `const net = zn.connect({ via: 'parent', loopback: true })`: `loopback` also delivers your own `ALL` and `LEADER` messages to you, so the leader plays through the same message path as everyone else. `autoFlush: false` sends only on `net.flush()`, once per tick.
+- Events: `open` `{ id, leaderId, peers }`, `peer`, `leave`, `away`, `back`, `leader`, `message` `(from, channel, reader, reliable)`, `close`, and your own `disconnect` and `resume`.
+- `net.send(to, channel, data)` is reliable and ordered, `net.stream(to, channel, data)` unreliable and latest wins; `to` is `zn.ALL`, `zn.LEADER` or a member's number; `channel` is 0 to 255 (sync() keeps 0 to 15 for itself). `net.begin()` gives a scratch `Writer` (`u8`, `u16`, `f32`, `varint`, `str`, `q16(v, min, max)`…), read back in the same order. `zn.channels(net, ['shot', 'chat'])` names the channels for you.
+- `net.isLeader()`, `net.id`, `net.leaderId`, `net.peers`, `zn.members(net)`, `net.now()` (a clock every member shares), `net.rtt`, `zn.Interp` for smoothing. The leader sends full state after `resume`.
+- `zn.overlay(net)` is the stats overlay. The simulator, `zn.netsim({ lag: 120, loss: 5 })`, is a WebSocket class for the page that holds the connection: on Zirbel, that is the player page, which takes `?net=` for you.
 
-The client's own guide is `packages/net/README.md` in Zirbel's repository. Every Zirbel host serves this skill on its player address, at `/zirbel-net/SKILL.md` (`http://127.0.0.1:4174/zirbel-net/SKILL.md` on a local host).
+The net module's own guide is the MCP server's `zirbel://guide/net-api` (`packages/server/guides/net-api.md` in Zirbel's repository).

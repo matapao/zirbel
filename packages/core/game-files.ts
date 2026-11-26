@@ -17,7 +17,7 @@ export const gameFolder = z.strictObject({
 });
 
 // A built folder can carry zirbel.json, the earlier Zirbel's description of a game. players.max above
-// 1 there says the game brings its own netcode (zirbel-net): it plays over the host's relay, with up to
+// 1 there says the game brings its own netcode: it plays in a space of the spaces kernel, with up to
 // 16 players. A file that says otherwise, can't be read or is over 64 KB leaves a game for one. Such a
 // game's multiplayer.adapter names its adapter, one of the folder's .js or .mjs files (has): anything
 // else leaves it without one. Any game's controls (sdk/controls.ts) give gamepad inputs keyboard codes: controls.keys an
