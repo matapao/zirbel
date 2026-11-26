@@ -13,7 +13,7 @@ export const PLACE_NAME = 24;
 export const PLACE_COLOR = /^#[0-9a-fA-F]{6}$/;
 export type ControlKeys = Partial<Record<ControlInput, string>>;
 export type PlaceLabel = { name?: string; color?: string };
-export type ControlPlayer = { keys?: ControlKeys } & PlaceLabel;
+type ControlPlayer = { keys?: ControlKeys } & PlaceLabel;
 export type Controls = { keys?: ControlKeys; players?: ControlPlayer[] };
 
 const isObject = (value: unknown): value is Record<string, unknown> =>

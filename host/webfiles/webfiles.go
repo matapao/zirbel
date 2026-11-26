@@ -171,8 +171,9 @@ func compress(name string, file *File) {
 }
 
 // LobbyFiles are the lobby's page and what it loads, which every player
-// listener serves beside its rooms: the host's own, not a release's runtime.
-var LobbyFiles = []string{"lobby.html", "lobby.js", "lobby.css"}
+// listener serves beside its rooms, and the pad page's (/pad): the host's own, not
+// a release's runtime.
+var LobbyFiles = []string{"lobby.html", "lobby.js", "lobby.css", "pad.html", "pad.js", "pad.css"}
 
 // Lobby holds the lobby files the build has, by name.
 var Lobby = sync.OnceValue(func() map[string]*File {

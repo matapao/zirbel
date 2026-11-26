@@ -94,8 +94,9 @@ export function netFiles(webRoot: string): NetFiles {
 }
 
 /** The lobby's page and the files it loads (public/lobby.html, packages/web/lobby.ts), served on every player listener
- *  at / and beside it. Like zirbel-net's client they are the host's own, not a release's. */
-const LOBBY_FILES = ['lobby.html', 'lobby.js', 'lobby.css'] as const;
+ *  at / and beside it, and the pad page's (public/pad.html, packages/web/pad.ts) at /pad. Like zirbel-net's client they
+ *  are the host's own, not a release's. */
+const LOBBY_FILES = ['lobby.html', 'lobby.js', 'lobby.css', 'pad.html', 'pad.js', 'pad.css'] as const;
 export type LobbyFiles = ReadonlyMap<string, RuntimeEntry>;
 export function lobbyFiles(webRoot: string): LobbyFiles {
   return new Map(LOBBY_FILES.map((name) => {
