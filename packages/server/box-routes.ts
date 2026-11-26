@@ -36,7 +36,7 @@ export type BoxContext = {
   setupRequest: string;
   /** The box's own Wi-Fi's name and password, as the setup service keeps them (box-network.ts). */
   ownNetwork: string;
-  /** The file that wakes the box's console service (docs/box-tv.md) when the tv switch changes; a box without the
+  /** The file that wakes the box's console service (AGENTS.md) when the tv switch changes; a box without the
    *  console has no folder for it. */
   tvWake: string;
   /** Whether a loopback connection is the box's own: its other end is the editor's user or root (loopback-owner.ts). */

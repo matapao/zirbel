@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs the box's HDMI console (docs/box-tv.md) in the image's root, as chroot-app.sh runs it on a 64-bit box: its
+# Installs the box's HDMI console (AGENTS.md) in the image's root, as chroot-app.sh runs it on a 64-bit box: its
 # follower (pi/tv) beside the editor in /opt/zirbel, the kiosk's launcher and units, its PAM session, the folder the
 # editor wakes the follower through, the udev rule for displays and gamepads, and the HDMI sound ahead of a headphone
 # jack. Its packages (cage, PipeWire, fonts) and its user, zirbel-tv, come with the base stage.

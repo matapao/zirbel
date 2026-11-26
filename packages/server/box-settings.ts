@@ -2,7 +2,7 @@
 // whether agents elsewhere on the network may use its MCP server, whether its first-run choice was made, whether
 // someone asked for the Wi-Fi setup again, whether the box makes its own Wi-Fi (box-network.ts), the last two of
 // which the box's setup service reads from /api/box/status, and whether a TV plugged into the box shows its lobby (tv),
-// which the box's console service reads there (docs/box-tv.md). What is off does not run: the harnesses are built only
+// which the box's console service reads there (AGENTS.md). What is off does not run: the harnesses are built only
 // while they are on (BoxHarnesses), and /mcp answers the network only while external MCP access is on.
 import { readFileSync } from 'node:fs';
 import { totalmem } from 'node:os';
@@ -31,7 +31,7 @@ export const settingsChange = z.strictObject({
  *  or x86 (a 32-bit Pi has neither). */
 export type Capabilities = { arch: string; memoryMB: number; model?: string; harnesses: boolean };
 /** Under this much memory (a 2 GB board reports a little less), harnesses start off: a turn may run the box out of it.
- *  So does the TV, whose browser needs room beside the editor; and it starts on only on a 64-bit box (docs/box-tv.md). */
+ *  So does the TV, whose browser needs room beside the editor; and it starts on only on a 64-bit box (AGENTS.md). */
 const ROOMY_MB = 1536;
 const tvByDefault = (capabilities: Capabilities) => capabilities.arch === 'arm64' && capabilities.memoryMB >= ROOMY_MB;
 

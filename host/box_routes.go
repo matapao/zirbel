@@ -44,7 +44,7 @@ type Box struct {
 	// service keeps them (box_network.go).
 	ownNetwork string
 	// tvWake is the file that wakes the box's console service
-	// (docs/box-tv.md) when the tv switch changes; a box without the console
+	// (AGENTS.md) when the tv switch changes; a box without the console
 	// has no folder for it.
 	tvWake string
 	// loopbackOwned says whether a loopback request is the box's own: its

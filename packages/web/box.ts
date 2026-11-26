@@ -208,7 +208,7 @@ export async function openBoxSettings() {
     agentAccess(access);
     body.append(access);
   }
-  // The TV: the box's console shows the lobby on a TV or monitor plugged into it (docs/box-tv.md).
+  // The TV: the box's console shows the lobby on a TV or monitor plugged into it (AGENTS.md).
   body.append(toggle('Show the lobby on a TV', settings.tv, !box.canShowTv && !settings.tv, (on) => change({ tv: on })).row,
     el('p', box.canShowTv ? 'A TV plugged into the box shows its lobby, where games are chosen and played with gamepads and phones.'
       : 'This box has no TV console.'));

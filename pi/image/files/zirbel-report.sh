@@ -35,7 +35,7 @@ touch /run/zirbel-report
   echo "== listening"; ss -ltnu | head -20
   echo "== setup service, this boot"; journalctl -u zirbel-setup -b --no-pager -o short-monotonic | tail -60
   echo "== editor, this boot"; journalctl -u zirbel -b --no-pager -o short-monotonic | tail -15
-  # The HDMI console (docs/box-tv.md): the displays plugged in, and what it and its follower said.
+  # The HDMI console (AGENTS.md): the displays plugged in, and what it and its follower said.
   echo "== TV console: displays $(grep -lx connected /sys/class/drm/card*-*/status 2>/dev/null | cut -d/ -f5 | paste -sd' ')"
   journalctl -u zirbel-tv-follow -u zirbel-tv -b --no-pager -o short-monotonic | tail -15
   # The controllers service logs the gamepads that come and go, never their input.

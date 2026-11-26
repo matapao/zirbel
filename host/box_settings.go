@@ -18,7 +18,7 @@ import (
 // whether the box makes its own Wi-Fi (box_network.go), the last two of which
 // the box's setup service reads from /api/box/status, and whether a TV
 // plugged into the box shows its lobby (tv), which the box's console service
-// reads there (docs/box-tv.md). The Go host has no harnesses: its box answers
+// reads there (AGENTS.md). The Go host has no harnesses: its box answers
 // agents over MCP only.
 
 type boxSwitches struct {

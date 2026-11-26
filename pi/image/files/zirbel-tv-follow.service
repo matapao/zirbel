@@ -1,5 +1,5 @@
 # The box's TV console follows its display and the editor's TV switch (/opt/zirbel/pi/tv/zirbel_tv.py,
-# docs/box-tv.md): zirbel-tv.service runs while a display is connected and the switch is on. It runs at boot, when a
+# AGENTS.md): zirbel-tv.service runs while a display is connected and the switch is on. It runs at boot, when a
 # display is plugged in or out (72-zirbel-tv.rules) and when the switch changes (zirbel-tv-follow.path), and ends at
 # once. Root, to start and stop the console; its request to the editor over loopback is the box's own.
 [Unit]

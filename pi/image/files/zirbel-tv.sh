@@ -1,5 +1,5 @@
 #!/bin/sh
-# The box's HDMI console (zirbel-tv.service, docs/box-tv.md), as zirbel-tv: once the lobby's player listener answers,
+# The box's HDMI console (zirbel-tv.service, AGENTS.md), as zirbel-tv: once the lobby's player listener answers,
 # the image's Chromium full screen on its TV page under cage, a kiosk compositor that shows one program on the last
 # display plugged in. Chromium keeps its own profile in this user's home: no first run, no translation, no crash
 # bubbles, sound that plays without a click first. When Chromium ends, cage ends, and the unit starts it again.

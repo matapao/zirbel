@@ -1,4 +1,4 @@
-# The box's TV console (docs/box-tv.md), installed as /etc/udev/rules.d/72-zirbel-tv.rules.
+# The box's TV console (AGENTS.md), installed as /etc/udev/rules.d/72-zirbel-tv.rules.
 # A display plugged in or out: the console follows it (zirbel-tv-follow.service).
 ACTION=="change", SUBSYSTEM=="drm", ENV{HOTPLUG}=="1", RUN+="/usr/bin/systemctl --no-block restart zirbel-tv-follow.service"
 # The box's gamepads reach the TV's browser through the editor, as every screen's controllers do, never straight from

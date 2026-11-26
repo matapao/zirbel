@@ -1,5 +1,5 @@
 // The TV page (public/tv.html), which every player listener serves at /tv: the lobby ten feet away, for a TV's own
-// browser, a console's, a laptop cast to a TV, and the box's HDMI console (docs/box-tv.md). It is a screen from the moment
+// browser, a console's, a laptop cast to a TV, and the box's HDMI console (AGENTS.md). It is a screen from the moment
 // it opens (pads-client.ts, which keeps its resume token in this tab for the player page it goes to): phones join it by
 // its code and play on it, and so do the gamepads of the box and of this device. Arrows, Enter and Back (a remote's or a keyboard's), any gamepad's d-pad or stick, A and B move around it
 // (tv-input.ts, tv-focus.ts); starting or joining a session goes into the game's player page with the same screen, and

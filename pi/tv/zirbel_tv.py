@@ -1,4 +1,4 @@
-"""The box's TV console follows its display and the editor's TV switch (docs/box-tv.md).
+"""The box's TV console follows its display and the editor's TV switch (AGENTS.md).
 
 zirbel-tv.service shows the lobby's TV page on a TV or monitor plugged into the box. This runs as root, as
 zirbel-tv-follow.service: at boot, when a display is plugged in or out (a udev rule on the DRM connectors' changes) and

@@ -11,7 +11,7 @@
 # - Node 26, from nodejs.org, checked against its published SHA-256.
 # - Claude Code from Anthropic's installer, which keeps it up to date, and Codex from npm, both as `zirbel`'s.
 # - Their command sandboxes (bubblewrap, socat), and Chromium for view_game.
-# And what its HDMI console needs (docs/box-tv.md, tv-install.sh): the cage kiosk compositor for that Chromium on a
+# And what its HDMI console needs (AGENTS.md, tv-install.sh): the cage kiosk compositor for that Chromium on a
 # session logind gives the seat, PipeWire for the TV's sound over HDMI, fonts for web pages and their emoji, and its own
 # user, `zirbel-tv`, in video, render and audio alone.
 set -euo pipefail
