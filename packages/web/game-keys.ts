@@ -1,9 +1,10 @@
-// In every game frame whose zirbel.json gives gamepad inputs keys (controls.keys, which the game page carries in
-// #zirbel-keys): every gamepad's presses, the device's own and the screen's, become the keyboard's, so a game that reads
-// only the keyboard plays with gamepads and phones. Each change of a key is one keydown or keyup, with the code and the
-// key a keyboard gives, at the focused element (or the body), bubbling; checked each animation frame while a gamepad is
-// connected. Inputs that share a code hold it while any of them is held.
-import { checkedKeys, type ControlInput, type ControlKeys as Keys } from '../sdk/controls.ts';
+// In every game frame whose zirbel.json gives gamepad inputs keys (its controls, which the game page carries in
+// #zirbel-controls): the presses of the gamepad at each place, the device's own or the screen's, become that place's keys
+// (controls.players[k].keys, or controls.keys for P1), so a game that reads only the keyboard plays with gamepads and
+// phones, each on its own keys. Each change of a key is one keydown or keyup, with the code and the key a keyboard gives,
+// at the focused element (or the body), bubbling; checked each animation frame while a gamepad is connected. Inputs that
+// share a code hold it while any of them is held.
+import { placeKeys, type ControlInput, type Controls } from '../sdk/controls.ts';
 
 type Readable = { readonly connected: boolean; readonly axes: readonly number[];
   readonly buttons: readonly { readonly pressed: boolean; readonly value: number }[] };
@@ -16,11 +17,12 @@ const STICK: Partial<Record<ControlInput, (axes: readonly number[]) => boolean>>
   left: (axes) => (axes[0] ?? 0) < -0.5, right: (axes) => (axes[0] ?? 0) > 0.5,
 };
 
-/** The codes these gamepads hold now. */
-export function heldCodes(keys: Keys, gamepads: readonly (Readable | null)[]) {
+/** The codes the gamepads at their places (their index) hold now. */
+export function heldCodes(controls: Controls, gamepads: readonly (Readable | null)[]) {
   const held = new Set<string>();
-  for (const pad of gamepads) {
-    if (!pad?.connected) continue;
+  for (const [place, pad] of gamepads.entries()) {
+    const keys = placeKeys(controls, place);
+    if (!pad?.connected || !keys) continue;
     for (const [input, code] of Object.entries(keys) as [ControlInput, string][]) {
       const button = pad.buttons[BUTTON[input]];
       if (button?.pressed || (button?.value ?? 0) > 0.5 || STICK[input]?.(pad.axes)) held.add(code);
@@ -58,23 +60,20 @@ export function keyFor(code: string) {
 }
 
 /** Presses and lets go of the keys as the gamepads change: send gets each keydown or keyup, once per change. */
-export function keyPresser(keys: Keys, send: (type: 'keydown' | 'keyup', code: string) => void) {
+export function keyPresser(controls: Controls, send: (type: 'keydown' | 'keyup', code: string) => void) {
   let held = new Set<string>();
   return (gamepads: readonly (Readable | null)[]) => {
-    const now = heldCodes(keys, gamepads);
+    const now = heldCodes(controls, gamepads);
     for (const code of held) if (!now.has(code)) send('keyup', code);
     for (const code of now) if (!held.has(code)) send('keydown', code);
     held = now;
   };
 }
 
-/** Runs the keys in this frame: from the page's #zirbel-keys, over navigator.getGamepads (the device's and the screen's). */
-export function pressKeys() {
-  const element = document.getElementById('zirbel-keys');
-  let keys: Keys | undefined;
-  try { keys = checkedKeys(element ? JSON.parse(element.textContent) : undefined); } catch { keys = undefined; }
-  if (!keys) return;
-  const press = keyPresser(keys, (type, code) => {
+/** Runs the controls' keys in this frame, over navigator.getGamepads (the device's and the screen's, at their places). */
+export function pressKeys(controls: Controls) {
+  if (!controls.keys && !controls.players?.some((player) => player.keys)) return;
+  const press = keyPresser(controls, (type, code) => {
     const { key, location, keyCode } = keyFor(code);
     const event = new KeyboardEvent(type, { key, code, location, bubbles: true, cancelable: true, composed: true });
     for (const name of ['keyCode', 'which']) Object.defineProperty(event, name, { value: keyCode });

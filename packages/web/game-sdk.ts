@@ -3,9 +3,10 @@
 import { boundedJson, compactProperties, jsonCopy, MAX_REGISTERED_OBJECTS } from '../sdk/bounded.ts';
 import type { RegisteredObject } from '../sdk/game.ts';
 import type { SeatInfo } from '../sdk/contracts.ts';
+import { checkedControls, checkedLabel, MAX_PLACES, type Controls, type PlaceLabel } from '../sdk/controls.ts';
 import { pressKeys } from './game-keys.ts';
 import { screenPads } from './game-pads.ts';
-import { checkedFrame, checkedPads } from './pad-state.ts';
+import { checkedFrame, checkedLocal, checkedPads } from './pad-state.ts';
 
 type RoomState = { self: SeatInfo; seats: SeatInfo[]; states: Record<string, unknown> };
 const objects = new Map<string, RegisteredObject>();
@@ -24,6 +25,13 @@ function publishObjects() {
 }
 
 const gameData = document.getElementById('zirbel-assets')!;
+/** What a place's player drives, for the screen and the place's phone to show: an adapter's to say, never a game's. */
+const place = (index: number, label: PlaceLabel) => {
+  const checked = checkedLabel(label);
+  if (!Number.isInteger(index) || index < 0 || index >= MAX_PLACES || !checked)
+    throw new Error('Give a place 0 to 7, a name of 1 to 24 characters and a #rrggbb colour.');
+  notify('zirbel.place', { place: index, ...checked });
+};
 const sdk = {
   assets: Object.freeze(JSON.parse(gameData.textContent) as Record<string, string>),
   register(id: string, properties: Record<string, unknown> = {}) {
@@ -43,12 +51,20 @@ const sdk = {
     if (room) listener(room);
     return () => listeners.delete(listener);
   },
+  place,
 };
 Object.defineProperty(window, 'zirbel', { value: Object.freeze(sdk) });
-// The screen's controllers (phones, the box's gamepads) come as gamepads after the device's own, before the game reads
-// any; a game that reads only the keyboard gets its zirbel.json's keys from all of them.
-const pads = screenPads((effect) => notify('zirbel.rumble', effect));
-pressKeys();
+// Every controller of the screen is a gamepad at its place (phones and the box's gamepads from the page, the device's
+// own where the page placed them), before the game reads any; a game that reads only the keyboard gets each place's keys
+// from its zirbel.json, and the screen the names and colours it gives its places.
+const pads = screenPads((effect) => notify('zirbel.rumble', effect), !channel);
+let controls: Controls | undefined;
+try { controls = checkedControls(JSON.parse(document.getElementById('zirbel-controls')?.textContent ?? 'null')); }
+catch { controls = undefined; }
+if (controls) {
+  pressKeys(controls);
+  controls.players?.forEach(({ name, color }, index) => { if (name || color) place(index, { name, color }); });
+}
 if (channel) {
   channel.port1.onmessage = (event) => {
     const { type, value } = (event.data ?? {}) as { type?: unknown; value?: unknown };
@@ -60,6 +76,11 @@ if (channel) {
     if (type === 'zirbel.pad') {
       const frame = checkedFrame(value);
       if (frame) pads.frame(frame.slot, frame);
+      return;
+    }
+    if (type === 'zirbel.local') {
+      const placed = checkedLocal(value);
+      if (placed) pads.local(placed);
       return;
     }
     if (type !== 'zirbel.room') return;

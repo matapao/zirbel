@@ -6,7 +6,6 @@ import (
 	"math"
 	"net/http"
 	"path"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -115,40 +114,6 @@ func manifestOf(encoded string, present bool) map[string]any {
 	}
 	manifest, _ := parsed.(map[string]any)
 	return manifest
-}
-
-// Controls mirrors gameControls in packages/sdk/game.ts: the keyboard codes a
-// game's zirbel.json gives the inputs of the standard gamepad layout, which
-// the game frame presses as a keyboard would.
-type Controls struct {
-	Keys map[string]string `json:"keys"`
-}
-
-// controlInputs mirrors CONTROL_INPUTS, and keyCode KEY_CODE.
-var (
-	controlInputs = map[string]bool{"a": true, "b": true, "x": true, "y": true, "lb": true, "rb": true, "lt": true, "rt": true,
-		"select": true, "start": true, "ls": true, "rs": true, "up": true, "down": true, "left": true, "right": true, "home": true}
-	keyCode = regexp.MustCompile(`^[A-Za-z0-9]{1,24}$`)
-)
-
-// describedControls mirrors describedGame's controls in game-files.ts: any
-// game's controls.keys, an object of known inputs and their codes, at least
-// one; anything else leaves it without controls.
-func describedControls(encoded string, present bool) *Controls {
-	controls, _ := manifestOf(encoded, present)["controls"].(map[string]any)
-	keys, _ := controls["keys"].(map[string]any)
-	if len(keys) == 0 {
-		return nil
-	}
-	described := map[string]string{}
-	for input, value := range keys {
-		code, ok := value.(string)
-		if !controlInputs[input] || !ok || !keyCode.MatchString(code) {
-			return nil
-		}
-		described[input] = code
-	}
-	return &Controls{Keys: described}
 }
 
 func gameFileType(name string) string {

@@ -75,6 +75,20 @@ export function checkedFrame(value: unknown): PadState | undefined {
   return { slot, standard, pressed: pressed as number, values: [...buttons], axes: [...sticks] };
 }
 
+/** The places the page gave the device's own gamepads, as a game's frame takes them: each place once, or nothing. */
+export function checkedLocal(value: unknown): { place: number; index: number; id: string }[] | undefined {
+  if (!Array.isArray(value) || value.length > MAX_SLOTS) return undefined;
+  const placed: { place: number; index: number; id: string }[] = [];
+  for (const item of value as unknown[]) {
+    if (typeof item !== 'object' || item === null) return undefined;
+    const { place, index, id } = item as Record<string, unknown>;
+    if (!isSlot(place) || !Number.isInteger(index) || (index as number) < 0 || (index as number) > 63 || typeof id !== 'string' ||
+        id.length > 256 || placed.some((pad) => pad.place === place)) return undefined;
+    placed.push({ place, index: index as number, id });
+  }
+  return placed;
+}
+
 /** A screen's list of controllers as a game's frame takes it: at most eight, each slot once, or nothing. */
 export function checkedPads(value: unknown): PadEntry[] | undefined {
   if (!Array.isArray(value) || value.length > MAX_SLOTS) return undefined;

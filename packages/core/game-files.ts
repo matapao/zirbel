@@ -2,7 +2,7 @@
 // stored by its content hash and listed in the document's files.
 import { z } from 'zod';
 import { PORTABLE_FILE_LIMIT } from '../sdk/contracts.ts';
-import { checkedKeys, type ControlKeys } from '../sdk/controls.ts';
+import { checkedControls } from '../sdk/controls.ts';
 import { adapterPath, gameDocument, gameFilePath, MAX_GAME_FILES, NET_PLAYERS, type GameDocument } from '../sdk/game.ts';
 import { ZirbelError } from './errors.ts';
 import type { Projects } from './projects.ts';
@@ -20,30 +20,25 @@ export const gameFolder = z.strictObject({
 // 1 there says the game brings its own netcode (zirbel-net): it plays over the host's relay, with up to
 // 16 players. A file that says otherwise, can't be read or is over 64 KB leaves a game for one. Such a
 // game's multiplayer.adapter names its adapter, one of the folder's .js or .mjs files (has): anything
-// else leaves it without one. Any game's controls.keys maps gamepad inputs to keyboard codes (sdk/controls.ts): an object
-// of known inputs and their codes, at least one, or else no controls.
+// else leaves it without one. Any game's controls (sdk/controls.ts) give gamepad inputs keyboard codes: controls.keys an
+// object of known inputs and their codes, at least one, and controls.players 1 to 8 places' keys, names and colours,
+// each where it is right and else left out.
 const MANIFEST_BASE64 = Math.ceil(65_536 / 3) * 4;
 /** What a game's index.html and files may hold in all, as an imported folder may: what 48 MB of base64 carries. */
 export const GAME_BYTES = Math.floor(PORTABLE_FILE_LIMIT * 3 / 4);
-type Described = { players?: { max?: unknown }; multiplayer?: { adapter?: unknown }; controls?: { keys?: unknown } } | null;
+type Described = { players?: { max?: unknown }; multiplayer?: { adapter?: unknown }; controls?: unknown } | null;
 export function describedGame(manifest: string | undefined, has: (path: string) => boolean):
   Pick<GameDocument, 'maxPlayers' | 'net' | 'adapter' | 'controls'> {
   if (manifest === undefined || manifest.length > MANIFEST_BASE64) return { maxPlayers: 1 };
   let described: Described;
   try { described = JSON.parse(Buffer.from(manifest, 'base64').toString('utf8')) as Described; }
   catch { return { maxPlayers: 1 }; }
-  const keys = describedKeys(described?.controls?.keys);
-  const controls = keys ? { controls: { keys } } : {};
+  const checked = checkedControls(described?.controls);
+  const controls = checked ? { controls: checked } : {};
   const max = described?.players?.max, adapter = described?.multiplayer?.adapter;
   if (typeof max !== 'number' || !Number.isInteger(max) || max <= 1) return { maxPlayers: 1, ...controls };
   return { maxPlayers: Math.min(max, NET_PLAYERS), net: true,
     ...(adapterPath.safeParse(adapter).success && has(adapter as string) ? { adapter: adapter as string } : {}), ...controls };
-}
-
-/** controls.keys as gameControls reads it, its inputs sorted (as the Go host writes a map): none when empty or wrong. */
-function describedKeys(keys: unknown): ControlKeys | undefined {
-  const checked = checkedKeys(keys);
-  return checked && Object.fromEntries(Object.entries(checked).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
 export function importGameFolder(projects: Projects, raw: unknown, author?: Ident) {

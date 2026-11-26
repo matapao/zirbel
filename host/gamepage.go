@@ -75,10 +75,11 @@ func gamePage(release *Release, runtime, ancestors, base string) (policy, html s
 	}
 	// encoding/json sorts the keys, which puts them in game-page.ts's order: "three", then "three/addons/".
 	imports := map[string]string{"three": runtime + "three.module.js", threeAddons: addons}
-	// The keys its zirbel.json gives gamepad inputs, which game-sdk presses for a game that reads only the keyboard.
+	// The keys its zirbel.json gives gamepad inputs, which game-sdk presses for a game that reads only the keyboard, and
+	// its places' names and colours.
 	keys := ""
-	if controls := release.Game.Controls; controls != nil {
-		keys = `<script type="application/json" id="zirbel-keys">` + scriptJSON(controls.Keys) + `</script>`
+	if controls := release.Game.Controls; controls != nil && (len(controls.Keys) > 0 || len(controls.Players) > 0) {
+		keys = `<script type="application/json" id="zirbel-controls">` + scriptJSON(controls) + `</script>`
 	}
 	bootstrap := `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
 		`<script type="importmap">` + scriptJSON(map[string]any{"imports": imports}) + `</script>` +

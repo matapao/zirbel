@@ -213,16 +213,21 @@ async function session(editor: string) {
     operations: [{ op: 'writeGame', game: { html: '<p>net</p>', maxPlayers: 3, net: true, adapter: 'net/adapter.mjs' } }] }));
   const netManifest = body<{ releaseId: string }>(await record(post('/api/projects/' + net.id + '/release', { branch: 'main', permissions: rights })));
   const netRelease = await record(get('/api/releases/' + netManifest.releaseId + '/download'));
-  // Any game's zirbel.json may give gamepad inputs keyboard keys (controls.keys), which its release keeps; anything but
-  // known inputs with codes leaves it without controls, and a proposal can't set them.
+  // Any game's zirbel.json may give gamepad inputs keyboard keys (controls.keys), and each place its own keys, name and
+  // colour (controls.players), which its release keeps; anything but known inputs with codes leaves it without keys, any
+  // place that isn't right without players, and a proposal can't set them.
   const keyed = (controls: unknown, players?: number) => ({ ...folder,
     'zirbel.json': encode(JSON.stringify({ ...(players ? { players: { max: players } } : {}), controls })) });
   for (const controls of [{ keys: { a: 'Space', jump: 'KeyW' } }, { keys: { a: 'Space bar' } }, { keys: { a: 32 } }, { keys: {} },
     { keys: ['Space'] }, { keys: 'Space' }, 'keys', { keys: { a: 'A'.repeat(25) } }])
     await record(post('/api/projects/import-game', { files: keyed(controls) }));
   await record(post('/api/projects/import-game', { files: keyed({ keys: { up: 'KeyW', a: 'Space' } }, 4) }));
+  for (const players of [[], Array(9).fill({}), [{ name: '' }], [{ name: 'n'.repeat(25) }], [{ color: 'red' }], [{ keys: {} }], [null],
+    [{ name: '\u{1F697}'.repeat(12), color: '#A0b0C0', wheels: 4 }, {}], [{ name: '\u{1F697}'.repeat(13) }]])
+    await record(post('/api/projects/import-game', { files: keyed({ players }) }));
   const keys = body<{ id: string; branches: { main: string } }>(await record(post('/api/projects/import-game',
-    { title: 'Keys', files: keyed({ keys: { start: 'Enter', a: 'Space', up: 'ArrowUp', left: 'KeyA', b: 'ShiftLeft' } }) })));
+    { title: 'Keys', files: keyed({ keys: { start: 'Enter', a: 'Space', up: 'ArrowUp', left: 'KeyA', b: 'ShiftLeft' },
+      players: [{ name: 'Red car', keys: { up: 'KeyW', a: 'KeyF' }, color: '#d03030' }, { color: '#3050d0' }] }) })));
   await record(post('/api/projects/' + keys.id + '/proposals', { baseRevision: keys.branches.main, branch: 'main', label: 'Keys',
     operations: [{ op: 'writeGame', game: { html: '<p>keys</p>', controls: { keys: { a: 'KeyX' } } } }] }));
   const keysManifest = body<{ releaseId: string }>(await record(post('/api/projects/' + keys.id + '/release', { branch: 'main', permissions: rights })));
@@ -249,9 +254,10 @@ for (const host of editors) {
     for (const [index, step] of result.steps.entries()) {
       assert.ok(step.status < 500, 'step ' + index + ' failed with ' + step.status + ': ' + JSON.stringify(step.body));
     }
-    // The keys come in the release's game, in their inputs' order.
+    // The keys come in the release's game, in their inputs' order, and each place's fields in theirs.
     assert.equal(JSON.stringify((result.keysRelease as { game: { controls?: unknown } }).game.controls),
-      '{"keys":{"a":"Space","b":"ShiftLeft","left":"KeyA","start":"Enter","up":"ArrowUp"}}');
+      '{"keys":{"a":"Space","b":"ShiftLeft","left":"KeyA","start":"Enter","up":"ArrowUp"},' +
+      '"players":[{"keys":{"a":"KeyF","up":"KeyW"},"name":"Red car","color":"#d03030"},{"color":"#3050d0"}]}');
     results.set(host.name, result);
   });
 }

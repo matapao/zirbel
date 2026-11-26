@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { compactProperties, MAX_REGISTERED_OBJECTS } from './bounded.ts';
-import { CONTROL_INPUTS, KEY_CODE } from './controls.ts';
+import { CONTROL_INPUTS, KEY_CODE, MAX_PLACES, PLACE_COLOR, PLACE_NAME } from './controls.ts';
 
 export { boundedJson, MAX_REGISTERED_OBJECTS } from './bounded.ts';
 
@@ -31,9 +31,14 @@ export const gameFilePath = pathWith(Object.keys(GAME_FILE_TYPES));
 // game page loads after the game's document, so the game itself carries nothing of Zirbel's.
 export const adapterPath = pathWith(['js', 'mjs']);
 export const MAX_GAME_FILES = 1000;
-// The keys a game's zirbel.json gives gamepad inputs, for a game that reads only the keyboard (controls.ts).
+// The keys a game's zirbel.json gives gamepad inputs, for a game that reads only the keyboard, and each place's own keys,
+// name and colour (controls.ts).
+const controlKeys = z.partialRecord(z.enum(CONTROL_INPUTS), z.string().regex(KEY_CODE));
 const gameControls = z.strictObject({
-  keys: z.partialRecord(z.enum(CONTROL_INPUTS), z.string().regex(KEY_CODE)),
+  keys: controlKeys.optional(),
+  players: z.array(z.strictObject({
+    keys: controlKeys.optional(), name: z.string().min(1).max(PLACE_NAME).optional(), color: z.string().regex(PLACE_COLOR).optional(),
+  })).min(1).max(MAX_PLACES).optional(),
 });
 const gameFiles = z.record(gameFilePath, z.string().regex(/^[a-f0-9]{64}$/)).refine(
   (files) => Object.keys(files).length <= MAX_GAME_FILES && !Object.hasOwn(files, 'index.html'),
