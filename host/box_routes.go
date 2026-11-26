@@ -15,15 +15,18 @@ import (
 // The box's door and its own routes (--box), mirroring packages/server/box-routes.ts.
 // The editor listens on every interface, and a request from the box itself
 // behaves as without box mode. A request from elsewhere must come from the
-// box's own network, and then needs a paired device's session for everything
-// but /pair, where a device pairs with a one-time code (or claims a box no
-// device has paired with yet), and /mcp while external MCP access is on,
-// which checks its own project grant. The pairing page is box_pairpage.go,
-// the box's own Wi-Fi box_network.go.
+// box's own network, and then needs a paired device's session (an owner's) or
+// an editor's of one game for everything but /pair, where a device pairs with
+// a one-time code (or claims a box no device has paired with yet), /edit,
+// where a device redeems a game's edit code, and /mcp while external MCP
+// access is on, which checks its own project grant. The pairing page is
+// box_pairpage.go, the edit page box_editpage.go, the box's own Wi-Fi
+// box_network.go.
 
-// Box is a box's pairing, switches and what it is.
+// Box is a box's pairing, its games' editors, switches and what it is.
 type Box struct {
 	pairing      *Pairing
+	editors      *Editors
 	settings     *BoxSettings
 	capabilities boxCapabilities
 	port         func() int
@@ -45,20 +48,26 @@ func NewBox(account string, port func() int) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
+	editors, err := NewEditors(folder, time.Now)
+	if err != nil {
+		return nil, err
+	}
 	settings, err := NewBoxSettings(folder)
 	if err != nil {
 		return nil, err
 	}
-	return &Box{pairing: pairing, settings: settings, capabilities: detectCapabilities(), port: port,
+	return &Box{pairing: pairing, editors: editors, settings: settings, capabilities: detectCapabilities(), port: port,
 		setupRequest: env("ZIRBEL_SETUP_REQUEST", "/run/zirbel-setup/request"),
 		ownNetwork:   env("ZIRBEL_OWN_NETWORK", "/var/lib/zirbel-setup/own-network.json")}, nil
 }
 
-// boxAccess is who sent a request: the box itself, or a paired device by its
-// id (none for a project grant's /mcp request).
+// boxAccess is who sent a request: the box itself, a paired device (an owner)
+// by its id, or an editor by the one game it edits (none of them for a project
+// grant's /mcp request).
 type boxAccess struct {
 	local  bool
 	device string
+	game   string
 }
 
 // boxName is the box's name on its network: its host name, in mDNS's .local.
@@ -167,6 +176,9 @@ func (b *Box) door(w http.ResponseWriter, r *http.Request) (access boxAccess, ha
 	if pathname == "/pair" {
 		return access, true, b.pairRoute(w, r, address)
 	}
+	if pathname == "/edit" {
+		return access, true, b.editRoute(w, r, address)
+	}
 	if local {
 		return boxAccess{local: true}, false, nil
 	}
@@ -190,6 +202,13 @@ func (b *Box) door(w http.ResponseWriter, r *http.Request) (access boxAccess, ha
 	}
 	if paired {
 		return boxAccess{device: device.ID}, false, nil
+	}
+	editor, editing, err := b.editors.Session(r.Header.Get("cookie"))
+	if err != nil {
+		return access, false, err
+	}
+	if editing {
+		return boxAccess{game: editor.Project}, false, nil
 	}
 	if r.Method == http.MethodGet && pathname == "/" && b.lobbyPort != nil && b.lobbyPort() != 0 {
 		// Players never pair: the box's front door is the lobby, on the name the device asked by.

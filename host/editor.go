@@ -102,6 +102,11 @@ func (s *EditorServer) serve(w http.ResponseWriter, r *http.Request) error {
 		return fail(http.StatusNotFound, "Route does not exist.")
 	}
 	resource, pathID, action, tail := part(2), part(3), part(4), part(5)
+	if access.game != "" {
+		if handled, err := s.asEditor(w, r, access.game, resource, pathID, action, tail); handled || err != nil {
+			return err
+		}
+	}
 	switch resource {
 	case "health":
 		if r.Method == http.MethodGet {
@@ -114,6 +119,11 @@ func (s *EditorServer) serve(w http.ResponseWriter, r *http.Request) error {
 				health["box"] = box
 			}
 			reply(w, http.StatusOK, health)
+			return nil
+		}
+	case "me":
+		if pathID == "" && r.Method == http.MethodGet {
+			reply(w, http.StatusOK, me(access))
 			return nil
 		}
 	case "pairing", "box":

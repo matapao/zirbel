@@ -92,17 +92,23 @@ func (p *Players) LobbyLink(host string) *string {
 	if port == 0 {
 		return nil
 	}
-	// An address another device can open as it is: a name, even one this device resolved (a box's .local name),
-	// is often one a phone or an office network can't.
-	address := host
-	if address == "" || loopbackName(address) || net.ParseIP(strings.TrimSuffix(strings.TrimPrefix(address, "["), "]")) == nil {
-		address = p.lanAddress()
-	}
+	address := p.reachableAddress(host)
 	if address == "" {
 		return nil
 	}
 	link := "http://" + address + ":" + strconv.Itoa(port) + "/"
 	return &link
+}
+
+// reachableAddress is an address another device can open as it is: host, the
+// name a box was reached by, when it is an IP address that isn't only this
+// device's own, else the LAN address. A name, even one this device resolved (a
+// box's .local name), is often one a phone or an office network can't.
+func (p *Players) reachableAddress(host string) string {
+	if host == "" || loopbackName(host) || net.ParseIP(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")) == nil {
+		return p.lanAddress()
+	}
+	return host
 }
 
 // lanAddress is the host LAN links are on: the --player-host name, or the
