@@ -51,7 +51,15 @@ export function hasContent() {
   return Boolean(revision.game || revision.scene);
 }
 
-export function uid() { return crypto.randomUUID(); }
+// A random UUID (version 4). crypto.randomUUID is only there on a secure page (https, or localhost), and a box serves
+// its editor over plain http on its network address, so it is made from getRandomValues, which every page has.
+export function uid() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-');
+}
 export function bind(name: string, event: string, handler: (event: Event) => void) { $(name).addEventListener(event, handler); }
 
 export async function listProjects() {

@@ -99,7 +99,11 @@ function copyable(text: string, label: string) {
   field.value = text;
   field.readOnly = true;
   field.setAttribute('aria-label', label);
-  row.append(field, action('Copy', async () => { await navigator.clipboard.writeText(text); inform('Copied.'); }));
+  // The clipboard is only there on a secure page; over the box's plain http the text is selected for copying instead.
+  row.append(field, action('Copy', async () => {
+    try { await navigator.clipboard.writeText(text); inform('Copied.'); }
+    catch { field.select(); inform('Select and copy it.'); }
+  }));
   return row;
 }
 

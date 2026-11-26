@@ -1,7 +1,7 @@
 // A Zirbel box (box mode): pairing with one-time codes, claiming a box no device has paired with, the paired devices'
 // sessions, the box's switches and what is off not running, its own Wi-Fi, the network it answers, and its door.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request, type IncomingMessage, type ServerResponse } from 'node:http';
 import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -334,4 +334,14 @@ test('the built editor in box mode answers its .local name, pairs, and puts its 
   assert.equal(new URL(frame).hostname, boxName());
   const playerPort = Number(new URL(frame).port);
   assert.equal((await send(playerPort, boxName() + ':' + playerPort, 'GET', '/health')).status, 200);
+});
+
+// A box serves the editor, the lobby and the player over plain http on its network address, which isn't a secure
+// page: there crypto.randomUUID and crypto.subtle don't exist, and a page that calls them stops at its first call.
+test('pages a box serves over plain http call nothing that needs a secure page', () => {
+  const web = new URL('../packages/web/', import.meta.url);
+  const calls = readdirSync(web).filter((file) => file.endsWith('.ts')).flatMap((file) =>
+    readFileSync(new URL(file, web), 'utf8').split('\n').map((line, index) => [file + ':' + (index + 1), line] as const)
+      .filter(([, line]) => !/^\s*\/\//.test(line) && /crypto\.(randomUUID|subtle)\b/.test(line)).map(([where]) => where));
+  assert.deepEqual(calls, []);
 });

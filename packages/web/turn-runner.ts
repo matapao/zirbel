@@ -8,7 +8,7 @@ import { CONTINUE_TEXT, type ChatUpdate, type ThreadView } from '../sdk/chat-str
 import { $, api, chatApi, dialog } from './editor-ui.ts';
 import { activityKey, activityTurns, markedObjects, promptDrafts, threadKey, visibleTurn, workspaceThreadKey, ws,
   type ActivityTurn, type ChatReply } from './state.ts';
-import { authored, listProjects, loadProject, refreshProject, route, scope, showProposal } from './workspace.ts';
+import { authored, listProjects, loadProject, refreshProject, route, scope, showProposal, uid } from './workspace.ts';
 import { references } from './inspector.ts';
 import { keepTurn, renderMessages, renderTurnActions, showStep } from './thread.ts';
 import { providerName, refreshProcessors, renderChatStatus, renderProcessors } from './chat.ts';
@@ -87,7 +87,7 @@ async function follow(turn: ActivityTurn, key: string, projectId: string | undef
         activityTurns.set(threadKey(response.projectId, response.branch ?? 'main'), turn);
         ws.conversation = [];
         // The chat became the game's thread: the next chat before a project is a new one.
-        rememberWorkspaceThread(crypto.randomUUID());
+        rememberWorkspaceThread(uid());
       }
       await listProjects();
       if (!openResult || visit !== ws.navigation || dialog.open) return;
@@ -182,7 +182,7 @@ export async function syncThread() {
   if (key !== activityKey() || activityTurns.get(key)?.pending) return;
   if (!projectId && view.project) {
     // The chat became a game while this page was away: open it, and start the next chat afresh.
-    rememberWorkspaceThread(crypto.randomUUID());
+    rememberWorkspaceThread(uid());
     await listProjects();
     if (!ws.project && ws.projectCards.some(({ id }) => id === view.project)) await loadProject(view.project);
     return;
@@ -206,5 +206,5 @@ if (!ws.workspaceThread) {
   let saved: string | null = null;
   try { saved = localStorage.getItem(workspaceThreadKey); } catch { /* Browser storage is optional. */ }
   if (saved && /^[a-z0-9][a-z0-9_-]{0,79}$/.test(saved)) ws.workspaceThread = saved;
-  else rememberWorkspaceThread(crypto.randomUUID());
+  else rememberWorkspaceThread(uid());
 }
