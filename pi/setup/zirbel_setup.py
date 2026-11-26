@@ -73,6 +73,7 @@ class Setup:
         self.portal_pairing: Pairing | None = None
         self.bluetooth = None
         self.bluetooth_pending = None  # made once its controller is there, started once BlueZ takes it
+        self.bluetooth_starting = False  # its registration asked of BlueZ, the answer not yet in
         self.bluetooth_radios: policy.Radios | None = None
         self.bluetooth_error = ""
         address = ""
@@ -104,39 +105,46 @@ class Setup:
     def run(self) -> None:
         log(f"Setting up as {self.box}" + (", as asked." if self.requested else ": the box has no network."))
         self.networks = self.nm.scan()
-        if not self._start_bluetooth():
-            log("Bluetooth setup waits for the box's Bluetooth controller.")
+        self._start_bluetooth()
         self._hotspot_if_due()
         self.GLib.timeout_add_seconds(TICK_SECONDS, self._tick)
         self.loop.run()
 
-    def _start_bluetooth(self) -> bool:
+    def _start_bluetooth(self) -> None:
         """Bluetooth setup, once the box's controller and BlueZ's handle for it are there; the hotspot serves meanwhile.
-        Its objects are made once, when the controller is first there, and only its start is tried again."""
-        if self.bluetooth is not None:
-            return True
+        Its objects are made once, when the controller is first there, and only its start is tried again. BlueZ's
+        answer comes later, on the main loop (_bluetooth_ready, _bluetooth_failed)."""
+        if self.bluetooth is not None or self.bluetooth_starting:
+            return
         try:
             if self.bluetooth_pending is None:
                 radios = policy.detect()
                 if not radios.bluetooth:
-                    return False
+                    return
                 import bluetooth
 
                 self.bluetooth_pending = bluetooth.Bluetooth(self.bus, self.service, self.box, lambda: self._used(True))
                 self.bluetooth_radios = radios
             self.service.changed = self.bluetooth_pending.changed
-            self.bluetooth_pending.start()
+            self.bluetooth_starting = True
+            self.bluetooth_pending.start(self._bluetooth_ready, self._bluetooth_failed)
         except Exception as error:  # noqa: BLE001 - the hotspot still serves
-            if str(error) != self.bluetooth_error:
-                log(f"Bluetooth setup did not start yet: {error}")
-            self.bluetooth_error = str(error)
-            return False
+            self._bluetooth_failed(error)
+
+    def _bluetooth_ready(self) -> None:
+        self.bluetooth_starting = False
         self.bluetooth, self.radios = self.bluetooth_pending, self.bluetooth_radios or self.radios
         log("Bluetooth setup is advertising.")
-        return True
+
+    def _bluetooth_failed(self, error: Exception) -> None:
+        self.bluetooth_starting = False
+        if str(error) != self.bluetooth_error:
+            log(f"Bluetooth setup did not start yet: {error}")
+        self.bluetooth_error = str(error)
 
     def _hotspot_if_due(self) -> None:
-        radios = policy.Radios(self.radios.wifi, self.bluetooth is not None, self.radios.sharing)
+        # Bluetooth starting counts as Bluetooth: on a board whose radio does one at a time, the hotspot waits for it.
+        radios = policy.Radios(self.radios.wifi, self.bluetooth is not None or self.bluetooth_starting, self.radios.sharing)
         if self.busy or self.hotspot or not policy.hotspot_due(radios, quiet_for=time.monotonic() - self.last_bluetooth):
             return
         import network

@@ -177,28 +177,36 @@ class Bluetooth:
         self.advertisement: Advertisement | None = None
         self._count = 0
 
-    def start(self) -> None:
+    def start(self, ready: Callable[[], None], failed: Callable[[Exception], None]) -> None:
+        """Powers the controller, then registers the service and its advertisement with BlueZ. BlueZ asks this process
+        for their objects while it registers them, so both registrations answer later, on the main loop: a call that
+        waited for its answer would leave BlueZ's question unanswered ("No object received")."""
         self.adapter.Set(ADAPTER, "Powered", dbus.Boolean(True), dbus_interface=PROPS)
         self.adapter.Set(ADAPTER, "Alias", self.name, dbus_interface=PROPS)
-        try:
-            dbus.Interface(self.adapter, GATT_MANAGER).RegisterApplication(dbus.ObjectPath(self.app.path), {})
-        except dbus.DBusException as error:
-            # An earlier start that failed after it may have left it registered: then it is there already.
-            if not (error.get_dbus_name() or "").endswith(".AlreadyExists"):
-                raise
-        self._advertise()
 
-    def _advertise(self) -> None:
+        def refused(error: dbus.DBusException) -> None:
+            # An earlier start that failed after it may have left it registered: then it is there already.
+            if (error.get_dbus_name() or "").endswith(".AlreadyExists"):
+                self._advertise(ready, failed)
+            else:
+                failed(error)
+
+        dbus.Interface(self.adapter, GATT_MANAGER).RegisterApplication(
+            dbus.ObjectPath(self.app.path), {}, reply_handler=lambda: self._advertise(ready, failed), error_handler=refused
+        )
+
+    def _advertise(self, ready: Callable[[], None] | None = None, failed: Callable[[Exception], None] | None = None) -> None:
         manager = dbus.Interface(self.adapter, ADVERTISING_MANAGER)
         if self.advertisement:
-            try:
-                manager.UnregisterAdvertisement(dbus.ObjectPath(self.advertisement.path))
-            except dbus.DBusException:
-                pass
+            manager.UnregisterAdvertisement(dbus.ObjectPath(self.advertisement.path), reply_handler=_ignore, error_handler=_ignore)
             self.advertisement.remove_from_connection()
         self._count += 1
         self.advertisement = Advertisement(self.bus, self._count, self.name, self.service.service_data())
-        manager.RegisterAdvertisement(dbus.ObjectPath(self.advertisement.path), {})
+        manager.RegisterAdvertisement(
+            dbus.ObjectPath(self.advertisement.path), {},
+            reply_handler=ready or _ignore,
+            error_handler=failed or (lambda error: print(f"Bluetooth's advertisement was refused: {error}", flush=True)),
+        )
 
     def changed(self, uuid: str) -> None:
         """A characteristic changed: its listeners hear it, and a new state goes into the advertisement too."""
@@ -207,13 +215,14 @@ class Bluetooth:
             self._advertise()
 
     def stop(self) -> None:
+        """Takes the advertisement and the service back; BlueZ drops what is left when this process ends."""
         manager = dbus.Interface(self.adapter, ADVERTISING_MANAGER)
         if self.advertisement:
-            try:
-                manager.UnregisterAdvertisement(dbus.ObjectPath(self.advertisement.path))
-            except dbus.DBusException:
-                pass
-        try:
-            dbus.Interface(self.adapter, GATT_MANAGER).UnregisterApplication(dbus.ObjectPath(self.app.path))
-        except dbus.DBusException:
-            pass
+            manager.UnregisterAdvertisement(dbus.ObjectPath(self.advertisement.path), reply_handler=_ignore, error_handler=_ignore)
+        dbus.Interface(self.adapter, GATT_MANAGER).UnregisterApplication(
+            dbus.ObjectPath(self.app.path), reply_handler=_ignore, error_handler=_ignore
+        )
+
+
+def _ignore(*_args: object) -> None:
+    """An answer nothing waits for."""
