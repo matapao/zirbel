@@ -7,6 +7,8 @@ import { applyChatControl, finishChatEdit, startFromChat, type ChatReply } from 
 import { describedGame } from '../core/game-files.ts';
 import type { ProcessorRun, Processors } from './processors.ts';
 import { readGameFolder } from './turn-folder.ts';
+import { harnessAuthor } from './authors.ts';
+import type { Ident } from '../core/git.ts';
 
 // The harness's final message: a short JSON object, never the game itself, which is the folder's game/.
 const message = z.string().trim().min(1).max(3000);
@@ -50,7 +52,9 @@ function folderGame(projects: Projects, folder: string | undefined, output: Excl
 
 type Turn = { text: string; branch: string; proposalId?: string; registerObjects?: boolean; objects?: RegisteredObject[]; markedIds?: string[];
   /** The thread's working folder, whose game/ a create or edit keeps. */
-  folder?: string };
+  folder?: string;
+  /** Who sent the message. The harness is the author of what it makes. */
+  author?: Ident };
 export async function runHarnessChat(harnesses: Processors, processor: string, projects: Projects, project: Project, base: Revision,
   request: Turn, references: Reference[], options?: ProcessorRun): Promise<ChatReply & { task?: string }> {
   options?.signal?.throwIfAborted();
@@ -64,17 +68,18 @@ export async function runHarnessChat(harnesses: Processors, processor: string, p
       ...(project.template && !base.game ? { previousScene: base.scene } : {}) }, references, options, request.registerObjects);
   options?.signal?.throwIfAborted();
   const context = { projectId: project.id, branch: request.branch, task: run.task };
+  const by = harnessAuthor(processor, run.name);
 
   if (head(projects.read(project.id), request.branch).id !== base.id)
     throw new ZirbelError(409, 'The game changed while the harness was working. Send the request again against the current revision.');
   if (output.action !== 'reply') {
     const game = folderGame(projects, request.folder, output, base.game, request.registerObjects !== false);
     if (output.action === 'create' && (base.game || base.scene)) {
-      const draft = startFromChat(projects, { title: output.title, game }, request.text, output.message, usage);
+      const draft = startFromChat(projects, { title: output.title, game }, request.text, output.message, usage, [], by);
       return { ...draft, task: run.task };
     }
     const proposal = projects.submit(project.id, { label: output.message.slice(0, 120), branch: request.branch, baseRevision: base.id,
-      operations: [{ op: 'writeGame', game }] }, true).proposal;
+      operations: [{ op: 'writeGame', game }] }, true, by).proposal;
     return { ...finishChatEdit(projects, proposal, request.text, output.message, usage), task: run.task };
   }
   projects.addNote(project.id, { text: output.message, branch: request.branch,
@@ -89,7 +94,8 @@ export async function runWorkspaceChat(harnesses: Processors, processor: string,
   const control = chatControl(text);
   if (!control && output.action !== 'reply') {
     const game = folderGame(projects, folder, output, undefined, registerObjects);
-    const draft = startFromChat(projects, { title: output.action === 'create' ? output.title : undefined, game }, text, output.message, usage, history);
+    const draft = startFromChat(projects, { title: output.action === 'create' ? output.title : undefined, game }, text, output.message, usage, history,
+      harnessAuthor(processor, run.name));
     return { ...draft, task: run.task };
   }
   const reply = control ? 'There’s no game open yet. Describe the game you want to create.' : output.message;

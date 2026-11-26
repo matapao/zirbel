@@ -2,12 +2,13 @@
 
 ## History
 
-A project's history is its revisions. Each holds the whole game as it was, and never changes. `list_revisions` lists them, oldest first:
+A project's history is its revisions. Each holds the whole game as it was, and never changes. Every game is a git repository and every revision a commit: `list_revisions` lists the newest 200, oldest first:
 
-- `id`: the revision's id;
+- `id`: the revision's id, its commit's hash;
 - `parent`: the revision it was made from (`null` for the first);
-- `label`: what changed, as History shows it;
+- `label`: what changed, as History shows it (the commit's message);
 - `date`: when it was made;
+- `author`: who made it (a person, a harness, or a grant like yours);
 - `restoredFrom`: for a restore, the earlier revision it brought back.
 
 Revisions come from proposals applied (yours, or the editor's own agents'), and from restores: in History the owner can bring back any earlier revision, which makes a new revision with the earlier one's content on top of the current one. Nothing is lost; an earlier file is always there for `read_file` with its `revision`.

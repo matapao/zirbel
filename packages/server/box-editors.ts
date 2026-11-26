@@ -150,6 +150,12 @@ export class Editors {
     return this.read().editors.filter((known) => known.project === project).map(({ id, name, since, lastSeen }) => ({ id, name, since, lastSeen }));
   }
 
+  /** An editor by its id, while its session lasts. */
+  editor(editorId: string) {
+    const found = this.read().editors.find((known) => known.id === editorId);
+    return found && { id: found.id, project: found.project, name: found.name };
+  }
+
   /** Ends one editor's session, at once. */
   remove(project: string, editorId: string) {
     const kept = this.read();

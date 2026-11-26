@@ -5,6 +5,7 @@ import { editorOf, Preview, ws } from './state.ts';
 import { type Manifest, type Project } from '../sdk/contracts.ts';
 import { templates } from '../games/templates.ts';
 import { lobbyOffers, roomCard, type Room } from './library.ts';
+import { revisionLine } from './git.ts';
 
 function forkDialog(id: string) {
   const body = openDialog('Apply to a new branch');
@@ -46,7 +47,7 @@ export function historyDialog() {
   body.append(el('h3', 'Revisions'));
   for (const revision of [...project.revisions].reverse()) {
     const item = el('article', undefined, 'item');
-    item.append(el('strong', revision.label), el('small', revision.id.slice(0, 8) + ' · ' + new Date(revision.date).toLocaleString()));
+    item.append(el('strong', revision.label), el('small', revisionLine(revision)));
     if (revision.id === base.baseRevision) item.append(el('span','Current revision'));
     else item.append(action('Restore as new revision', async () => {
       const restored = await api<Project>(restore, { ...base, target: revision.id });

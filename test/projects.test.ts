@@ -120,7 +120,7 @@ test('legacy starter migration keeps projects with edits or staged work', (t) =>
   reopened.archiveLegacyPreviews();
   assert.deepEqual(reopened.list().map(({ id }) => id).sort(), kept);
   assert.deepEqual(reopened.summaries().map(({ id }) => id).sort(), kept);
-  assert.deepEqual(readdirSync(join(root, 'archived-preview-projects')).sort(), previews);
+  assert.deepEqual(readdirSync(join(root, 'archived-preview-projects')).filter((file) => file.endsWith('.json')).sort(), previews);
 });
 
 test('an empty project has no engine, scene, objects, or source until the author writes it', (t) => {

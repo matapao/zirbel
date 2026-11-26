@@ -9,6 +9,8 @@ import { secret } from '../core/rooms.ts';
 import { guideResources, instructions } from './mcp-guides.ts';
 import { readFileInput, readGameFile, stageFiles, writeFilesInput } from './mcp-files.ts';
 import { sceneDocument, sceneResource } from './scene-app.ts';
+import type { Ident } from '../core/git.ts';
+import { grantAuthor } from './authors.ts';
 
 const grantInput = z.strictObject({ projectId: id, write: z.boolean(), hours: z.number().int().min(1).max(168) });
 export const grantSchema = grantInput.extend({ id, expires: z.number().int(), tokenHash: hash });
@@ -20,7 +22,7 @@ const envelope = z.object({
 // Keep advertised inputs, required access and the implementation together.
 function tool<S extends z.ZodObject>(
   name: string, description: string, access: 'read' | 'propose' | 'write', schema: S,
-  execute: (projects: Projects, projectId: string, args: z.output<S>) => unknown,
+  execute: (projects: Projects, projectId: string, args: z.output<S>, author: Ident) => unknown,
   resourceUri?: string,
 ) {
   return {
@@ -28,7 +30,7 @@ function tool<S extends z.ZodObject>(
     descriptor: { name, description, annotations: { readOnlyHint: access === 'read' },
       inputSchema: z.toJSONSchema(schema, { io: 'input' }),
       _meta: { ui: resourceUri ? { resourceUri, visibility: ['model', 'app'] } : { visibility: ['model'] } } },
-    call: (projects: Projects, projectId: string, raw: unknown) => execute(projects, projectId, schema.parse(raw)),
+    call: (projects: Projects, projectId: string, raw: unknown, author: Ident) => execute(projects, projectId, schema.parse(raw), author),
   };
 }
 
@@ -42,24 +44,24 @@ const tools = [
   tool('read_scene', 'Read the game source, assets and exact revision.', 'read', z.strictObject({ branch: id.default('main') }),
     (projects, projectId, args) => head(projects.read(projectId), args.branch), sceneResource.uri),
   tool('list_revisions', 'List revision metadata.', 'read', empty, (projects, projectId) =>
-    projects.read(projectId).revisions.map(({ id, parent, restoredFrom, label, date }) => ({ id, parent, restoredFrom, label, date }))),
+    projects.read(projectId).revisions.map(({ id, parent, restoredFrom, label, date, author }) => ({ id, parent, restoredFrom, label, date, author }))),
   tool('read_file', 'Read one of the game\'s files by its path: index.html or a file beside it, from a branch head or a revision. ' +
     'UTF-8 text comes back as text, anything else as base64.', 'read', readFileInput, readGameFile),
   tool('write_files', 'Stage a revision that writes or removes the game\'s files by path, each written as text or base64; ' +
     'the other files stay as they are. Read zirbel://guide/files first.', 'propose', writeFilesInput, stageFiles),
   tool('propose', 'Stage a revision. Use writeGame with a complete HTML document to implement any game or edit; a game with files ' +
     'beside its index.html changes through write_files.', 'propose', z.strictObject({ proposal: proposalInput }),
-    (projects, projectId, { proposal }) => {
+    (projects, projectId, { proposal }, author) => {
       const additions = proposal.operations.filter((op) => op.op === 'addAsset');
       if (additions.length) {
-        const approved = projects.read(projectId).revisions.flatMap(({ assets }) => assets);
+        const approved = projects.knownAssets(projectId);
         for (const { asset } of additions) {
           if (!approved.some((known) => known.hash === asset.hash && known.media === asset.media &&
             known.author === asset.author && known.license === asset.license && known.source === asset.source && known.credit === asset.credit))
             throw new ZirbelError(403, 'Import the asset and its attribution into this project first.');
         }
       }
-      return projects.submit(projectId, proposal);
+      return projects.submit(projectId, proposal, false, author);
     }),
   tool('preview_proposal', 'Read the candidate scene for a staged proposal.', 'read', proposalId,
     (projects, projectId, args) => projects.preview(projectId, args.proposalId)),
@@ -146,7 +148,7 @@ export class Mcp {
         const entry = tools.find(({ name }) => name === params?.name);
         if (!entry) throw new ZirbelError(404, 'Unknown tool.');
         if (entry.access === 'write' && !grant.write) throw new ZirbelError(403, 'Applying a proposal requires a write grant.');
-        const result = entry.call(this.projects, grant.projectId, params?.arguments ?? {});
+        const result = entry.call(this.projects, grant.projectId, params?.arguments ?? {}, grantAuthor(grant.id));
         return { ...response, result: { content: [{ type: 'text', text: JSON.stringify(result) }] } };
       } catch (error) {
         const text = error instanceof ZirbelError || error instanceof z.ZodError ? error.message : 'Project operation failed.';

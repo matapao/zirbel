@@ -33,6 +33,11 @@ import { boxCapabilities, BoxHarnesses, BoxSettings } from './box-settings.ts';
 import { Editors } from './box-editors.ts';
 import { editorsRequest } from './box-edit-routes.ts';
 import { checkRole, whoIs } from './box-roles.ts';
+import { requireGit } from '../core/git.ts';
+import { authorOf } from './authors.ts';
+import { gitRequest, writeHooks } from './git-http.ts';
+import { gitRoutes } from './git-routes.ts';
+import { GitTokens } from './git-tokens.ts';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -72,6 +77,8 @@ type EditorOptions = { harnesses?: (root: string) => Processors; webRoot?: strin
 async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileURLToPath(new URL('./web/', import.meta.url)),
   account = accountDirectory() }: EditorOptions) {
   const root = resolve(values.data ?? process.env.ZIRBEL_DATA ?? join(homedir(), '.zirbel'));
+  // Every game is a git repository (docs/git-store.md): no git, no editor.
+  requireGit();
   // Built before the claim so a missing build fails without holding the directory.
   const projects = new Projects(root);
   const releases = new Releases(projects, webRoot);
@@ -123,6 +130,11 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
 
   try {
     projects.archiveLegacyPreviews();
+    const migrated = projects.migrate();
+    if (migrated) console.error('Zirbel kept ' + migrated + ' game' + (migrated === 1 ? '' : 's') + ' as git repositories; their old files are in ' +
+      join(root, 'migrated-projects') + '.');
+    // The check every push to a game runs before its branch moves, with the Node and the build running now.
+    const hooks = writeHooks(root, join(webRoot, '..', 'server.mjs'));
     const chat = new ChatRuns();
     let box: BoxContext | undefined;
     let harnesses: Processors;
@@ -150,6 +162,9 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
       () => editorOrigin() + '/turn-mcp');
     const chatContext: ChatContext = { projects, harnesses, chat, activity, threads, tools: { readable }, links, views };
     const mcp = new Mcp(projects, readGuides(webRoot));
+    const tokens = box ? new GitTokens(join(account, 'box')) : undefined;
+    const git = { projects, mcp, box, tokens, hooks };
+    const gitApi = { projects, tokens, port: () => editorPort };
     importReleases(releases, values.import ?? []);
 
     const editorOrigin = () => 'http://127.0.0.1:' + editorPort;
@@ -175,6 +190,8 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
         if ((!mcpRequest && !turnRequest) || request.headers.origin !== undefined) checkOrigin(request);
         const local = players.local;
         if (!local || stopping) throw new ZirbelError(503, 'The editor is unavailable.');
+        // A game's repository over git's smart HTTP, with its own credentials off a box (git-http.ts).
+        if (await gitRequest(git, request, response, url, access)) return;
         const method = request.method;
         if (turnRequest) {
           // A turn's own server: its credential names the turn, and its tool reaches that turn's folder alone.
@@ -242,19 +259,21 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
           await boxRequest(box, request, response, access, { resource, pathID, action, tail })) return;
         if (resource === 'chat' && await chatRequest(chatContext, request, response, pathID, action, tail)) return;
         if (box && resource === 'projects' && await editorsRequest(box, projects, request, response, access, url, { pathID, action, tail })) return;
+        if (resource === 'projects' && await gitRoutes(gitApi, request, response, access, url, { pathID, action, tail })) return;
+        const author = authorOf(access);
         if (resource === 'projects') {
           if (!pathID && method === 'GET') {
             reply(response, projects.summaries().filter((game) => !only || game.id === only)); return;
           }
           if (!pathID && method === 'POST') {
             const input = z.strictObject({ title: z.string().optional() }).parse(await body(request));
-            reply(response, projects.createGame(input.title), 201); return;
+            reply(response, projects.createGame(input.title, undefined, author), 201); return;
           }
           if (pathID === 'import-game' && method === 'POST') {
-            reply(response, importGameFolder(projects, await body(request, PORTABLE_FILE_LIMIT)), 201); return;
+            reply(response, importGameFolder(projects, await body(request, PORTABLE_FILE_LIMIT), author), 201); return;
           }
           if (pathID === 'import' && method === 'POST') {
-            reply(response, projects.import(await body(request, PORTABLE_FILE_LIMIT)), 201); return;
+            reply(response, projects.import(await body(request, PORTABLE_FILE_LIMIT), author), 201); return;
           }
           const projectId = safeId(pathID);
           if (!action && method === 'GET') { reply(response, projects.read(projectId)); return; }
@@ -278,7 +297,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
             reply(response, tail ? projects.preview(projectId, safeId(tail)) :
               projects.proposals(projectId, safeId(url.searchParams.get('branch') ?? 'main'))); return;
           }
-          if (action === 'proposals' && method === 'POST') { reply(response, projects.submit(projectId, await body(request)), 201); return; }
+          if (action === 'proposals' && method === 'POST') { reply(response, projects.submit(projectId, await body(request), false, author), 201); return; }
           if (action === 'discard' && method === 'POST') { projects.discard(projectId, safeId(tail)); reply(response, {}); return; }
           if (action === 'apply' && method === 'POST') {
             const { fork } = z.strictObject({ fork: id.optional() }).parse(await body(request));
@@ -286,9 +305,9 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
           }
           if (action === 'restore' && method === 'POST') {
             const input = scope.extend({ target: id }).parse(await body(request));
-            reply(response, projects.restore(projectId, input.branch, input.baseRevision, input.target)); return;
+            reply(response, projects.restore(projectId, input.branch, input.baseRevision, input.target, author)); return;
           }
-          if (await projectChat(chatContext, request, response, url, projectId, action, tail)) return;
+          if (await projectChat(chatContext, request, response, url, projectId, action, tail, author)) return;
           if (action === 'notes' && method === 'POST') { reply(response, projects.addNote(projectId, await body(request)), 201); return; }
           if (action === 'media' && method === 'POST' && !tail) {
             const { data, ...input } = attachment.omit({ id: true }).extend({ data: z.string().max(24_000_000) })
@@ -314,7 +333,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
             assertCurrent(projects.read(projectId), branch, baseRevision);
             const hash = projects.storeAsset(file);
             reply(response, projects.submit(projectId, { branch, baseRevision, label: ('Import ' + metadata.name).slice(0, 120),
-              operations: [{ op: 'addAsset', asset: { ...metadata, id: newId(), hash } }] }), 201);
+              operations: [{ op: 'addAsset', asset: { ...metadata, id: newId(), hash } }] }, false, author), 201);
             return;
           }
           if (action === 'export' && method === 'GET') {
@@ -368,7 +387,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
             reply(response, release, 200, { 'content-disposition': 'attachment; filename="zirbel-release.json"' }); return;
           }
           if (method === 'POST' && pathID === 'import') { reply(response, releases.import(await body(request, PORTABLE_FILE_LIMIT)).manifest, 201); return; }
-          if (method === 'POST' && pathID && action === 'remix') { reply(response, releases.remix(pathID), 201); return; }
+          if (method === 'POST' && pathID && action === 'remix') { reply(response, releases.remix(pathID, authorOf(access)), 201); return; }
         }
         if (resource === 'lobby' && !action) {
           if (method === 'GET' && !pathID) {
@@ -402,7 +421,8 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
         response.destroy(error instanceof Error ? error : undefined);
       });
     });
-    editor.requestTimeout = 25_000;
+    // Long enough for a push of a game's history over a slow network (git-http.ts); headers still come within 10 s.
+    editor.requestTimeout = 300_000;
     editor.headersTimeout = 10_000;
     editorPort = await listen(editor, port, box ? '::' : '127.0.0.1').catch((error: NodeJS.ErrnoException) => {
       // A box without IPv6 listens on IPv4 alone.

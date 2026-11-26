@@ -2,7 +2,8 @@
 // The top bar: the game switcher on the left, with the library and the lobby; Edit, Assets and Share on the right, and the ⋯ menu for the rest.
 import { $, action, attempt, el } from './editor-ui.ts';
 import { editorOf, ws } from './state.ts';
-import { current, edit, hasContent, leaveProject, library, loadProject, recentCards, route } from './workspace.ts';
+import { current, edit, hasContent, leaveProject, library, loadProject, recentCards, refreshProject, route } from './workspace.ts';
+import { cloneDialog, updateFromSource } from './git.ts';
 import { menuButton, panelButton, type MenuItem } from './menu.ts';
 import { agentAccessDialog, assetDialog, historyDialog, sharingDialog } from './dialogs.ts';
 import { openGame } from './library.ts';
@@ -37,6 +38,7 @@ function gameMenu(): MenuItem[] {
     { label: 'Library…', run: () => attempt(library.open) },
     { label: 'Lobby…', run: () => attempt(lobbyDialog) },
     { label: 'Import a game folder…', run: library.importFolder },
+    { label: 'Import from a git URL…', run: library.importGit },
     { label: 'Import a file…', run: library.importFile },
     'separator',
     { label: 'All threads', disabled: true, note: 'Soon' },
@@ -49,8 +51,12 @@ function moreMenu(): MenuItem[] {
   if (project) {
     items.push(
       { label: 'History', run: () => attempt(historyDialog) },
+      { label: 'Clone with git…', run: () => attempt(() => cloneDialog(project.id, project.title)) },
       { label: 'Export project', href: new URL('api/projects/' + project.id + '/export', document.baseURI).href },
     );
+    // A game imported from a git URL fetches its source again.
+    if (project.source)
+      items.push({ label: 'Update from source', run: () => attempt(() => updateFromSource(project.id, current().id, refreshProject)) });
     if (hasContent())
       items.push({
         label: 'Open game in a new window',
@@ -77,7 +83,7 @@ function renderAssets() {
   const node = $('assets');
   node.replaceChildren();
   if (!ws.project) return;
-  const list = current().assets;
+  const list = current().assets ?? [];
   if (!list.length) node.append(el('p', 'No imported assets yet.'));
   for (const asset of list) {
     const item = el('div', undefined, 'asset');

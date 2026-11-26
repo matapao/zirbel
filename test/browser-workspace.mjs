@@ -133,7 +133,8 @@ test('the game switcher and the ⋯ menu work from the keyboard', { timeout: 30_
   await menu.waitFor();
   assert.equal(await focused(), 'History');
   const items = await menu.getByRole('menuitem').allTextContents();
-  assert.deepEqual(items, ['History', 'Export project', 'Open game in a new window', 'Harnesses', 'Set up a Zirbel box…', 'Settings']);
+  assert.deepEqual(items, ['History', 'Clone with git…', 'Export project', 'Open game in a new window', 'Harnesses', 'Set up a Zirbel box…',
+    'Settings']);
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('ArrowUp');
   assert.equal(await focused(), 'Set up a Zirbel box…');

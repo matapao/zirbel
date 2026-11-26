@@ -44,11 +44,13 @@ A grant is a bearer token for one project, made in the editor (a game's More men
 | --- | --- | --- |
 | `read_project` | any | The project's id, title and branches, each with its head revision. |
 | `read_scene` | any | A branch head's revision: its id and label, the game (`html`, `maxPlayers`, `net`, `registerObjects`, and `files`, each path with its SHA-256), the imported assets, and an older project's scene. |
-| `list_revisions` | any | Every revision's id, parent, label and date, and what a restore restored. |
+| `list_revisions` | any | The revisions' ids (commit hashes), parents, labels, dates and authors, and what a restore restored. |
 | `read_file` | any | One of the game's files by its path. |
 | `write_files` | any | Stages a proposal that writes or removes files by path. |
 | `propose` | any | Stages a proposal of operations: `writeGame` with a whole page for a game without files, `addAsset` and `removeAsset`, and an older project's scene operations. |
 | `preview_proposal` | any | A staged proposal's candidate revision. |
 | `apply_proposal` | write | Applies a staged proposal as the branch's next revision. |
+
+The game is also a git repository at the editor's `/git/<project>.git`, which any grant clones and fetches with its token as a bearer token (`git -c http.extraHeader="Authorization: Bearer <grant>" clone …/git/<project>.git`). A grant with write may push to the game's branches: a push that leaves a game the editor can keep becomes the branch's next revision, and anything else is refused.
 
 A grant without write proposes: what you stage waits in the editor until the owner applies or discards it. A grant with write may also apply, so a change goes straight in. No grant reaches other projects, the editor's other parts (releases, the lobby, settings, the editor's agents), credentials or the files of the computer it runs on, and none publishes, restores, discards or makes branches: those are the owner's, in the editor.

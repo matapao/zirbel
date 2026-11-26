@@ -2,6 +2,7 @@ import { chatControl } from '../sdk/chat-control.ts';
 import type { GameDocument } from '../sdk/game.ts';
 import type { ChatUsage, Project, Revision } from '../sdk/contracts.ts';
 import type { Projects, Proposal } from './projects.ts';
+import type { Ident } from './git.ts';
 
 /** Where a turn's reply lands. proposalId: a change staged for review, which the thread shows as a card. */
 export type ChatReply = {
@@ -10,7 +11,8 @@ export type ChatReply = {
   proposalId?: string;
 };
 
-type Request = { text: string; branch: string; proposalId?: string };
+/** author: who sent the message, whose undo is theirs. */
+type Request = { text: string; branch: string; proposalId?: string; author?: Ident };
 type Draft = { title?: string; game: GameDocument };
 
 function wantsReview(text: string) {
@@ -35,7 +37,7 @@ export function applyChatControl(projects: Projects, project: Project, base: Rev
   if (!control) return undefined;
   if (control.action === 'undo') {
     if (!base.parent) { say('This is the first revision. There’s nothing to undo yet.'); return context; }
-    projects.restore(project.id, branch, base.id, base.parent);
+    projects.restore(project.id, branch, base.id, base.parent, request.author);
     say('Restored the previous revision.');
     return context;
   }
@@ -53,8 +55,8 @@ export function applyChatControl(projects: Projects, project: Project, base: Rev
 }
 
 export function startFromChat(projects: Projects, draft: Draft, text: string, message: string, usage?: ChatUsage,
-  history: ReadonlyArray<{ role: 'creator' | 'assistant'; text: string; usage?: ChatUsage }> = []): ChatReply {
-  const newProject = projects.createGame(draft.title, draft.game);
+  history: ReadonlyArray<{ role: 'creator' | 'assistant'; text: string; usage?: ChatUsage }> = [], author?: Ident): ChatReply {
+  const newProject = projects.createGame(draft.title, draft.game, author);
   for (const note of history) projects.addNote(newProject.id, { ...note, branch: 'main', references: [], attachments: [] });
   projects.addNote(newProject.id, { text, branch: 'main', role: 'creator', references: [], attachments: [] });
   projects.addNote(newProject.id, { text: message, branch: 'main', role: 'assistant', references: [], attachments: [], usage });

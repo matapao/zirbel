@@ -69,7 +69,7 @@ function normalizer() {
   const ids = new Map<string, string>();
   const text = (value: string) => value
     .replaceAll(lan ?? '\0', '<lan>')
-    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, (id) => {
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\b[0-9a-f]{40}\b/g, (id) => {
       if (!ids.has(id)) ids.set(id, '<id' + ids.size + '>');
       return ids.get(id)!;
     })

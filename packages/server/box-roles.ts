@@ -1,7 +1,8 @@
 // Who may use which of the editor's API routes (box mode). Owners, the box itself and its paired devices, may use them
-// all. An editor of one game works on that game alone: it reads it and its history, saves changes into it (proposals
-// submitted, applied, discarded or restored, its title, notes, media and assets), playtests it and shares a development
-// room of it, sees that game's rooms and the lobby's address, and gives its own agent an MCP grant for it. Any other
+// all. An editor of one game works on that game alone: it reads it and its history (a revision in full, the clone
+// command with its git token), saves changes into it (proposals submitted, applied, discarded or restored, its title,
+// notes, media and assets, an update from its source), playtests it and shares a development room of it, sees that
+// game's rooms and the lobby's address, and gives its own agent an MCP grant for it. Any other
 // route, or another game's, is refused: games, imports, releases, the lobby's offers, the box's harnesses and
 // settings, pairing, and the game's edit code and editors. The routes it may use answer it as they answer an owner.
 import { ZirbelError } from '../core/projects.ts';
@@ -28,8 +29,9 @@ function gameRoute(method: string | undefined, action: string | undefined) {
   const write = method === 'POST';
   if (!action) return read;
   if (['proposals', 'media', 'grants'].includes(action)) return read || write;
-  if (['apply', 'discard', 'restore', 'title', 'notes', 'asset', 'playtest', 'development-room'].includes(action)) return write;
-  return action === 'export' && read;
+  if (['apply', 'discard', 'restore', 'title', 'notes', 'asset', 'playtest', 'development-room', 'update-from-source'].includes(action))
+    return write;
+  return ['export', 'revisions', 'clone'].includes(action) && read;
 }
 
 function editorMay(game: string, { method, resource, pathID, action, tail }: ApiRoute, roomGame: (room: string) => string | undefined) {
