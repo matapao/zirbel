@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -23,6 +22,9 @@ type Lobby struct {
 	rooms    *Rooms
 	releases *Releases
 	file     string
+	// pair, on a box: its pairing page on the host name a device reached the
+	// lobby by, which the lobby links to for those who own the box.
+	pair func(host string) string
 
 	mu      sync.Mutex
 	offered []string             // release IDs, in the order they were offered
@@ -30,8 +32,9 @@ type Lobby struct {
 	codes   codeTries
 }
 
-// lobbyFile is lobby.json.
+// lobbyFile is lobby.json (contracts/lobby-file.schema.json).
 type lobbyFile struct {
+	Version int      `json:"version"`
 	Offered []string `json:"offered"`
 }
 
@@ -56,9 +59,11 @@ type lobbySession struct {
 type lobbyState struct {
 	Games    []lobbyGame    `json:"games"`
 	Sessions []lobbySession `json:"sessions"`
+	Pair     *string        `json:"pair"` // the box's pairing page; null elsewhere
 }
 
-var errLobbyUnreadable = errors.New("lobby.json in the data directory is not a lobby; move it aside to start with an empty one")
+// The sentence the host stops with, word for word as the Node host says it.
+var errLobbyUnreadable = errors.New("lobby.json in the data directory is not a lobby; move it aside to start with an empty one.") //nolint:staticcheck // printed as it is
 
 func NewLobby(root string, rooms *Rooms, releases *Releases) (*Lobby, error) {
 	l := &Lobby{rooms: rooms, releases: releases, file: filepath.Join(root, "lobby.json"), offered: []string{},
@@ -71,11 +76,12 @@ func NewLobby(root string, rooms *Rooms, releases *Releases) (*Lobby, error) {
 		return nil, err
 	}
 	var stored lobbyFile
-	if strictKeys(data, "offered") != nil || json.Unmarshal(data, &stored) != nil || stored.Offered == nil {
+	if decodeContract("lobby-file", data, &stored) != nil {
 		return nil, errLobbyUnreadable
 	}
+	// The schema's refinement: a release is offered once.
 	for _, id := range stored.Offered {
-		if !idPattern.MatchString(id) || slices.Contains(l.offered, id) {
+		if slices.Contains(l.offered, id) {
 			return nil, errLobbyUnreadable
 		}
 		l.offered = append(l.offered, id)
@@ -131,7 +137,7 @@ func (l *Lobby) Offer(id string, offered bool) ([]string, error) {
 		})
 		next = append(next, id)
 	}
-	data, err := jsJSON(lobbyFile{next})
+	data, err := jsJSON(lobbyFile{1, next})
 	if err != nil {
 		return nil, err
 	}
@@ -142,9 +148,9 @@ func (l *Lobby) Offer(id string, offered bool) ([]string, error) {
 	return slices.Clone(next), nil
 }
 
-// State is the lobby on the listener for access: the offered games by title,
-// and its sessions, newest first.
-func (l *Lobby) State(access string) lobbyState {
+// State is the lobby on the listener for access, reached by the host name
+// host: the offered games by title, and its sessions, newest first.
+func (l *Lobby) State(access, host string) lobbyState {
 	l.mu.Lock()
 	games := make([]lobbyGame, 0, len(l.offered))
 	for _, id := range l.offered {
@@ -157,10 +163,15 @@ func (l *Lobby) State(access string) lobbyState {
 	slices.SortStableFunc(games, func(a, b lobbyGame) int { return byTitle(a.Title, b.Title) })
 	sessions := []lobbySession{}
 	for _, room := range l.rooms.Sessions(access) {
-		sessions = append(sessions, lobbySession{room.ID, room.Release.Manifest.Title, room.players(),
+		sessions = append(sessions, lobbySession{room.Session, room.Release.Manifest.Title, room.players(),
 			room.Release.Manifest.Players.Max, isoTime(room.Started)})
 	}
-	return lobbyState{games, sessions}
+	var pair *string
+	if l.pair != nil {
+		link := l.pair(host)
+		pair = &link
+	}
+	return lobbyState{games, sessions, pair}
 }
 
 // byTitle orders titles as a reader does: case aside, then by case.
@@ -192,7 +203,7 @@ func (l *Lobby) Start(id, name, access, address string) (*Room, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	ticket, err := room.Seat(name)
+	ticket, err := room.Seat(name, "player")
 	if err != nil {
 		l.rooms.Close(room.ID)
 	}
@@ -217,6 +228,6 @@ func (l *Lobby) Join(input, name, access, address string) (*Room, string, error)
 	if room == nil {
 		return nil, "", fail(http.StatusNotFound, "No session has that code.")
 	}
-	ticket, err := room.Seat(name)
+	ticket, err := room.Seat(name, "")
 	return room, ticket, err
 }

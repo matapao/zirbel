@@ -265,6 +265,8 @@ func run() error {
 		if box, err = NewBox(account, func() int { return editorPort }); err != nil {
 			return err
 		}
+		// Those who own the box pair at the editor's /pair; the lobby links there.
+		lobby.pair = func(host string) string { return "http://" + host + portSuffix(editorPort) + "/pair" }
 	}
 	localPort, config := o.playerPort, listenerConfig{lobby: lobby}
 	if o.lan || !o.hostOnly {
@@ -279,11 +281,7 @@ func run() error {
 		// too, framed by the editor on the host name the device reached.
 		playerBind = everyInterface
 		config.box = &playerReach{hosts: boxHosts, network: onBoxNetwork, editorOrigins: func(host string) []string {
-			port := ":" + strconv.Itoa(editorPort)
-			if editorPort == 80 {
-				port = ""
-			}
-			return []string{"http://" + host + port, loopback(editorPort), "http://localhost:" + strconv.Itoa(editorPort)}
+			return []string{"http://" + host + portSuffix(editorPort), loopback(editorPort), "http://localhost:" + strconv.Itoa(editorPort)}
 		}}
 	}
 	local, err := Listen(ctx, rooms, runtimeFiles, playerBind, localPort, config)

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -72,7 +73,7 @@ func TestSessionCodesAreShortUnambiguousAndReadAsTyped(t *testing.T) {
 		}
 	}
 	for _, typed := range [][2]string{{"kq7m", "KQ7M"}, {"KQ-7M", "KQ7M"}, {" k q-7 m ", "KQ7M"}, {"kq7", ""}, {"kq7mm", ""},
-		{"KQ0M", ""}, {"KQIM", ""}, {"KQOM", ""}, {"KQ1M", ""}, {"", ""}, {"KQ_7M", ""}} {
+		{"KQ0M", ""}, {"KQIM", ""}, {"KQOM", ""}, {"KQ1M", ""}, {"", ""}, {"KQ_7M", ""}, {"kq\v7m", ""}, {"kq7\u017f", ""}, {"\tk\nq\f7\rm", "KQ7M"}} {
 		if got := sessionCode(typed[0]); got != typed[1] {
 			t.Errorf("sessionCode(%q) = %q, want %q", typed[0], got, typed[1])
 		}
@@ -121,18 +122,19 @@ func TestTheLobbyOffersOneReleasePerGameAndKeepsTheList(t *testing.T) {
 	offer("other", false, "second")
 	offer("other", true, "second", "other")
 	data, err := os.ReadFile(lobby.file)
-	if err != nil || string(data) != `{"offered":["second","other"]}` {
+	if err != nil || string(data) != `{"version":1,"offered":["second","other"]}` {
 		t.Fatalf("lobby.json: %s %v", data, err)
 	}
 	again, err := NewLobby(filepath.Dir(lobby.file), rooms, lobby.releases)
 	if err != nil || !slices.Equal(again.Offered(), []string{"second", "other"}) {
 		t.Fatalf("read back: %v %v", again, err)
 	}
-	for _, broken := range []string{`[]`, `{"offered":null}`, `{"offered":["Bad ID"]}`, `{"offered":["a","a"]}`, `{"offered":[],"x":1}`, `{`} {
+	for _, broken := range []string{`[]`, `{"offered":[]}`, `{"version":2,"offered":[]}`, `{"version":1,"offered":null}`, `{"version":1,"offered":["Bad ID"]}`,
+		`{"version":1,"offered":["a","a"]}`, `{"version":1,"offered":[],"x":1}`, `{"offered":"none"}`, `{`} {
 		if err := os.WriteFile(lobby.file, []byte(broken), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := NewLobby(filepath.Dir(lobby.file), rooms, lobby.releases); err == nil {
+		if _, err := NewLobby(filepath.Dir(lobby.file), rooms, lobby.releases); !errors.Is(err, errLobbyUnreadable) {
 			t.Errorf("%s was read as a lobby", broken)
 		}
 	}
@@ -164,18 +166,18 @@ func TestTheLobbyStartsSessionsAndSeatsGuestsByCode(t *testing.T) {
 		t.Fatalf("a one-player session: %+v %v", solo, err)
 	}
 
-	state := lobby.State("lan")
+	state := lobby.State("lan", "")
 	if len(state.Games) != 2 || state.Games[0].Title != "Apple Walk" || state.Games[0].Multiplayer || !state.Games[1].Multiplayer ||
 		state.Games[1].Players != (playerRange{1, 2}) {
 		t.Fatalf("games %+v", state.Games)
 	}
-	if len(state.Sessions) != 1 || state.Sessions[0] != (lobbySession{room.ID, "zebra Garden", 1, 2, isoTime(room.Started)}) {
+	if len(state.Sessions) != 1 || state.Sessions[0] != (lobbySession{room.Session, "zebra Garden", 1, 2, isoTime(room.Started)}) {
 		t.Fatalf("sessions %+v", state.Sessions)
 	}
 	if listed, _ := json.Marshal(state); strings.Contains(string(listed), room.Code) || strings.Contains(string(listed), "Ada") {
 		t.Fatalf("the lobby told a code or a name: %s", listed)
 	}
-	if len(lobby.State("local").Sessions) != 0 {
+	if len(lobby.State("local", "").Sessions) != 0 {
 		t.Fatal("a LAN session was listed on the loopback listener")
 	}
 
@@ -202,7 +204,7 @@ func TestTheLobbyStartsSessionsAndSeatsGuestsByCode(t *testing.T) {
 	if !strings.Contains(string(watcher.messages[0]), `"role":"spectator"`) {
 		t.Fatalf("the third guest: %s", watcher.messages[0])
 	}
-	if lobby.State("lan").Sessions[0].Players != 2 {
+	if lobby.State("lan", "").Sessions[0].Players != 2 {
 		t.Fatal("the session does not count its players")
 	}
 	// Three more spectators beside the one watching fill the room.
@@ -253,13 +255,21 @@ func TestLobbySessionsHaveLimits(t *testing.T) {
 	if _, _, err := lobby.Start("shared", "Ada", "lan", "10.0.0.2"); statusOf(err) != http.StatusTooManyRequests {
 		t.Fatalf("a fourth from one address: %v", err)
 	}
+	// The host's own loopback is its owner's: held to the host's limit alone.
 	for i := sessionsPerGuest; i < lobbySessions; i++ {
-		if _, _, err := lobby.Start("shared", "Bo", "lan", "10.0.1."+strconv.Itoa(i)); err != nil {
+		if _, _, err := lobby.Start("shared", "Bo", "local", "127.0.0.1"); err != nil {
 			t.Fatalf("session %d: %v", i+1, err)
 		}
 	}
-	if _, _, err := lobby.Start("shared", "Cy", "lan", "10.0.2.1"); statusOf(err) != http.StatusTooManyRequests {
-		t.Fatalf("the seventeenth: %v", err)
+	for _, from := range []string{"10.0.2.1", "127.0.0.1"} {
+		if _, _, err := lobby.Start("shared", "Cy", "lan", from); statusOf(err) != http.StatusTooManyRequests ||
+			err.Error() != "The lobby is full. Join a session, or try again when one ends." {
+			t.Fatalf("the seventeenth from %s: %v", from, err)
+		}
+	}
+	if !isLoopbackAddress("::1") || !isLoopbackAddress("127.4.5.6") || !isLoopbackAddress(plainAddress("::ffff:127.0.0.1")) ||
+		isLoopbackAddress("10.0.0.2") || isLoopbackAddress("::ffff:10.0.0.2") {
+		t.Fatal("loopback is not read as Node reads it")
 	}
 	// The owner's own rooms are not lobby sessions.
 	release, err := lobby.releases.Read("shared")

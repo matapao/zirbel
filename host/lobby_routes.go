@@ -1,20 +1,23 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
+
+	"zirbel/contracts"
 )
 
-// The lobby's routes: its page and API on every player listener, public on
-// that listener's network, and the owner's side in the editor API.
+// The lobby's routes, mirroring packages/server/lobby-routes.ts: its page and
+// API on every player listener, public on that listener's network, and the
+// owner's side in the editor API.
 
-// lobbyPolicy is the lobby page's, like the player page's: its own scripts and
-// styles, no inline script, and nothing may frame it.
-const lobbyPolicy = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
-	"connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+// lobbyPolicy is the lobby page's: it runs its own script and style alone,
+// and talks only to its listener.
+const lobbyPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
+	"base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 
-// seatLink is the player link that seats a guest with the ticket the lobby gave.
+// seatLink is the player page in a room, holding a seat's one-time ticket: it
+// goes straight in.
 func seatLink(base string, room *Room, ticket string) string {
 	return base + "/join/" + room.ID + "#seat=" + ticket
 }
@@ -24,18 +27,22 @@ func seatLink(base string, room *Room, ticket string) string {
 func (l *Listener) serveLobby(w http.ResponseWriter, r *http.Request, pathname string) (bool, error) {
 	get, post := r.Method == http.MethodGet, r.Method == http.MethodPost
 	name := strings.TrimPrefix(pathname, "/")
-	switch {
-	case get && pathname == "/":
-		return true, l.lobbyFile(w, r, "lobby.html")
-	case get && name != "lobby.html" && l.lobbyFiles[name] != nil:
-		return true, l.lobbyFile(w, r, name)
-	case !strings.HasPrefix(pathname, "/lobby/"):
+	if pathname == "/" {
+		name = "lobby.html"
+	}
+	if file := l.lobbyFiles[name]; get && file != nil && (pathname == "/" || name != "lobby.html") {
+		if name == "lobby.html" {
+			w.Header().Set("content-security-policy", lobbyPolicy)
+		}
+		sendFile(w, r, typeFor(name), "no-cache", file)
+		return true, nil
+	}
+	if !strings.HasPrefix(pathname, "/lobby/") {
 		return false, nil
 	}
-	w.Header().Set("content-security-policy", lobbyPolicy)
 	switch {
 	case get && pathname == "/lobby/state":
-		reply(w, http.StatusOK, l.config.lobby.State(l.access()))
+		reply(w, http.StatusOK, l.config.lobby.State(l.access(), hostnameOf(r.Host)))
 		return true, nil
 	case post && pathname == "/lobby/sessions":
 		return true, l.startSession(w, r)
@@ -45,58 +52,28 @@ func (l *Listener) serveLobby(w http.ResponseWriter, r *http.Request, pathname s
 	return true, fail(http.StatusNotFound, "Lobby route does not exist.")
 }
 
-func (l *Listener) lobbyFile(w http.ResponseWriter, r *http.Request, name string) error {
-	file := l.lobbyFiles[name]
-	if file == nil {
-		return fail(http.StatusNotFound, "Open the invitation link from the host.")
-	}
-	w.Header().Set("content-security-policy", lobbyPolicy)
-	sendFile(w, r, typeFor(name), "no-cache", file)
-	return nil
-}
-
-// lobbyInput reads a lobby request: a strict object of the two keys, the
-// first a string (the release or the code), and the player's name, as the
-// player page's join form takes it.
-func lobbyInput(r *http.Request, key string) (value, name string, err error) {
+// lobbyInput reads a lobby request from this listener's own page against its
+// contract: lobby-start or lobby-join.
+func lobbyInput(r *http.Request, contract string, input any) error {
 	if err := checkOrigin(r, true); err != nil {
-		return "", "", err
+		return err
 	}
 	data, err := readBody(r, 4096)
 	if err != nil {
-		return "", "", err
+		return err
 	}
-	fields, err := objectFields(data)
-	if err != nil {
-		return "", "", err
-	}
-	if err := fields.only(key, "name"); err != nil {
-		return "", "", err
-	}
-	value, present, err := fields.text(key)
-	if err != nil || !present {
-		return "", "", fail(http.StatusBadRequest, key+" · Invalid input: expected string")
-	}
-	raw, present, err := fields.text("name")
-	if err != nil || !present {
-		return "", "", fail(http.StatusBadRequest, "name · Invalid input: expected string")
-	}
-	name, err = trimmed("name", raw, 24)
-	return value, name, err
+	return decodeContract(contract, data, input)
 }
 
 // guest is the address a lobby request came from, as its limits count it.
 func guest(r *http.Request) string { return plainAddress(remoteAddress(r)) }
 
 func (l *Listener) startSession(w http.ResponseWriter, r *http.Request) error {
-	release, name, err := lobbyInput(r, "release")
-	if err != nil {
+	var input struct{ Release, Name string }
+	if err := lobbyInput(r, "lobby-start", &input); err != nil {
 		return err
 	}
-	if safeID(release) != nil {
-		return fail(http.StatusBadRequest, "release · Invalid ID")
-	}
-	room, ticket, err := l.config.lobby.Start(release, name, l.access(), guest(r))
+	room, ticket, err := l.config.lobby.Start(input.Release, contracts.Trim(input.Name), l.access(), guest(r))
 	if err != nil {
 		return err
 	}
@@ -112,11 +89,11 @@ func (l *Listener) startSession(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (l *Listener) joinSession(w http.ResponseWriter, r *http.Request) error {
-	code, name, err := lobbyInput(r, "code")
-	if err != nil {
+	var input struct{ Code, Name string }
+	if err := lobbyInput(r, "lobby-join", &input); err != nil {
 		return err
 	}
-	room, ticket, err := l.config.lobby.Join(code, name, l.access(), guest(r))
+	room, ticket, err := l.config.lobby.Join(input.Code, contracts.Trim(input.Name), l.access(), guest(r))
 	if err != nil {
 		return err
 	}
@@ -137,14 +114,13 @@ func (s *EditorServer) serveLobby(w http.ResponseWriter, r *http.Request, pathID
 			return err
 		}
 		var input struct {
-			Release *string `json:"release"`
-			Offered *bool   `json:"offered"`
+			Release string
+			Offered bool
 		}
-		if strictKeys(data, "release", "offered") != nil || json.Unmarshal(data, &input) != nil ||
-			input.Release == nil || input.Offered == nil || safeID(*input.Release) != nil {
-			return fail(http.StatusBadRequest, "Invalid lobby request.")
+		if err := decodeContract("lobby-offer", data, &input); err != nil {
+			return err
 		}
-		list, err := s.lobby.Offer(*input.Release, *input.Offered)
+		list, err := s.lobby.Offer(input.Release, input.Offered)
 		return send(w, http.StatusOK, map[string][]string{"offered": list}, err)
 	}
 	return fail(http.StatusNotFound, "Editor route does not exist.")

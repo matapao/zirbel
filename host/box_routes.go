@@ -145,11 +145,15 @@ func remoteAddress(r *http.Request) string {
 }
 
 func (b *Box) pairLink(code string) string {
-	port := ""
-	if b.port() != 80 {
-		port = ":" + strconv.Itoa(b.port())
+	return "http://" + boxName() + portSuffix(b.port()) + "/pair?code=" + url.QueryEscape(code)
+}
+
+// portSuffix is how an http URL names port: not at all for 80.
+func portSuffix(port int) string {
+	if port == 80 {
+		return ""
 	}
-	return "http://" + boxName() + port + "/pair?code=" + url.QueryEscape(code)
+	return ":" + strconv.Itoa(port)
 }
 
 // door decides a request's access, or answers it itself (handled).

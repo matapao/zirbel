@@ -19,6 +19,7 @@ type Room struct {
 	Access        string // "local" or "lan"
 	Development   bool   // a LAN room pinned to an editor revision
 	Code          string // a session's code (sessions.go); empty for other rooms
+	Session       string // the lobby's name for it: for its list alone, never enough to join
 	Started       time.Time
 	starter       string // the address that started it from the lobby; empty for the owner's rooms
 
@@ -37,7 +38,7 @@ type Room struct {
 func newRoom(release *Release, solo bool, access string, development bool) *Room {
 	now := time.Now()
 	return &Room{
-		ID: hex.EncodeToString(randomBytes(6)), Invite: secret(), DocumentKey: secret(),
+		ID: hex.EncodeToString(randomBytes(6)), Session: hex.EncodeToString(randomBytes(6)), Invite: secret(), DocumentKey: secret(),
 		InviteExpires: now.Add(inviteLifetime), Release: release, Solo: solo, Access: access, Development: development, Started: now,
 		sim: newSimulation(release, solo), seats: map[string]*seat{}, pending: map[string]ticket{}, activity: now,
 		relay: relayRoom{seats: map[byte]*relaySeat{}},
@@ -157,32 +158,26 @@ func (r *Room) Reserve(invite, name, role string) (string, error) {
 		return "", fail(http.StatusForbidden, "This is a local playtest.")
 	}
 	r.prune()
-	if !r.free(role) {
-		if role == "player" {
-			return "", fail(http.StatusConflict, "All player seats are reserved.")
-		}
-		return "", fail(http.StatusConflict, "The spectator seats are full.")
-	}
-	return r.hold(name, role, ticketLifetime), nil
+	return r.hold(name, role, ticketLifetime)
 }
 
-// Seat reserves a seat for a guest the lobby sends in, without the
-// invitation, which may have expired: a player's while there is one, else a
-// spectator's.
-func (r *Room) Seat(name string) (string, error) {
+// Seat holds a seat for someone the lobby lets in, without the invitation
+// (which may have expired): role, or when it is empty a player's while one is
+// free and else a spectator's. Its ticket is a one-time credential.
+func (r *Room) Seat(name, role string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
 		return "", fail(http.StatusNotFound, "This room has closed.")
 	}
 	r.prune()
-	if r.free("player") {
-		return r.hold(name, "player", seatTicketLifetime), nil
+	if role == "" {
+		role = "spectator"
+		if r.Solo || r.free("player") {
+			role = "player"
+		}
 	}
-	if !r.Solo && r.free("spectator") {
-		return r.hold(name, "spectator", seatTicketLifetime), nil
-	}
-	return "", fail(http.StatusConflict, "This session is full.")
+	return r.hold(name, role, seatTicketLifetime)
 }
 
 // free reports a seat of role that is neither taken nor reserved.
@@ -196,12 +191,18 @@ func (r *Room) free(role string) bool {
 	return r.used(role)+held < r.capacity(role)
 }
 
-// hold reserves a seat of role for name: the ticket that takes it.
-func (r *Room) hold(name, role string, lifetime time.Duration) string {
+// hold reserves a free seat of role for name: the ticket that takes it.
+func (r *Room) hold(name, role string, lifetime time.Duration) (string, error) {
+	if !r.free(role) {
+		if role == "player" {
+			return "", fail(http.StatusConflict, "All player seats are reserved.")
+		}
+		return "", fail(http.StatusConflict, "The spectator seats are full.")
+	}
 	key := secret()
 	r.pending[key] = ticket{name, role, time.Now().Add(lifetime)}
 	r.activity = time.Now()
-	return key
+	return key, nil
 }
 
 // players counts the player seats taken.

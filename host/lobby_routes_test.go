@@ -58,8 +58,17 @@ func TestTheLobbyIsServedOnPlayerListeners(t *testing.T) {
 		!strings.HasPrefix(got.header.Get("content-type"), "text/html") || got.header.Get("x-content-type-options") != "nosniff" {
 		t.Fatalf("the page: %+v", got)
 	}
-	if got := get("/lobby.js"); got.status != http.StatusOK || !strings.Contains(got.header.Get("content-type"), "javascript") {
+	if got := get("/lobby.js"); got.status != http.StatusOK || got.header.Get("content-type") != "application/javascript; charset=utf-8" ||
+		got.header.Get("cache-control") != "no-cache" || got.header.Get("content-security-policy") != "" {
 		t.Fatalf("its script: %+v", got)
+	}
+	if got := call(t, l, http.MethodGet, host, "/", guest, "", map[string]string{"if-none-match": page.ETag}); got.status != http.StatusNotModified {
+		t.Fatalf("the page again: %+v", got)
+	}
+	for _, path := range []string{"/lobby.html", "/lobby/", "/lobby/state/more"} {
+		if got := get(path); got.status != http.StatusNotFound {
+			t.Errorf("%s: %+v", path, got)
+		}
 	}
 	if got := call(t, l, http.MethodGet, host, "/", "203.0.113.5:5000", "", nil); got.status != http.StatusForbidden {
 		t.Fatalf("an address off the LAN: %+v", got)
@@ -77,7 +86,7 @@ func TestTheLobbyIsServedOnPlayerListeners(t *testing.T) {
 		Link string
 	}
 	if json.Unmarshal([]byte(started.body), &session) != nil || started.status != http.StatusCreated || session.Code == nil ||
-		started.header.Get("cache-control") != "no-store" || started.header.Get("content-security-policy") != lobbyPolicy {
+		started.header.Get("cache-control") != "no-store" || started.header.Get("x-content-type-options") != "nosniff" {
 		t.Fatalf("a multiplayer start: %+v", started)
 	}
 	room := rooms.Session(*session.Code, "lan")
@@ -98,11 +107,17 @@ func TestTheLobbyIsServedOnPlayerListeners(t *testing.T) {
 	}
 
 	state := get("/lobby/state")
-	if state.status != http.StatusOK || state.header.Get("cache-control") != "no-store" || strings.Contains(state.body, *session.Code) ||
-		strings.Contains(state.body, "Ada") || !strings.Contains(state.body, `"sessions":[{"id":"`+room.ID+`","title":"Garden","players":0,"max":2,"started":"`) ||
-		!strings.Contains(state.body, `"games":[{"release":"shared","title":"Garden","players":{"min":1,"max":2},"multiplayer":true},`+
-			`{"release":"alone","title":"Walk","players":{"min":1,"max":1},"multiplayer":false}]`) {
+	// Neither the code, the room, a ticket nor a name: the session's own id alone.
+	if state.status != http.StatusOK || state.header.Get("cache-control") != "no-store" || room.Session == room.ID ||
+		!strings.Contains(state.body, `"sessions":[{"id":"`+room.Session+`","title":"Garden","players":0,"max":2,"started":"`) ||
+		!strings.HasPrefix(state.body, `{"games":[{"release":"shared","title":"Garden","players":{"min":1,"max":2},"multiplayer":true},`+
+			`{"release":"alone","title":"Walk","players":{"min":1,"max":1},"multiplayer":false}],`) || !strings.HasSuffix(state.body, `,"pair":null}`+"\n") {
 		t.Fatalf("the state: %+v", state)
+	}
+	for _, secret := range []string{*session.Code, room.ID, ticket, "Ada"} {
+		if strings.Contains(state.body, secret) {
+			t.Errorf("the state tells %s", secret)
+		}
 	}
 
 	typed := strings.ToLower((*session.Code)[:2]) + "-" + (*session.Code)[2:]
@@ -114,11 +129,24 @@ func TestTheLobbyIsServedOnPlayerListeners(t *testing.T) {
 		!strings.Contains(got.body, "No session has that code.") {
 		t.Fatalf("a wrong code: %+v", got)
 	}
+	// Refused input is no wrong code: ten of each, and the right code still joins.
 	for _, body := range []string{`{"code":"ZZZZ"}`, `{"code":"ZZZZ","name":"   "}`, `{"code":"ZZZZ","name":"` + strings.Repeat("x", 25) + `"}`,
-		`{"code":5,"name":"Cy"}`, `{"code":"ZZZZ","name":"Cy","role":"player"}`, `[]`, `{"code":null,"name":"Cy"}`} {
-		if got := post("/lobby/join", body, origin); got.status != http.StatusBadRequest {
-			t.Errorf("%s: %+v", body, got)
+		`{"code":5,"name":"Cy"}`, `{"code":"ZZZZ","name":"Cy","role":"player"}`, `[]`, `{"code":null,"name":"Cy"}`,
+		`{"code":"` + strings.Repeat("Z", 17) + `","name":"Cy"}`} {
+		for range wrongSessionCodes {
+			if got := post("/lobby/join", body, origin); got.status != http.StatusBadRequest {
+				t.Fatalf("%s: %+v", body, got)
+			}
 		}
+	}
+	if got := post("/lobby/join", `{"code":"`+*session.Code+`","name":"Di"}`, origin); got.status != http.StatusOK {
+		t.Fatalf("the right code after refused input: %+v", got)
+	}
+	if got := post("/lobby/join", `{"code":"ZZZZ","name":"Cy"}`, map[string]string{"origin": "http://" + host, "content-type": "text/plain"}); got.status != http.StatusUnsupportedMediaType {
+		t.Fatalf("a body that isn't JSON: %+v", got)
+	}
+	if got := post("/lobby/sessions", `{"release":"shared","name":"`+strings.Repeat("x", 4096)+`"}`, origin); got.status != http.StatusRequestEntityTooLarge {
+		t.Fatalf("a body over 4096 bytes: %+v", got)
 	}
 	if got := post("/lobby/sessions", `{"release":"Not an ID","name":"Cy"}`, origin); got.status != http.StatusBadRequest {
 		t.Fatalf("a release that is no ID: %+v", got)
@@ -214,6 +242,17 @@ func TestABoxSendsDevicesThatArentPairedToTheLobby(t *testing.T) {
 	}
 	if _, handled := door("/", "zirbel.local", "127.0.0.1:5000"); handled {
 		t.Fatal("the box itself was sent to the lobby")
+	}
+
+	// The lobby there links to pairing, on the editor's port and the name the device asked by.
+	lobby, rooms, _ := testLobby(t)
+	for port, want := range map[int]string{8080: "http://[fd00::2]:8080/pair", 80: "http://[fd00::2]/pair"} {
+		lobby.pair = func(host string) string { return "http://" + host + portSuffix(port) + "/pair" }
+		l := &Listener{rooms: rooms, port: 4174, config: listenerConfig{lan: true, lobby: lobby,
+			box: &playerReach{hosts: func() []string { return []string{"zirbel.local", "[fd00::2]"} }, network: onBoxNetwork}}}
+		if got := call(t, l, http.MethodGet, "[fd00::2]:4174", "/lobby/state", "[fd00::5]:5000", "", nil); got.body != `{"games":[],"sessions":[],"pair":"`+want+`"}`+"\n" {
+			t.Errorf("the pairing link with the editor on %d: %+v", port, got)
+		}
 	}
 
 	// The LAN player listener on a box answers its names and IPv6 network.
