@@ -20,6 +20,8 @@ class HostLink:
         self.path, self.opened, self.message, self.closed, self.log = path, opened, message, closed, log
         self.sock: socket.socket | None = None
         self.reader = wire.Reader()
+        # Why the last connection failed, said once until it changes.
+        self.failure = ""
 
     @property
     def connected(self) -> bool:
@@ -33,10 +35,13 @@ class HostLink:
         sock.settimeout(SEND_SECONDS)
         try:
             sock.connect(self.path)
-        except OSError:
+        except OSError as error:
             sock.close()
+            if error.strerror != self.failure:
+                self.failure = error.strerror or str(error)
+                self.log(f"The host's socket at {self.path} doesn't answer yet: {self.failure}.")
             return False
-        self.sock, self.reader = sock, wire.Reader()
+        self.sock, self.reader, self.failure = sock, wire.Reader(), ""
         self.log("Connected to the host.")
         self.opened()
         return self.sock is not None
