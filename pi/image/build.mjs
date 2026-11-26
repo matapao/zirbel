@@ -99,10 +99,18 @@ function stage(from, to, name, args, mounts = {}) {
 }
 
 const base = path.join(out, `zirbel-base-${values.target}.img`);
-if (values['rebuild-base'] || !fs.existsSync(base)) {
+// What the base stage is made from, beside it: a base made from another recipe (a package added to chroot-base.sh,
+// another country or key) is made again rather than reused as it is.
+const recipe = createHash('sha256').update(JSON.stringify([values.country, fs.readFileSync(key, 'utf8'),
+  ...['provision.sh', 'chroot-base.sh', 'files/sshd.conf'].map((file) => fs.readFileSync(path.join(HERE, file), 'utf8'))])).digest('hex');
+const recipeFile = base + '.recipe';
+const current = fs.existsSync(base) && fs.existsSync(recipeFile) && fs.readFileSync(recipeFile, 'utf8').trim() === recipe;
+if (values['rebuild-base'] || !current) {
+  if (fs.existsSync(base) && !values['rebuild-base']) console.log('The base was made from another recipe: making it again.');
   const building = base + '.building';
   stage(await osImage(), building, 'base', [values.country, '/tmp/zirbel-build/key.pub']);
   fs.renameSync(building, base);
+  fs.writeFileSync(recipeFile, recipe + '\n');
 }
 if (values['base-only']) process.exit(0);
 
