@@ -71,8 +71,6 @@ const config = {
     type: 'distribution',
     identity,
     notarize: !dir,
-    // What macOS shows when "Set up a Zirbel box" first uses Bluetooth.
-    extendInfo: { NSBluetoothAlwaysUsageDescription: 'Zirbel uses Bluetooth to put a Zirbel box on your Wi-Fi.' },
   },
   publish: null,
 };

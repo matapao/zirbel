@@ -232,6 +232,6 @@ export async function openBoxSettings() {
       el('small', 'Valid until ' + new Date(code.expiresAt).toLocaleTimeString() + ', for one device.'));
   }), pairing, el('h3', 'Players'), ...await lobbyAddress(lobby), el('h3', 'Network'), ownWifi(box, wifi), action('Change Wi-Fi', async () => {
     await api('box/setup', { requested: true });
-    inform('The box opens its Wi-Fi setup: over Bluetooth, and as the “Zirbel setup” hotspot.');
+    inform('The box opens its Wi-Fi setup: on this device, join the Wi-Fi “Zirbel setup …”, then choose a network or keep the box on its own Wi-Fi.');
   }));
 }

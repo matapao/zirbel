@@ -142,11 +142,11 @@ test('the game switcher and the ⋯ menu work from the keyboard', { timeout: 30_
   await page.getByRole('heading', { name: 'History' }).waitFor();
   await page.getByText('Current branch').waitFor();
   await page.keyboard.press('Escape');
-  // Setting up a box: over Bluetooth where the browser has it, else by the box's setup hotspot.
+  // Setting up a box: through its own Wi-Fi, "Zirbel setup XXXX", and the page it opens.
   await more.click();
   await menu.getByRole('menuitem', { name: 'Set up a Zirbel box…' }).click();
   await page.getByRole('heading', { name: 'Set up a Zirbel box' }).waitFor();
-  assert.match(await page.locator('#dialog-body').innerText(), /Find the box|can’t use Bluetooth/);
+  assert.match(await page.locator('#dialog-body').innerText(), /Join that Wi-Fi .* setup page opens/);
   await page.keyboard.press('Escape');
 
   await switcher.focus();

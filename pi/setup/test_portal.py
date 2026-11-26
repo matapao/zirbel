@@ -1,6 +1,7 @@
 """The setup hotspot's page (portal.py) and the editor calls the setup makes (editor.py): forms read as a network takes
 them, names escaped, the pairing code shown before the box leaves the hotspot, the box's own Wi-Fi with its password
-shown before the box makes it, and a request that goes when setup does."""
+shown before the box makes it, the hotspot up at once and back after a failed join, and a request that goes when setup
+does."""
 
 import io
 import json
@@ -19,8 +20,8 @@ from unittest import mock
 import editor
 import own_network
 import portal
-from improv import Network
 from own_network import Credentials
+from portal import Network
 from test_own_network import FakeNetworkManager
 
 NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -78,7 +79,9 @@ class Forms(unittest.TestCase):
 
     def test_the_boxs_own_wifi_is_offered_beside_the_networks_with_its_password_before_it_is_made(self):
         self.assertNotIn("action=/own", portal.choose_page("Zirbel-3456", []).decode())
-        self.assertIn("Make the box's own Wi-Fi", portal.choose_page("Zirbel-3456", [], own=True).decode())
+        offer = portal.choose_page("Zirbel-3456", [], own=True).decode()
+        self.assertIn("or keep the box on its own Wi-Fi", offer)
+        self.assertIn("Make the box's own Wi-Fi", offer)
         pairing = portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair?code=ABCD-EFGH")
         ready = portal.own_page("Zirbel-3456", OWN, pairing, token="tok").decode()
         self.assertIn("Zirbel &lt;3F2A&gt;", ready)
@@ -97,10 +100,9 @@ class Forms(unittest.TestCase):
         self.assertIn("http://10.42.0.1", portal.own_page("Zirbel-3456", OWN, None).decode())
 
     def test_a_link_moves_to_the_boxs_own_address(self):
-        self.assertEqual(editor.at("http://zirbel.local/pair?code=ABCD-EFGH", "192.168.1.20"),
-                         "http://192.168.1.20/pair?code=ABCD-EFGH")
-        self.assertEqual(editor.at("http://zirbel.local:8080/pair", "fd00::5"), "http://[fd00::5]:8080/pair")
-        self.assertEqual(editor.at("http://zirbel.local/pair", None), "http://zirbel.local/pair")
+        self.assertEqual(portal.at("http://zirbel.local/pair?code=ABCD-EFGH", "10.42.0.1"),
+                         "http://10.42.0.1/pair?code=ABCD-EFGH")
+        self.assertEqual(portal.at("http://zirbel.local:8080/pair", "fd00::5"), "http://[fd00::5]:8080/pair")
 
 
 class Server(unittest.TestCase):
@@ -187,6 +189,32 @@ class Server(unittest.TestCase):
         finally:
             offered.stop()
             bare.stop()
+
+
+class Hotspot(unittest.TestCase):
+    def test_the_hotspot_comes_up_at_once_and_again_after_a_failed_join_never_while_the_radio_is_busy(self):
+        import zirbel_setup
+
+        setup = object.__new__(zirbel_setup.Setup)
+        started, asked = [], []
+        setup.nm = types.SimpleNamespace(hotspot_up=lambda ssid: asked.append(ssid) or "active")
+        setup.portal = types.SimpleNamespace(start=started.append, error="")
+        setup.busy, setup.hotspot, setup.hotspot_ssid = True, None, "Zirbel setup 3456"
+        with mock.patch.dict("sys.modules", {"network": types.SimpleNamespace(HOTSPOT_ADDRESS="10.42.0.1")}), \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as said:
+            setup._hotspot_up()
+            self.assertEqual(asked, [], "the radio is joining a network")
+            setup.busy = False
+            setup._hotspot_up()
+            self.assertEqual((asked, started, setup.hotspot), (["Zirbel setup 3456"], ["10.42.0.1"], "active"))
+            setup._hotspot_up()
+            self.assertEqual(len(asked), 1, "a hotspot that is up stays as it is")
+            setup.busy, setup.hotspot = True, None  # the join took the hotspot down, and failed
+            setup._failed(b"Home", "")
+            self.assertEqual(len(asked), 2)
+            self.assertFalse(setup.busy)
+        self.assertIn("couldn't join Home", setup.portal.error)
+        self.assertIn("The setup hotspot Zirbel setup 3456 is up.", said.getvalue())
 
 
 class Editor(unittest.TestCase):

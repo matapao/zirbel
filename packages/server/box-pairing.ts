@@ -2,7 +2,7 @@
 // lives in memory for ten minutes and pairs one device. A session is a cookie of 32 random bytes; the account folder
 // keeps only its SHA-256 (box/paired.json), with a label for the device and when it was paired and last seen. A box
 // no device has ever paired with may be claimed once, by the first device on its network (a box set up over Ethernet
-// has no Bluetooth or hotspot to hand a code over).
+// has no setup page to hand a code over).
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

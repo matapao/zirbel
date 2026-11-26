@@ -30,8 +30,7 @@ touch /run/zirbel-report
   curl -s -o /dev/null -m 8 -w "internet: HTTP %{http_code} in %{time_total}s\n" https://downloads.raspberrypi.com/ 2>&1
   echo "== firewall tables"; nft list tables 2>&1
   echo "== radio switches"; rfkill list 2>&1
-  echo "== Bluetooth"; bluetoothctl show 2>&1 | grep -E "Controller|Powered|Discoverable|Pairable|Alias|PowerState"
-  echo "== services"; systemctl is-active zirbel zirbel-setup bluetooth NetworkManager avahi-daemon ssh | paste -sd' '
+  echo "== services"; systemctl is-active zirbel zirbel-setup NetworkManager avahi-daemon ssh | paste -sd' '
   systemctl --failed --no-legend --no-pager
   echo "== listening"; ss -ltnu | head -20
   echo "== setup service, this boot"; journalctl -u zirbel-setup -b --no-pager -o short-monotonic | tail -60

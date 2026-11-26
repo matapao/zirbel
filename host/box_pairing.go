@@ -24,7 +24,7 @@ import (
 // of 32 random bytes; the account folder keeps only its SHA-256 (box/paired.json),
 // with a label for the device and when it was paired and last seen. A box no
 // device has ever paired with may be claimed once, by the first device on its
-// network (a box set up over Ethernet has no Bluetooth or hotspot for a code).
+// network (a box set up over Ethernet has no setup page for a code).
 
 // codeAlphabet is Crockford's base32: no I, L, O or U, which read as others.
 const codeAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"

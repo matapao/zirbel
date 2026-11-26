@@ -6,13 +6,18 @@ import { sleep, until } from './support.js';
 
 const windows = (app: ElectronApplication) => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
 
-/** The page has no Node and no <webview>, its renderer runs in the system's sandbox, and no preload is registered. */
+/** The page has no Node, no Web Bluetooth and no <webview>, its renderer runs in the system's sandbox, and no preload is
+ *  registered. */
 export async function checkHardening(app: ElectronApplication, page: Page) {
   const globals = await page.evaluate(() => {
     document.body.append(Object.assign(document.createElement('webview'), { src: 'https://example.com/' }));
-    return [typeof require, typeof process, typeof module, typeof Buffer];
+    return [typeof require, typeof process, typeof module, typeof Buffer, typeof Reflect.get(navigator, 'bluetooth')];
   });
-  assert.deepEqual(globals, ['undefined', 'undefined', 'undefined', 'undefined'], 'no Node globals in the page');
+  assert.deepEqual(
+    globals,
+    ['undefined', 'undefined', 'undefined', 'undefined', 'undefined'],
+    'no Node globals in the page, and no Web Bluetooth',
+  );
   await sleep(500);
   const renderer = await app.evaluate(({ app: electronApp, session, webContents }, url) => {
     const contents = webContents.getAllWebContents();

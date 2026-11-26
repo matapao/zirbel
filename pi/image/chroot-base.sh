@@ -1,7 +1,7 @@
 #!/bin/bash
 # The base stage, in the image's own root (provision.sh): what a Zirbel box runs beside Raspberry Pi OS Lite.
 #   chroot-base.sh COUNTRY SSH_KEY_FILE
-# Every box gets Bluetooth setup's Python bindings, and:
+# Every box gets the Python bindings its Wi-Fi setup service uses (D-Bus and GLib, for NetworkManager), and:
 # - Two users: `zirbel` runs the editor (and the harnesses) and can't use sudo; `admin` is for maintenance over SSH,
 #   with the given public key only.
 # - The Wi-Fi country, which Wi-Fi needs before it turns on, and the host name `zirbel` (zirbel.local).

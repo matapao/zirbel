@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from portal import Pairing, at  # noqa: F401 - at is the setup's too
+from portal import Pairing
 
 EDITOR = os.environ.get("ZIRBEL_EDITOR_URL", "http://127.0.0.1").rstrip("/")
 REQUEST = Path(os.environ.get("ZIRBEL_SETUP_REQUEST", "/run/zirbel-setup/request"))
