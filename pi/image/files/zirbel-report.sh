@@ -35,6 +35,10 @@ touch /run/zirbel-report
   echo "== listening"; ss -ltnu | head -20
   echo "== setup service, this boot"; journalctl -u zirbel-setup -b --no-pager -o short-monotonic | tail -60
   echo "== editor, this boot"; journalctl -u zirbel -b --no-pager -o short-monotonic | tail -15
+  # The controllers service logs the gamepads that come and go, never their input.
+  echo "== controllers: $(systemctl is-active bluetooth zirbel-pads | paste -sd' ')"
+  bluetoothctl show 2>&1 | grep -E "Controller|Powered|PowerState|Discovering"
+  journalctl -u zirbel-pads -b --no-pager -o short-monotonic | tail -15
   echo "== warnings, this boot"; journalctl -b -p warning --no-pager -o short-monotonic | tail -40
 } >"$tmp" 2>&1
 mv -f "$tmp" "$out"
