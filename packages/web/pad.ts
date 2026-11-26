@@ -6,7 +6,7 @@
 // and comes back at its place when the connection drops. Nothing here needs a secure page: a box serves it over http.
 import { MAX_PLACES, type PlaceLabel } from '../sdk/controls.ts';
 import { padLink, readPad, type LinkState } from './pad-link.ts';
-import { inkOn, restingPad, slotColour, type Pad } from './pad-state.ts';
+import { down, inkOn, restingPad, slotColour, type Pad } from './pad-state.ts';
 
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const join = byId('join'), pad = byId('pad'), form = byId<HTMLFormElement>('code-form'), input = byId<HTMLInputElement>('code');
@@ -17,22 +17,13 @@ const stick = byId('stick'), knob = byId('knob');
 const normalized = (text: string) => text.toUpperCase().replace(/[^0-9A-Z]/g, '');
 const asked = new URLSearchParams(location.search).get('place');
 const offered = asked !== null && /^[0-7]$/.test(asked) ? Number(asked) : undefined;
-const kept = (code: string) => 'zirbel-pad:' + code;
-function stored(code: string) { try { return sessionStorage.getItem(kept(code)) ?? undefined; } catch { return undefined; } }
-function keep(code: string, resume?: string) {
-  try {
-    if (resume) sessionStorage.setItem(kept(code), resume);
-    else sessionStorage.removeItem(kept(code));
-  } catch { /* A pad still plays without browser storage; a page loaded again just takes a free place. */ }
-}
-
 // What the fingers hold: each pointer on one button, or on the stick.
 const buttons = new Map<number, number>();
 let stickPointer: number | undefined;
 const axes = [0, 0];
 function touchPad(): Pad {
   const state = restingPad();
-  for (const button of buttons.values()) { state.values[button] = 1; state.pressed = (state.pressed | 1 << button) >>> 0; }
+  for (const button of buttons.values()) state.buttons[button] = down();
   state.axes[0] = axes[0]!;
   state.axes[1] = axes[1]!;
   return state;
@@ -117,7 +108,6 @@ function showPlace(at: number, label: PlaceLabel | null) {
 }
 function onState(code: string, state: LinkState) {
   if (state.state === 'joining') status.textContent = 'Joining ' + code + '…';
-  else if (state.state === 'lost') status.textContent = 'Reconnecting…';
   else if (state.state === 'joined') {
     join.hidden = true;
     pad.hidden = false;
@@ -132,7 +122,6 @@ function end(code: string, text: string, retry: boolean) {
   link = undefined;
   stopReading?.();
   stopReading = undefined;
-  keep(code);
   pad.hidden = true;
   places.hidden = true;
   join.hidden = false;
@@ -146,7 +135,7 @@ function start(code: string) {
   history.replaceState(null, '', '/pad/' + code + location.search);
   document.title = 'Zirbel · Controller ' + code;
   link = padLink(code, (state) => onState(code, state),
-    { place: offered, resume: stored(code), kept: (resume) => keep(code, resume) });
+    { place: offered });
   // The phone's own gamepad while one is connected, else the touch pad.
   stopReading = readPad(touchPad, (state) => link?.update(state),
     (gamepad) => { pad.classList.toggle('gamepad', Boolean(gamepad)); status.textContent = gamepad ? 'Sending your gamepad: ' + gamepad : ''; });

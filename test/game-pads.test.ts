@@ -10,9 +10,10 @@ import { checkedFrame, checkedPads, keyboardPad, padOf, restingPad, samePad, typ
 
 const pressing = (...buttons: number[]): Pad => {
   const pad = restingPad();
-  for (const button of buttons) pad.values[button] = 1;
-  return { ...pad, pressed: buttons.reduce((mask, button) => mask | (1 << button), 0) >>> 0 };
+  for (const button of buttons) pad.buttons[button] = { pressed: true, value: 1 };
+  return pad;
 };
+const buttonsOf = (levels: [boolean, number][]) => levels.map(([pressed, value]) => ({ pressed, value }));
 
 // A frame's window and navigator, as far as game-pads.ts reaches them.
 const events: { type: string; gamepad: PadLike }[] = [];
@@ -52,7 +53,7 @@ test('every controller is a gamepad at its place: the screen\'s once each has se
   assert.equal(next.buttons[0]!.pressed, false);
 
   // A gamepad of its own layout keeps it, and its name; the list is as long as its last place.
-  pads.frame(5, { standard: false, pressed: 2, values: [0, 1, 0.5], axes: [0.25] });
+  pads.frame(5, { standard: false, buttons: buttonsOf([[false, 0], [true, 1], [false, 0.5]]), axes: [0.25] });
   const stick = navigator.getGamepads()[5] as unknown as PadLike;
   assert.deepEqual([stick.id, stick.mapping, stick.buttons.map(({ pressed, value }) => [pressed, value]), stick.axes],
     ['Zirbel box 6 (Arcade stick)', '', [[false, 0], [true, 1], [false, 0.5]], [0.25]]);
@@ -157,25 +158,26 @@ test('a code gives the key, place and keyCode a keyboard gives', () => {
 test('a device\'s gamepad and a keyboard read as pads, and a frame\'s pads are checked where they arrive', () => {
   const buttons = [{ pressed: true, value: 0 }, { pressed: false, value: 0.25 }, { pressed: true, value: 0.5 }];
   assert.deepEqual(padOf({ mapping: 'standard', buttons: buttons as GamepadButton[], axes: [0.1, -1] }),
-    { standard: true, pressed: 0b101, values: [1, 0.25, 0.5], axes: [0.1, -1] });
-  assert.equal(padOf({ mapping: '', buttons: Array(40).fill({ pressed: true, value: 1 }), axes: Array(12).fill(0) }).values.length, 32);
-  assert.equal(padOf({ mapping: '', buttons: Array(32).fill({ pressed: true, value: 1 }), axes: [] }).pressed, 0xffffffff);
+    { standard: true, buttons: buttonsOf([[true, 1], [false, 0.25], [true, 0.5]]), axes: [0.1, -1] });
+  const crowded = padOf({ mapping: '', buttons: Array(40).fill({ pressed: true, value: 1 }), axes: Array(12).fill(0) });
+  assert.deepEqual([crowded.standard, crowded.buttons.length, crowded.axes.length], [false, 32, 8]);
   assert.ok(samePad(pressing(0), pressing(0)));
   assert.ok(samePad({ ...restingPad(), axes: [0.00001, 0, 0, 0] }, restingPad()));
   assert.ok(!samePad(pressing(0), pressing(1)));
 
   // Arrows or WASD the left stick, a diagonal to its edge; Space A, ShiftLeft B, KeyE X, KeyQ Y, Enter Start, Escape Select.
   const keyboard = keyboardPad(new Set(['KeyW', 'ArrowRight', 'Space', 'ShiftLeft', 'KeyE', 'KeyQ', 'Enter', 'Escape']));
-  assert.deepEqual([keyboard.pressed, keyboard.axes.map((axis) => Math.round(axis * 1000) / 1000)],
-    [0b1100001111, [0.707, -0.707, 0, 0]]);
+  assert.deepEqual([keyboard.buttons.flatMap(({ pressed }, button) => (pressed ? [button] : [])), keyboard.axes.map((axis) =>
+    Math.round(axis * 1000) / 1000)], [[0, 1, 2, 3, 8, 9], [0.707, -0.707, 0, 0]]);
   assert.deepEqual(keyboardPad(new Set(['KeyA', 'ArrowLeft'])).axes, [-1, 0, 0, 0]);
   assert.deepEqual(keyboardPad(new Set(['KeyA', 'KeyD'])).axes, [0, 0, 0, 0]);
 
-  const frame = { slot: 2, standard: true, pressed: 3, values: [1, 1], axes: [0, -1] };
+  const frame = { slot: 2, standard: true, buttons: buttonsOf([[true, 1], [false, 0.5]]), axes: [0, -1] };
   assert.deepEqual(checkedFrame(frame), frame);
-  for (const wrong of [{ ...frame, slot: 8 }, { ...frame, slot: 1.5 }, { ...frame, standard: 1 }, { ...frame, pressed: -1 },
-    { ...frame, pressed: 2 ** 32 }, { ...frame, values: [2] }, { ...frame, axes: [-2] }, { ...frame, values: Array(33).fill(0) },
-    { ...frame, axes: Array(9).fill(0) }, { ...frame, values: ['1'] }, null, 'frame'])
+  for (const wrong of [{ ...frame, slot: 8 }, { ...frame, slot: 1.5 }, { ...frame, standard: 1 }, { ...frame, buttons: [{ pressed: 1, value: 1 }] },
+    { ...frame, buttons: buttonsOf([[true, 2]]) }, { ...frame, buttons: [null] }, { ...frame, axes: [-2] },
+    { ...frame, buttons: Array(33).fill({ pressed: false, value: 0 }) }, { ...frame, axes: Array(9).fill(0) }, { ...frame, buttons: 'A' },
+    null, 'frame'])
     assert.equal(checkedFrame(wrong), undefined, JSON.stringify(wrong));
   const entry = { slot: 0, kind: 'phone', name: 'x'.repeat(80), connected: true };
   assert.deepEqual(checkedPads([entry]), [{ ...entry, name: 'x'.repeat(64) }]);

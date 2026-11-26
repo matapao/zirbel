@@ -6,18 +6,14 @@
 import { checkedLabel, MAX_PLACES, type PlaceLabel } from '../sdk/controls.ts';
 import type { PadState } from '../sdk/pads.ts';
 import type { LocalPad } from './game-pads.ts';
-import { openScreen, type PadEntry, type Screen, type ScreenInfo } from './pads-client.ts';
+import { openScreen, type PadInfo, type ScreenInfo } from './pads-client.ts';
+import { slotColour } from './pad-state.ts';
 
 /** How long "Press A to take Pk" waits, as the host's claim does. */
 const CLAIM_MS = 30_000;
-/** sessionStorage's key for the screen's resume, which the next page of this tab (the TV page, a game's) opens with. */
-const SCREEN_RESUME = 'zirbel-screen';
 
 export type Occupant = { kind: 'phone' | 'box' | 'own'; name: string };
 export type Controllers = ReturnType<typeof screenControllers>;
-
-const remembered = () => { try { return sessionStorage.getItem(SCREEN_RESUME) ?? undefined; } catch { return undefined; } };
-const remember = (resume: string) => { try { sessionStorage.setItem(SCREEN_RESUME, resume); } catch { /* resumes within the page only */ } };
 
 /** The device's own gamepads, as the page reads them; none where the browser has none. */
 function ownGamepads(): Gamepad[] {
@@ -30,7 +26,7 @@ function ownGamepads(): Gamepad[] {
  *  this page now controls it by. */
 export function screenControllers(options: { open: boolean; onChange(): void; onShown(code: string): void }) {
   let info: ScreenInfo | undefined;
-  let pads: PadEntry[] = [];
+  let pads: PadInfo[] = [];
   let local: LocalPad[] = [];
   const frames = new Map<number, PadState>();
   const labels = new Map<number, PlaceLabel>();
@@ -40,9 +36,9 @@ export function screenControllers(options: { open: boolean; onChange(): void; on
   const post = (type: string, value: unknown) => port?.postMessage({ type, value });
   const forFrame = () => pads.map(({ slot, kind, name, connected }) => ({ slot, kind, name, connected }));
 
-  const screen: Screen | undefined = options.open ? openScreen({
-    resume: remembered(),
-    onScreen(next) { info = next; remember(next.resume); options.onChange(); },
+  // The screen resumes this tab's last one (the TV page's, a game's before it), kept by pads-client.
+  const screen = options.open ? openScreen({
+    onScreen(next) { info = next; options.onChange(); },
     onPads(next) {
       pads = next;
       for (const slot of frames.keys()) if (!pads.some((pad) => pad.slot === slot)) frames.delete(slot);
@@ -58,7 +54,8 @@ export function screenControllers(options: { open: boolean; onChange(): void; on
       if (target.pathname === location.pathname && target.search === location.search) { location.hash = target.hash; location.reload(); }
       else location.assign(target);
     },
-    onShown: (code) => options.onShown(code),
+    // Taken over by another page of this screen, or ended.
+    onClosed() { info = undefined; options.onChange(); },
   }) : undefined;
 
   /** Who holds a place: a phone or box gamepad on the host, or one of the device's own. */
@@ -143,9 +140,10 @@ export function screenControllers(options: { open: boolean; onChange(): void; on
         const label = checkedLabel(message);
         if (!label) return;
         labels.set(place as number, label);
+        // A phone shows a name in a colour: a place's own colour where the game names none.
         sending ??= window.setTimeout(() => {
           sending = undefined;
-          screen?.labels([...labels].map(([at, { name, color }]) => ({ place: at, ...(name ? { name } : {}), ...(color ? { color } : {}) })));
+          screen?.labels([...labels].flatMap(([at, { name, color }]) => (name ? [{ place: at, name, color: color ?? slotColour(at) }] : [])));
         }, 100);
         options.onChange();
       }
@@ -169,14 +167,14 @@ export function screenControllers(options: { open: boolean; onChange(): void; on
       if (local.some((item) => item.place === place)) placed(local.filter((item) => item.place !== place));
       else screen?.release(place);
     },
-    show(link: string) { screen?.show(link); },
+    /** Show on TV: the box's screen opens this seat's link, and this page controls it there by its code. */
+    show(link: string) { void screen?.show(link).then((code) => options.onShown(code), () => options.onChange()); },
     close() {
       endClaim();
       window.removeEventListener('gamepadconnected', startReading);
       window.removeEventListener('gamepaddisconnected', startReading);
       cancelAnimationFrame(reading);
       screen?.close();
-      try { sessionStorage.removeItem(SCREEN_RESUME); } catch { /* nothing kept */ }
     },
   };
 }

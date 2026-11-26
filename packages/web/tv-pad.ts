@@ -31,7 +31,7 @@ export function controlTv(code: string, view: { place: HTMLElement; status: HTML
       view.place.style.setProperty('--place', state.label?.color ?? slotColour(state.place));
       say();
     } else if (state.state === 'ended') { view.status.textContent = state.message; stop(); }
-    else view.status.textContent = state.state === 'lost' ? 'Reconnecting to the TV…' : 'Joining the TV…';
+    else view.status.textContent = 'Joining the TV…';
   });
   const stopReading = readPad(() => keyboardPad(held), (state) => link.update(state), (id) => { gamepad = id; say(); });
   function stop() {

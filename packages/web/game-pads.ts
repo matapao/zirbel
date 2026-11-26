@@ -64,13 +64,12 @@ export function screenPads(rumble: (effect: Rumble) => void, alone = false) {
 
   function snapshot(controller: Controller): PadLike {
     const pad = controller.pad!;
-    const pressed = (button: number) => (pad.pressed >>> button & 1) === 1;
     return Object.freeze({
       id: 'Zirbel ' + controller.kind + ' ' + (controller.slot + 1) + ' (' + (pad.standard ? 'STANDARD GAMEPAD' : controller.name || 'gamepad') + ')',
       index: controller.slot, mapping: pad.standard ? 'standard' as const : '' as const, connected: true, timestamp: controller.timestamp,
       axes: Object.freeze([...pad.axes]),
-      buttons: Object.freeze(pad.values.map((value, button) =>
-        Object.freeze({ pressed: pressed(button), touched: pressed(button) || value > 0, value: pressed(button) && !value ? 1 : value }))),
+      buttons: Object.freeze(pad.buttons.map(({ pressed, value }) =>
+        Object.freeze({ pressed, touched: pressed || value > 0, value: pressed && !value ? 1 : value }))),
       vibrationActuator: controller.actuator, hapticActuators: Object.freeze([]),
     });
   }
@@ -147,10 +146,11 @@ export function screenPads(rumble: (effect: Rumble) => void, alone = false) {
     frame(slot: number, pad: Pad) {
       const controller = remote.get(slot);
       if (!controller) return;
-      const next = pad.standard ? { ...pad, values: fit(pad.values, STANDARD_BUTTONS), axes: fit(pad.axes, STANDARD_AXES) } : pad;
+      const next = pad.standard ? { ...pad, buttons: fit(pad.buttons, STANDARD_BUTTONS, { pressed: false, value: 0 }),
+        axes: fit(pad.axes, STANDARD_AXES, 0) } : pad;
       // A controller keeps the layout it came with: one that changes it comes back as a new gamepad.
       const before = controller.pad;
-      const relaid = before !== undefined && (before.standard !== next.standard || before.values.length !== next.values.length ||
+      const relaid = before !== undefined && (before.standard !== next.standard || before.buttons.length !== next.buttons.length ||
         before.axes.length !== next.axes.length);
       if (relaid) controller.layout++;
       controller.pad = next;
@@ -169,4 +169,4 @@ export function screenPads(rumble: (effect: Rumble) => void, alone = false) {
 }
 
 /** A standard pad's buttons or axes, exactly as many as the layout has. */
-const fit = (values: number[], length: number) => Array.from({ length }, (_, index) => values[index] ?? 0);
+const fit = <T>(values: T[], length: number, none: T) => Array.from({ length }, (_, index) => values[index] ?? none);
