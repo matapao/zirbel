@@ -162,7 +162,9 @@ test('the TV page is a screen with places, moved around by keys and controllers,
   await page.keyboard.press('x');
   await page.keyboard.press('Backspace');
   for (const letter of session.slice(1).toLowerCase()) await page.keyboard.press(letter);
-  await page.waitForURL(/\/join\/[a-f0-9]{12}\?screen=tv#seat=[\w-]{32}$/);
+  // Garden, for four, brings its own netcode: with the spaces kernel built its session is a space, which the page joined
+  // with its ticket; without it, a seat of the session's own.
+  await page.waitForURL(/\/join\/[a-f0-9]{12}\?screen=tv#(?:seat=[\w-]{32}|skalet\.space=[0-9a-f]{12})$/);
   // Leaving the game comes back to the TV page: the same screen, its code and its phone.
   await page.getByRole('button', { name: 'Leave' }).click();
   await page.waitForURL(player + '/tv');
@@ -212,7 +214,7 @@ test('the TV page is a screen with places, moved around by keys and controllers,
     body: JSON.stringify({ release: garden, name: 'Laptop' }) });
   const { link } = await started.json();
   other.send({ type: 'show', link: new URL(link).pathname + new URL(link).hash });
-  await page.waitForURL(/\/join\/[a-f0-9]{12}\?screen=tv#seat=/);
+  await page.waitForURL(/\/join\/[a-f0-9]{12}\?screen=tv#(?:seat=|skalet\.space=)/);
   await until(async () => other.messages.some((message) => message.type === 'shown' && message.code === code), 'the laptop hears the TV’s code');
   assert.deepEqual(errors, []);
 });

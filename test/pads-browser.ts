@@ -14,7 +14,7 @@ import { Projects } from '../packages/core/projects.ts';
 import { Releases } from '../packages/core/releases.ts';
 import { decodePad, encodePad } from '../packages/sdk/pads.ts';
 import { lanAddresses } from '../packages/server/http.ts';
-import { hostsUnderTest, launch, REAL_SPACES, rights, tempDir } from './helpers.ts';
+import { hostsUnderTest, launch, NO_SPACES, REAL_SPACES, rights, tempDir } from './helpers.ts';
 
 const node = [process.execPath, 'dist/server.mjs'];
 const game = `<!doctype html><pre id="log"></pre><p id="pads"></p><script>
@@ -41,8 +41,10 @@ async function startHost(t: TestContext, more: string[] = [], command = node) {
   const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
   const file = join(root, 'release.json');
   writeFileSync(file, JSON.stringify(release));
+  // Without the spaces kernel: the game, for two by its zirbel.json, has a seat of its room's own, which Show on TV hands
+  // over (a net game's member in a space goes to the TV in the last test).
   return launch(t, command, ['--host-only', ...more, '--player-port', '0', '--data', join(root, 'data'), '--import', file, '--release',
-    release.manifest.releaseId], (line) => typeof line.link === 'string' ? line.link : undefined).ready;
+    release.manifest.releaseId], (line) => typeof line.link === 'string' ? line.link : undefined, { ZIRBEL_SPACES_BINARY: NO_SPACES }).ready;
 }
 
 /** A pads socket in the page: what each connection sent, as JSON or decoded pad state, and the route to answer it. */
