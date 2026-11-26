@@ -1,0 +1,67 @@
+{
+  "$id": "https://zirbel.app/contracts/asset-list.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "maxItems": 80,
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 140
+      },
+      "author": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 140
+      },
+      "source": {
+        "type": "string",
+        "pattern": "^https?:\\/\\/",
+        "x-zirbel-prepare": "url"
+      },
+      "license": {
+        "type": "string",
+        "enum": [
+          "CC0-1.0",
+          "CC-BY-4.0",
+          "MIT",
+          "local-only",
+          "unknown"
+        ]
+      },
+      "credit": {
+        "type": "string",
+        "maxLength": 600
+      },
+      "hash": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "media": {
+        "type": "string",
+        "enum": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ]
+      }
+    },
+    "required": [
+      "id",
+      "name",
+      "author",
+      "source",
+      "license",
+      "credit",
+      "hash",
+      "media"
+    ],
+    "additionalProperties": false
+  }
+}

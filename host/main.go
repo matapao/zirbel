@@ -1,9 +1,11 @@
 // Command zirbel-host is the native Zirbel host. With --host-only it serves
 // verified releases to players (HTML, CSS, JS and WebSocket rooms); otherwise
-// it also serves the editor, its project API and the optional project MCP
-// endpoint on loopback, or with --box on the box's network to paired devices
-// (box_routes.go). Flags and the data directory match `node dist/server.mjs`,
-// so either can run against the same projects.
+// it also serves the editor, its project API, its games' git repositories and
+// the optional project MCP endpoint on loopback, or with --box on the box's
+// network to paired devices (box_routes.go). Flags and the data directory
+// match `node dist/server.mjs`, so either can run against the same projects.
+// `zirbel-host git-hook pre-receive` is the check git runs for every push
+// (git_hook.go).
 package main
 
 import (
@@ -66,6 +68,9 @@ func firstOf(values ...string) string {
 
 func main() {
 	var err error
+	if len(os.Args) > 1 && os.Args[1] == "git-hook" {
+		os.Exit(gitHookCommand(os.Stdin, os.Stderr))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "mcp" {
 		err = stdioMCP(env("ZIRBEL_MCP_URL", "http://127.0.0.1:4173/mcp"), os.Getenv("ZIRBEL_MCP_TOKEN"))
 	} else {
@@ -195,6 +200,10 @@ func run() error {
 	}
 	var projects *Projects
 	if !o.hostOnly {
+		// Every game is a git repository (docs/git-store.md): no git, no editor. A host of releases alone needs none.
+		if err := requireGit(); err != nil {
+			return err
+		}
 		if projects, err = NewProjects(o.root); err != nil {
 			return err
 		}
@@ -235,6 +244,25 @@ func run() error {
 		held.release()
 	}()
 
+	hooks := ""
+	if projects != nil {
+		migrated, err := projects.Migrate()
+		if err != nil {
+			return err
+		}
+		if migrated > 0 {
+			plural := "s"
+			if migrated == 1 {
+				plural = ""
+			}
+			fmt.Fprintln(os.Stderr, "Zirbel kept "+strconv.Itoa(migrated)+" game"+plural+" as git repositories; their old files are in "+
+				filepath.Join(o.root, "migrated-projects")+".")
+		}
+		// The check every push to a game runs before its branch moves, with the program running now.
+		if hooks, err = writeHooks(o.root); err != nil {
+			return err
+		}
+	}
 	lobby, err := NewLobby(o.root, rooms, releases)
 	if err != nil {
 		return err
@@ -257,12 +285,16 @@ func run() error {
 		}
 	}
 	var box *Box
+	var tokens *gitTokens
 	if o.box {
 		account, err := accountDirectory()
 		if err != nil {
 			return err
 		}
 		if box, err = NewBox(account, func() int { return editorPort }); err != nil {
+			return err
+		}
+		if tokens, err = newGitTokens(filepath.Join(account, "box")); err != nil {
 			return err
 		}
 		// Those who own the box pair at the editor's /pair, and those with a
@@ -310,8 +342,9 @@ func run() error {
 			}
 		}
 		handler = &EditorServer{Editor: &Editor{projects: projects, releases: releases}, rooms: rooms, players: players, lobby: lobby,
-			mcp: mcp, enableMCP: o.enableMCP, box: box, files: editorFiles, port: editorPort, boot: self.Boot}
-		editorServer = &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 25 * time.Second, IdleTimeout: 5 * time.Second}
+			mcp: mcp, enableMCP: o.enableMCP, box: box, tokens: tokens, hooks: hooks, files: editorFiles, port: editorPort, boot: self.Boot}
+		// Long enough for a push of a game's history over a slow network (git_http.go); headers still come within 10 s.
+		editorServer = &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 5 * time.Minute, IdleTimeout: 5 * time.Second}
 		go func() { _ = editorServer.Serve(editorSocket) }()
 	}
 	access := "local"

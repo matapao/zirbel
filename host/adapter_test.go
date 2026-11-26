@@ -21,7 +21,7 @@ func TestANetGameNamesItsAdapterInZirbelJSON(t *testing.T) {
 		files := map[string]string{"index.html": encoded("<!doctype html><canvas></canvas>"), "net/adapter.js": encoded("export {}"),
 			"net/adapter.mjs": encoded("export {}"), "models/hero.glb": encoded("glTF"), "zirbel.json": encoded(manifest)}
 		data, _ := json.Marshal(map[string]any{"files": files})
-		project, err := store.ImportGameFolder(data)
+		project, err := store.ImportGameFolder(data, ownerIdent)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -82,7 +82,7 @@ func TestANetGameNamesItsAdapterInZirbelJSON(t *testing.T) {
 		t.Fatal("no revision", err)
 	}
 	if _, err := store.Submit(project.ID, []byte(`{"baseRevision":"`+revision.ID+`","branch":"main","label":"Adapter",`+
-		`"operations":[{"op":"writeGame","game":{"html":"x","maxPlayers":4,"net":true,"adapter":"net/adapter.js"}}]}`), nil); err == nil {
+		`"operations":[{"op":"writeGame","game":{"html":"x","maxPlayers":4,"net":true,"adapter":"net/adapter.js"}}]}`), ownerIdent, nil); err == nil {
 		t.Error("a proposal named an adapter")
 	}
 	var document map[string]any
@@ -103,7 +103,7 @@ func TestANetGameNamesItsAdapterInZirbelJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Import([]byte(strings.Replace(string(bundle), `"adapter":"net/adapter.js"`, `"adapter":"net/gone.js"`, 1))); err == nil ||
+	if _, err := store.Import([]byte(strings.Replace(string(bundle), `"adapter":"net/adapter.js"`, `"adapter":"net/gone.js"`, 1)), ownerIdent); err == nil ||
 		!strings.Contains(err.Error(), "game.adapter") {
 		t.Errorf("a bundle whose adapter is not among its files: %v", err)
 	}

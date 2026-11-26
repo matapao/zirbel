@@ -393,16 +393,9 @@ func (m *MCP) run(g *grant, name string, raw json.RawMessage) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		type meta struct {
-			ID           string  `json:"id"`
-			Parent       *string `json:"parent"`
-			RestoredFrom string  `json:"restoredFrom,omitempty"`
-			Label        string  `json:"label"`
-			Date         string  `json:"date"`
-		}
-		list := []meta{}
+		list := []Revision{}
 		for _, r := range p.Revisions {
-			list = append(list, meta{r.ID, r.Parent, r.RestoredFrom, r.Label, r.Date})
+			list = append(list, Revision{ID: r.ID, Parent: r.Parent, RestoredFrom: r.RestoredFrom, Label: r.Label, Date: r.Date, Author: r.Author})
 		}
 		return list, nil
 	case "read_file":
@@ -414,7 +407,7 @@ func (m *MCP) run(g *grant, name string, raw json.RawMessage) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return m.projects.Submit(g.ProjectID, args["proposal"], approvedAssets)
+		return m.projects.Submit(g.ProjectID, args["proposal"], grantAuthor(g.ID), m.projects.approvedAssets)
 	case "preview_proposal":
 		id, err := proposalArgument()
 		if err != nil {
@@ -431,13 +424,20 @@ func (m *MCP) run(g *grant, name string, raw json.RawMessage) (any, error) {
 	return nil, fail(http.StatusNotFound, "Unknown tool.")
 }
 
-// approvedAssets: a grant may reuse only assets this project already credits,
-// so it cannot pull another project's files in by hash.
-func approvedAssets(p *Project, request *Proposal) error {
-	credited := revisionAssets(p.Revisions)
+// approvedAssets: a grant may reuse only assets this project's history already
+// credits, so it cannot pull another project's files in by hash.
+func (s *Projects) approvedAssets(p *Project, request *Proposal) error {
+	var credited []Asset
 	for _, operation := range request.Operations {
 		if operation.Op != "addAsset" {
 			continue
+		}
+		if credited == nil {
+			known, err := s.knownAssets(p.ID)
+			if err != nil {
+				return err
+			}
+			credited = known
 		}
 		asset, approved := operation.Asset, false
 		for _, known := range credited {

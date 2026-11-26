@@ -85,18 +85,22 @@ func (e *Editor) source(projectID, branch, baseRevision string, draft bool, prop
 	}
 	revision := *base
 	if proposalID != "" {
-		proposal, err := e.projects.getProposal(projectID, proposalID)
+		staged, err := e.projects.preview(projectID, proposalID)
 		if err != nil {
 			return nil, nil, err
 		}
-		preview, err := previewOn(p, proposal)
-		if err != nil {
-			return nil, nil, err
-		}
-		if !draft || proposal.Branch != branch {
+		if !draft || staged.Proposal.Branch != branch {
 			return nil, nil, fail(http.StatusConflict, "This proposal cannot be played on that branch.")
 		}
-		revision.Game, revision.Scene, revision.Assets = preview.Game, preview.Scene, preview.Assets
+		// { ...base, ...preview }: what the staged commit holds over the head's.
+		preview := staged.Preview
+		if preview.Scene != nil {
+			revision.Scene = preview.Scene
+		}
+		if preview.Game != nil {
+			revision.Game = preview.Game
+		}
+		revision.Assets = preview.Assets
 	}
 	return p, &revision, nil
 }
@@ -193,7 +197,7 @@ func (e *Editor) ListReleases() ([]json.RawMessage, error) {
 	return list, nil
 }
 
-func (e *Editor) Remix(releaseID string) (*Project, error) {
+func (e *Editor) Remix(releaseID string, author ident) (*Project, error) {
 	release, err := e.releases.Read(releaseID)
 	if err != nil {
 		return nil, err
@@ -227,7 +231,7 @@ func (e *Editor) Remix(releaseID string) (*Project, error) {
 	}
 	return e.projects.createRevision(truncateUTF16(release.Manifest.Title+" remix", 80), initialRevision{
 		label: "Remixed release", template: release.Manifest.Template, game: release.Game, scene: release.Scene,
-		assets: release.Manifest.Assets, upstream: releaseID})
+		assets: release.Manifest.Assets, upstream: releaseID}, author)
 }
 
 // ImportData imports a release sent to the editor API.

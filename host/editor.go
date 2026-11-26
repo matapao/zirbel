@@ -17,9 +17,11 @@ type EditorServer struct {
 	rooms     *Rooms
 	players   *Players
 	lobby     *Lobby
-	mcp       *MCP // nil unless --enable-mcp or --box
-	enableMCP bool // --enable-mcp: on a box, /mcp also answers while external MCP access is off, from the box itself
-	box       *Box // nil unless --box
+	mcp       *MCP       // nil unless --enable-mcp or --box
+	enableMCP bool       // --enable-mcp: on a box, /mcp also answers while external MCP access is off, from the box itself
+	box       *Box       // nil unless --box
+	tokens    *gitTokens // a box's git tokens; nil unless --box
+	hooks     string     // the hooks every push runs (writeHooks)
 	files     map[string][]byte
 	port      int
 	boot      string
@@ -40,7 +42,7 @@ func (s *EditorServer) mcpOn() bool {
 
 func (s *EditorServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	secure(w)
-	if err := s.serve(w, r); err != nil {
+	if err := s.serve(w, r); err != nil { //nolint:contextcheck // the store's git runs to its end whatever becomes of the request (gitContext)
 		replyError(w, err)
 	}
 }
@@ -69,6 +71,10 @@ func (s *EditorServer) serve(w http.ResponseWriter, r *http.Request) error {
 		if err := checkOrigin(r, false); err != nil {
 			return err
 		}
+	}
+	// A game's repository over git's smart HTTP, with its own credentials off a box (git_http.go).
+	if handled, err := s.serveGit(w, r, access); handled || err != nil {
+		return err
 	}
 	if mcpRequest {
 		return s.serveMCP(w, r)
@@ -139,9 +145,9 @@ func (s *EditorServer) serve(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		}
 	case "projects":
-		return s.serveProjects(w, r, pathID, action, tail)
+		return s.serveProjects(w, r, access, pathID, action, tail)
 	case "releases":
-		return s.serveReleases(w, r, pathID, action)
+		return s.serveReleases(w, r, access, pathID, action)
 	case "rooms":
 		return s.serveRooms(w, r, pathID, action)
 	case "lobby":

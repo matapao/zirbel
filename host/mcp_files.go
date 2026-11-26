@@ -80,7 +80,7 @@ func (m *MCP) writeFiles(g *grant, raw json.RawMessage) (any, error) {
 	if err := toolArgs("mcp-write-files", raw, &args); err != nil {
 		return nil, err
 	}
-	return m.projects.StageFiles(g.ProjectID, &args)
+	return m.projects.StageFiles(g.ProjectID, &args, grantAuthor(g.ID))
 }
 
 // ReadGameFile is one file of a revision's game: the branch head's, or the
@@ -94,11 +94,12 @@ func (s *Projects) ReadGameFile(projectID, path, branch string, revision *string
 	}
 	var source *Revision
 	if revision == nil {
-		if source, err = head(p, branch); err != nil {
-			return nil, err
-		}
-	} else if source = p.revision(*revision); source == nil {
-		return nil, fail(http.StatusNotFound, "Revision does not exist.")
+		source, err = head(p, branch)
+	} else {
+		source, err = s.revision(projectID, *revision)
+	}
+	if err != nil {
+		return nil, err
 	}
 	if source.Game == nil {
 		return nil, fail(http.StatusNotFound, "This revision has no game.")
@@ -157,7 +158,7 @@ func pageText(data []byte) (string, error) {
 
 // StageFiles stages the branch head's game with these files written or
 // removed, and the rest as they are.
-func (s *Projects) StageFiles(projectID string, args *writeFilesArgs) (*proposalResult, error) {
+func (s *Projects) StageFiles(projectID string, args *writeFilesArgs, author ident) (*proposalResult, error) {
 	label, err := trimmed("label", args.Label, 120)
 	if err != nil {
 		return nil, err
@@ -261,5 +262,5 @@ func (s *Projects) StageFiles(projectID string, args *writeFilesArgs) (*proposal
 		game.Files = kept
 	}
 	return s.submit(p, &Proposal{BaseRevision: args.BaseRevision, Branch: branch, Label: label,
-		Operations: []Operation{{Op: "writeGame", Game: game}}})
+		Operations: []Operation{{Op: "writeGame", Game: game}}}, author)
 }

@@ -19,14 +19,14 @@ func TestStageFilesHoldsAGameTo36MB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := store.CreateGame("Big", &Game{HTML: "<p>big</p>", MaxPlayers: 1, Files: map[string]string{"big.bin": hash}})
+	p, err := store.CreateGame("Big", &Game{HTML: "<p>big</p>", MaxPlayers: 1, Files: map[string]string{"big.bin": hash}}, ownerIdent)
 	if err != nil {
 		t.Fatal(err)
 	}
 	stage := func(size int) error {
 		text := strings.Repeat("x", size)
 		_, err := store.StageFiles(p.ID, &writeFilesArgs{BaseRevision: p.Branches["main"], Label: "More",
-			Files: []fileChange{{Path: "more.txt", Text: &text}}})
+			Files: []fileChange{{Path: "more.txt", Text: &text}}}, ownerIdent)
 		return err
 	}
 	if err := stage(20); err == nil || err.Error() != "The game would be larger than a game can be (36 MB)." {

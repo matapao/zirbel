@@ -18,8 +18,13 @@ func (s *Projects) writeAsset(hash string, data []byte) error {
 	}
 	return atomicWrite(filepath.Join(s.root, "assets", hash), data)
 }
+
+// storeAsset keeps bytes by their SHA-256, once: a file there already holds them.
 func (s *Projects) storeAsset(data []byte) (string, error) {
 	hash := digest(data)
+	if s.hasAsset(hash) {
+		return hash, nil
+	}
 	return hash, s.writeAsset(hash, data)
 }
 
@@ -52,7 +57,7 @@ func decodeAsset(asset Asset, encoded string) ([]byte, error) {
 }
 
 // UploadAsset stores an imported image and stages it as a proposal.
-func (s *Projects) UploadAsset(projectID string, data []byte) (*proposalResult, error) {
+func (s *Projects) UploadAsset(projectID string, data []byte, author ident) (*proposalResult, error) {
 	var input struct {
 		Asset
 		Data         string `json:"data"`
@@ -86,7 +91,7 @@ func (s *Projects) UploadAsset(projectID string, data []byte) (*proposalResult, 
 	asset.ID, asset.Hash = newID(), hash
 	normalizeSource(&asset)
 	return s.submit(p, &Proposal{Branch: input.Branch, BaseRevision: input.BaseRevision,
-		Label: truncateUTF16("Import "+asset.Name, 120), Operations: []Operation{{Op: "addAsset", Asset: &asset}}})
+		Label: truncateUTF16("Import "+asset.Name, 120), Operations: []Operation{{Op: "addAsset", Asset: &asset}}}, author)
 }
 
 // withAssetFiles mirrors Projects.withAssetFiles: the package must stay under
@@ -164,35 +169,109 @@ type projectBundle struct {
 	Assets  map[string]string `json:"assets"`
 }
 
+// exportedProject is a bundle's project in the key order exportBundle writes it.
+type exportedProject struct {
+	Version     int               `json:"version"`
+	ID          string            `json:"id"`
+	Title       string            `json:"title"`
+	Template    string            `json:"template,omitempty"`
+	Branches    map[string]string `json:"branches"`
+	Upstream    string            `json:"upstream,omitempty"`
+	Imported    bool              `json:"imported,omitempty"`
+	Revisions   []Revision        `json:"revisions"`
+	Notes       []Note            `json:"notes"`
+	Attachments []Attachment      `json:"attachments"`
+}
+type exportedBundle struct {
+	Project exportedProject   `json:"project"`
+	Assets  map[string]string `json:"assets"`
+}
+
+// exportRevisions is every revision the branches reach, in full, oldest first,
+// as exportBundle in packages/core/bundles.ts writes them.
+func (s *Projects) exportRevisions(p *Project) ([]Revision, error) {
+	repo := s.repository(p.ID)
+	listed, err := logCommits(repo, branchHeads(p.Branches), 0)
+	if err != nil {
+		return nil, err
+	}
+	ids := map[string]bool{}
+	revisions := []Revision{}
+	for i := len(listed) - 1; i >= 0; i-- {
+		revision := revisionMeta(listed[i])
+		content, err := s.history.content(repo, revision.ID)
+		if err != nil {
+			return nil, err
+		}
+		// A bundle's history has one root: a second root of an imported history follows the revision before it.
+		if revision.Parent == nil || !ids[*revision.Parent] {
+			revision.Parent = nil
+			if len(revisions) > 0 {
+				last := revisions[len(revisions)-1].ID
+				revision.Parent = &last
+			}
+		}
+		if !ids[revision.RestoredFrom] {
+			revision.RestoredFrom = ""
+		}
+		revision.Scene, revision.Game, revision.Assets = content.Scene, content.Game, content.Assets
+		revisions = append(revisions, revision)
+		ids[revision.ID] = true
+	}
+	return revisions, nil
+}
+
+// exportable is a project and every revision its branches reach, read under the store's lock.
+func (s *Projects) exportable(projectID string) (*Project, []Revision, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.read(projectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	revisions, err := s.exportRevisions(p)
+	if err != nil {
+		return nil, nil, err
+	}
+	return p, revisions, nil
+}
+
 func (s *Projects) Export(projectID string) ([]byte, error) {
-	p, err := s.Read(projectID)
+	p, revisions, err := s.exportable(projectID)
 	if err != nil {
 		return nil, err
 	}
-	p.Notes, p.Attachments = []Note{}, []Attachment{}
-	assets, err := deliveryAssets(revisionAssets(p.Revisions))
+	assets, err := deliveryAssets(revisionAssets(revisions))
 	if err != nil {
 		return nil, err
 	}
-	data, err := jsJSON(projectBundle{p, map[string]string{}})
+	bundle := exportedBundle{exportedProject{p.Version, p.ID, p.Title, p.Template, p.Branches, p.Upstream, p.Imported, revisions,
+		[]Note{}, []Attachment{}}, map[string]string{}}
+	data, err := jsJSON(bundle)
 	if err != nil {
 		return nil, err
 	}
-	files, err := s.withAssetFiles(len(data), assets, gameFileHashes(revisionGames(p.Revisions)...))
+	files, err := s.withAssetFiles(len(data), assets, gameFileHashes(revisionGames(revisions)...))
 	if err != nil {
 		return nil, err
 	}
 	if len(files) == 0 {
 		return data, nil // the bundle without assets is already the whole export
 	}
-	return jsJSON(projectBundle{p, files})
+	bundle.Assets = files
+	return jsJSON(bundle)
 }
-func (s *Projects) Import(data []byte) (*Project, error) {
+
+// Import makes a new project from a bundle, its revisions as commits by who asked.
+func (s *Projects) Import(data []byte, author ident) (*Project, error) {
 	var bundle projectBundle
 	if err := decodeContract("project-bundle", data, &bundle); err != nil {
 		return nil, err
 	}
 	source := bundle.Project
+	if source == nil {
+		return nil, fail(http.StatusBadRequest, "Invalid project-bundle.")
+	}
 	if err := normalizeProject(source); err != nil {
 		return nil, err
 	}
@@ -251,6 +330,15 @@ func (s *Projects) Import(data []byte) (*Project, error) {
 			return nil, err
 		}
 	}
-	source.ID, source.Notes, source.Attachments, source.Imported = newID(), []Note{}, []Attachment{}, true
-	return s.save(source)
+	return s.createRepository(func(repo string) ([][2]string, error) {
+		commits, hashes, err := writeRevisions(repo, source.Revisions, s.readAsset, &author, false)
+		if err != nil {
+			return nil, err
+		}
+		updates, err := branchUpdates(source.Branches, commits)
+		if err == nil {
+			_, err = updateRefs(repo, updates)
+		}
+		return hashes, err
+	}, projectMeta{title: source.Title, template: source.Template, upstream: source.Upstream, imported: true}, newID())
 }

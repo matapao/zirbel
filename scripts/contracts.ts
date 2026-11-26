@@ -39,6 +39,8 @@ const editor = {
   'stored-project': storedProject,
   'import-git': importInput,
   'update-from-source': updateInput,
+  // A revision's .zirbel/assets.json, which the Go host reads from a tree (git-tree.ts reads it as this, ids unique).
+  'asset-list': z.array(asset).max(80),
 };
 
 const schemas = {

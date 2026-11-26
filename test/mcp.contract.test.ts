@@ -116,11 +116,14 @@ async function session(editor: string) {
 // order, also inside a tool's JSON answer.
 function normalizer() {
   const ids = new Map<string, string>();
+  const name = (id: string) => {
+    if (!ids.has(id)) ids.set(id, '<id' + ids.size + '>');
+    return ids.get(id)!;
+  };
   const text = (value: string) => value
-    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\b[0-9a-f]{40}\b/g, (id) => {
-      if (!ids.has(id)) ids.set(id, '<id' + ids.size + '>');
-      return ids.get(id)!;
-    })
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\b[0-9a-f]{40}\b/g, name)
+    // A grant's commits name it by the start of its id (docs/git-store.md).
+    .replace(/\bMCP grant ([0-9a-f]{8})\b/g, (_, prefix: string) => 'MCP grant ' + name(prefix))
     .replace(/\b\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\b/g, '<date>');
   const walk = (value: unknown): unknown => {
     if (typeof value === 'string') return text(value);
