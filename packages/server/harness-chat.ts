@@ -43,10 +43,12 @@ function folderGame(projects: Projects, folder: string | undefined, output: Excl
   const stored: Record<string, string> = {};
   for (const [path, bytes] of files) stored[path] = projects.storeAsset(bytes);
   const kept = output.action === 'edit' ? current : undefined;
-  // A net game keeps its net, and the adapter its game/zirbel.json names, read as an import reads it.
-  const adapter = kept?.net ? describedGame(files.get('zirbel.json')?.toString('base64'), (path) => files.has(path)).adapter : undefined;
+  // A net game keeps its net, and the adapter its game/zirbel.json names, read as an import reads it; any game the
+  // controls it names.
+  const described = describedGame(files.get('zirbel.json')?.toString('base64'), (path) => files.has(path));
+  const adapter = kept?.net ? described.adapter : undefined;
   return { html, maxPlayers: output.maxPlayers ?? kept?.maxPlayers ?? 1, ...(kept?.net ? { net: true as const } : {}),
-    ...(adapter ? { adapter } : {}),
+    ...(adapter ? { adapter } : {}), ...(described.controls ? { controls: described.controls } : {}),
     ...(registerObjects ? {} : { registerObjects: false }), ...(files.size ? { files: stored } : {}) };
 }
 

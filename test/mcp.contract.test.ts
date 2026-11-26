@@ -94,6 +94,12 @@ async function session(editor: string) {
   await write(proposing, base, [{ path: 'late.js', text: '1' }]);
   await tool(proposing, 'propose', { proposal: { baseRevision: applied.value!.revision.id, branch: 'main', label: 'One page',
     operations: [{ op: 'writeGame', game: { html: '<p>one</p>' } }] } });
+  // zirbel.json's controls.keys come with it, and stay while other files change.
+  const keyed = await write(proposing, applied.value!.revision.id, [{ path: 'zirbel.json',
+    text: '{ "players": { "max": 8 }, "controls": { "keys": { "start": "Enter", "a": "Space", "up": "KeyW" } } }' }], 'Keys');
+  const withKeys = await tool<{ revision: { id: string } }>(writing, 'apply_proposal', { proposalId: keyed.value!.proposal.id });
+  await write(proposing, withKeys.value!.revision.id, [{ path: 'src/more.js', text: '2' }], 'More');
+  await write(proposing, withKeys.value!.revision.id, [{ path: 'zirbel.json', text: '{ "controls": { "keys": { "a": "Space key" } } }' }]);
 
   // A project with no game yet: write_files starts one with its index.html.
   const empty = await api<{ id: string; branches: { main: string } }>('/api/projects', { title: 'Empty' });

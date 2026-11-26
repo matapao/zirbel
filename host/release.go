@@ -86,6 +86,7 @@ type Game struct {
 	MaxPlayers      int               `json:"maxPlayers"`
 	Net             bool              `json:"net,omitempty"`     // only true: the game brings its own netcode (zirbel-net)
 	Adapter         string            `json:"adapter,omitempty"` // with net: one of its files, which its game page loads
+	Controls        *Controls         `json:"controls,omitempty"`
 	RegisterObjects *bool             `json:"registerObjects,omitempty"`
 	Files           map[string]string `json:"files,omitempty"` // a built game's files by path, beside index.html
 }

@@ -30,10 +30,14 @@ export function gamePage(release: Release, runtime: string, ancestors: string, b
     'frame-ancestors ' + ancestors,
   ].join('; ');
   const imports = { three: runtime + 'three.module.js', [THREE_ADDONS]: addons };
+  // The keys its zirbel.json gives gamepad inputs, which game-sdk presses for a game that reads only the keyboard: sorted,
+  // as the Go host writes a map.
+  const keys = release.game?.controls ? '<script type="application/json" id="zirbel-keys">' +
+    json(Object.fromEntries(Object.entries(release.game.controls.keys).sort(([a], [b]) => (a < b ? -1 : 1)))) + '</script>' : '';
   const bootstrap = '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<script type="importmap">' + json({ imports }) + '</script>' +
     '<script type="application/json" id="zirbel-assets"' + (release.game?.registerObjects === false ? ' data-registration="off"' : '') + '>' + json(assets) + '</script>' +
-    '<script crossorigin="anonymous" src="' + runtime + 'game-sdk.js"></script>';
+    keys + '<script crossorigin="anonymous" src="' + runtime + 'game-sdk.js"></script>';
   const source = release.game!.html.replace(/^\s*<!doctype\s+html\s*>/i, '');
   const adapter = net && release.game!.adapter ? '<script type="module" src="' + base + release.game!.adapter + '"></script>' : '';
   return { policy, html: '<!doctype html>' + bootstrap + source + adapter };

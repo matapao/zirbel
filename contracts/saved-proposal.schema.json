@@ -54,6 +54,44 @@
                     "maxLength": 240,
                     "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\\/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.(?:js|mjs)$"
                   },
+                  "controls": {
+                    "type": "object",
+                    "properties": {
+                      "keys": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "enum": [
+                            "a",
+                            "b",
+                            "x",
+                            "y",
+                            "lb",
+                            "rb",
+                            "lt",
+                            "rt",
+                            "select",
+                            "start",
+                            "ls",
+                            "rs",
+                            "up",
+                            "down",
+                            "left",
+                            "right",
+                            "home"
+                          ]
+                        },
+                        "additionalProperties": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9]{1,24}$"
+                        }
+                      }
+                    },
+                    "required": [
+                      "keys"
+                    ],
+                    "additionalProperties": false
+                  },
                   "registerObjects": {
                     "type": "boolean"
                   },

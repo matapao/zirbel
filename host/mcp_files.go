@@ -184,7 +184,8 @@ func (s *Projects) StageFiles(projectID string, args *writeFilesArgs, author ide
 	game := &Game{MaxPlayers: 1}
 	hasPage, kept := false, map[string]string{}
 	if base.Game != nil {
-		game.HTML, game.MaxPlayers, game.Net, game.Adapter, game.RegisterObjects, hasPage = base.Game.HTML, base.Game.MaxPlayers, base.Game.Net, base.Game.Adapter, base.Game.RegisterObjects, true
+		game.HTML, game.MaxPlayers, game.Net, game.Adapter, game.Controls, game.RegisterObjects, hasPage = base.Game.HTML, base.Game.MaxPlayers,
+			base.Game.Net, base.Game.Adapter, base.Game.Controls, base.Game.RegisterObjects, true
 		for name, hash := range base.Game.Files {
 			kept[name] = hash
 		}
@@ -244,8 +245,8 @@ func (s *Projects) StageFiles(projectID string, args *writeFilesArgs, author ide
 			return nil, err
 		}
 	}
-	// zirbel.json says how many play and names the adapter, as in an imported folder: read again from the files the
-	// game ends with whenever it, or the adapter it names, changes.
+	// zirbel.json says how many play and names the adapter and the controls, as in an imported folder: read again from the
+	// files the game ends with whenever it, or the adapter it names, changes.
 	if _, adapterKept := kept[game.Adapter]; seen["zirbel.json"] || (game.Adapter != "" && (seen[game.Adapter] || !adapterKept)) {
 		manifest, present := "", false
 		if hash, ok := kept["zirbel.json"]; ok {
@@ -256,7 +257,7 @@ func (s *Projects) StageFiles(projectID string, args *writeFilesArgs, author ide
 			manifest, present = base64.StdEncoding.EncodeToString(data), true
 		}
 		game.MaxPlayers, game.Adapter = describedGame(manifest, present, kept)
-		game.Net = game.MaxPlayers > 1
+		game.Net, game.Controls = game.MaxPlayers > 1, describedControls(manifest, present)
 	}
 	if count > 0 || (base.Game != nil && base.Game.Files != nil) {
 		game.Files = kept

@@ -165,6 +165,37 @@ test('a net game names its adapter in zirbel.json, one of its own scripts, and o
   assert.deepEqual([page.policy, plain.policy], [sandboxPolicy(runtime, base, "'self'", 'http://h'), sandboxPolicy(runtime, base, "'self'", 'http://h')]);
 });
 
+test('any game names the keys gamepads press in zirbel.json, kept in its release and carried on its page', (t) => {
+  const { projects, releases } = install(t);
+  const keyed = (controls: unknown, players = 1) => ({ ...folder,
+    'zirbel.json': base64(JSON.stringify({ players: { max: players }, controls })) });
+  const game = (files: Record<string, string>) => head(importGameFolder(projects, { files }), 'main').game!;
+  assert.deepEqual(game(keyed({ keys: { start: 'Enter', a: 'Space', up: 'ArrowUp' } })).controls,
+    { keys: { a: 'Space', start: 'Enter', up: 'ArrowUp' } });
+  assert.deepEqual(Object.keys(game(keyed({ keys: { start: 'Enter', a: 'Space' } })).controls!.keys), ['a', 'start']);
+  assert.deepEqual(game(keyed({ keys: { a: 'KeyJ' } }, 3)).controls, { keys: { a: 'KeyJ' } });
+  // An input it doesn't know, a code that isn't one, none at all, or anything but an object: no controls.
+  for (const controls of [{ keys: { a: 'Space', jump: 'KeyW' } }, { keys: { a: 'Space bar' } }, { keys: { a: 32 } }, { keys: {} },
+    { keys: ['Space'] }, { keys: 'Space' }, 'keys', null, { keys: { a: 'A'.repeat(25) } }, { keys: { A: 'Space' } }])
+    assert.equal(game(keyed(controls)).controls, undefined, JSON.stringify(controls));
+  assert.equal(game({ ...folder, 'zirbel.json': base64('{"controls":{"keys":{"__proto__":"Space"}}}') }).controls, undefined);
+  // A proposal can't set them.
+  const project = importGameFolder(projects, { files: keyed({ keys: { b: 'ShiftLeft', a: 'Space' } }) });
+  const revision = head(project, 'main');
+  assert.throws(() => projects.submit(project.id, { baseRevision: revision.id, branch: 'main', label: 'Keys',
+    operations: [{ op: 'writeGame', game: { html: '<p>x</p>', controls: { keys: { a: 'KeyX' } } } }] }));
+
+  // Its release keeps them, in the order both hosts hash; its page carries them ahead of game-sdk, and is otherwise as it was.
+  const release = releases.package(project.id, 'main', rights, false);
+  assert.deepEqual(Object.keys(release.game!), ['html', 'maxPlayers', 'controls', 'files']);
+  const runtime = 'http://h/runtime/r/', base = 'http://h/game/r/key/';
+  const without = structuredClone(release);
+  delete without.game!.controls;
+  const keys = '<script type="application/json" id="zirbel-keys">{"a":"Space","b":"ShiftLeft"}</script>';
+  assert.equal(gamePage(release, runtime, "'self'", base).html,
+    gamePage(without, runtime, "'self'", base).html.replace('<script crossorigin', keys + '<script crossorigin'));
+});
+
 test('a harness edit of a net game keeps the adapter its game/zirbel.json names, while that file is there', async (t) => {
   const { runHarnessChat } = await import('../packages/server/harness-chat.ts');
   const { projects } = install(t);

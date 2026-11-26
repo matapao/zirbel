@@ -30,6 +30,17 @@ export const gameFilePath = pathWith(Object.keys(GAME_FILE_TYPES));
 // game page loads after the game's document, so the game itself carries nothing of Zirbel's.
 export const adapterPath = pathWith(['js', 'mjs']);
 export const MAX_GAME_FILES = 1000;
+// A game that reads only the keyboard can take gamepads anyway: its zirbel.json maps the inputs of the standard layout
+// (up/down/left/right: the d-pad, and the left stick beyond half way) to KeyboardEvent codes, which the game frame
+// presses as a keyboard would (packages/web/game-keys.ts). The map is the folder's, never part of the game itself.
+export const CONTROL_INPUTS = ['a', 'b', 'x', 'y', 'lb', 'rb', 'lt', 'rt', 'select', 'start', 'ls', 'rs', 'up', 'down', 'left',
+  'right', 'home'] as const;
+export type ControlInput = (typeof CONTROL_INPUTS)[number];
+export const KEY_CODE = /^[A-Za-z0-9]{1,24}$/;
+const gameControls = z.strictObject({
+  keys: z.partialRecord(z.enum(CONTROL_INPUTS), z.string().regex(KEY_CODE)),
+});
+export type GameControls = z.infer<typeof gameControls>;
 const gameFiles = z.record(gameFilePath, z.string().regex(/^[a-f0-9]{64}$/)).refine(
   (files) => Object.keys(files).length <= MAX_GAME_FILES && !Object.hasOwn(files, 'index.html'),
   'Provide up to 1000 files besides index.html.',
@@ -47,6 +58,7 @@ const gameFields = z.strictObject({
   maxPlayers: z.number().int().min(1).max(NET_PLAYERS).default(1),
   net: z.literal(true).optional(),
   adapter: adapterPath.optional(),
+  controls: gameControls.optional(),
   registerObjects: z.boolean().optional(),
   files: gameFiles.optional(),
 });
@@ -57,9 +69,9 @@ const ownAdapter = (game: { net?: true; adapter?: string; files?: Record<string,
 const adapterError = { message: 'An adapter is one of the game’s own files, in a game with net.', path: ['adapter'] };
 export const gameDocument = gameFields.refine(withinPlayers, playersError).refine(ownAdapter, adapterError);
 export type GameDocument = z.infer<typeof gameDocument>;
-// What a proposal or a harness writes: files only arrive with their bytes, from an import, and so does the adapter
-// among them.
-export const editableGame = gameFields.omit({ files: true, adapter: true }).refine(withinPlayers, playersError);
+// What a proposal or a harness writes: files only arrive with their bytes, from an import, and so do the adapter and the
+// controls their zirbel.json names.
+export const editableGame = gameFields.omit({ files: true, adapter: true, controls: true }).refine(withinPlayers, playersError);
 
 const registeredObject = z.strictObject({
   id: z.string().min(1).max(120),

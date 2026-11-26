@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -77,19 +78,7 @@ const manifestBase64 = (65_536 + 2) / 3 * 4
 // leaves a game for one. Such a game's multiplayer.adapter names its adapter,
 // one of the folder's .js or .mjs files: anything else leaves it without one.
 func describedGame(encoded string, present bool, files map[string]string) (players int, adapter string) {
-	if !present || len(encoded) > manifestBase64 {
-		return 1, ""
-	}
-	data, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return 1, ""
-	}
-	// Decode keeps the last of duplicate keys, as JSON.parse does.
-	parsed, err := contracts.Decode(data)
-	if err != nil {
-		return 1, ""
-	}
-	manifest, _ := parsed.(map[string]any)
+	manifest := manifestOf(encoded, present)
 	described, _ := manifest["players"].(map[string]any)
 	number, ok := described["max"].(json.Number)
 	if !ok {
@@ -107,6 +96,59 @@ func describedGame(encoded string, present bool, files map[string]string) (playe
 		adapter = ""
 	}
 	return int(math.Min(max, netPlayersMax)), adapter
+}
+
+// manifestOf is zirbel.json as describedGame reads it: nil when it is
+// missing, too long, or no JSON object.
+func manifestOf(encoded string, present bool) map[string]any {
+	if !present || len(encoded) > manifestBase64 {
+		return nil
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil
+	}
+	// Decode keeps the last of duplicate keys, as JSON.parse does.
+	parsed, err := contracts.Decode(data)
+	if err != nil {
+		return nil
+	}
+	manifest, _ := parsed.(map[string]any)
+	return manifest
+}
+
+// Controls mirrors gameControls in packages/sdk/game.ts: the keyboard codes a
+// game's zirbel.json gives the inputs of the standard gamepad layout, which
+// the game frame presses as a keyboard would.
+type Controls struct {
+	Keys map[string]string `json:"keys"`
+}
+
+// controlInputs mirrors CONTROL_INPUTS, and keyCode KEY_CODE.
+var (
+	controlInputs = map[string]bool{"a": true, "b": true, "x": true, "y": true, "lb": true, "rb": true, "lt": true, "rt": true,
+		"select": true, "start": true, "ls": true, "rs": true, "up": true, "down": true, "left": true, "right": true, "home": true}
+	keyCode = regexp.MustCompile(`^[A-Za-z0-9]{1,24}$`)
+)
+
+// describedControls mirrors describedGame's controls in game-files.ts: any
+// game's controls.keys, an object of known inputs and their codes, at least
+// one; anything else leaves it without controls.
+func describedControls(encoded string, present bool) *Controls {
+	controls, _ := manifestOf(encoded, present)["controls"].(map[string]any)
+	keys, _ := controls["keys"].(map[string]any)
+	if len(keys) == 0 {
+		return nil
+	}
+	described := map[string]string{}
+	for input, value := range keys {
+		code, ok := value.(string)
+		if !controlInputs[input] || !ok || !keyCode.MatchString(code) {
+			return nil
+		}
+		described[input] = code
+	}
+	return &Controls{Keys: described}
 }
 
 func gameFileType(name string) string {
@@ -204,6 +246,7 @@ func (s *Projects) ImportGameFolder(data []byte, author ident) (*Project, error)
 	}
 	manifest, described := input.Files["zirbel.json"]
 	players, adapter := describedGame(manifest, described, stored)
-	game := &Game{HTML: html, MaxPlayers: players, Net: players > 1, Adapter: adapter, Files: stored}
+	game := &Game{HTML: html, MaxPlayers: players, Net: players > 1, Adapter: adapter, Controls: describedControls(manifest, described),
+		Files: stored}
 	return s.createRevision(title, initialRevision{game: game, assets: []Asset{}, label: "Imported game folder"}, author)
 }

@@ -213,6 +213,20 @@ async function session(editor: string) {
     operations: [{ op: 'writeGame', game: { html: '<p>net</p>', maxPlayers: 3, net: true, adapter: 'net/adapter.mjs' } }] }));
   const netManifest = body<{ releaseId: string }>(await record(post('/api/projects/' + net.id + '/release', { branch: 'main', permissions: rights })));
   const netRelease = await record(get('/api/releases/' + netManifest.releaseId + '/download'));
+  // Any game's zirbel.json may give gamepad inputs keyboard keys (controls.keys), which its release keeps; anything but
+  // known inputs with codes leaves it without controls, and a proposal can't set them.
+  const keyed = (controls: unknown, players?: number) => ({ ...folder,
+    'zirbel.json': encode(JSON.stringify({ ...(players ? { players: { max: players } } : {}), controls })) });
+  for (const controls of [{ keys: { a: 'Space', jump: 'KeyW' } }, { keys: { a: 'Space bar' } }, { keys: { a: 32 } }, { keys: {} },
+    { keys: ['Space'] }, { keys: 'Space' }, 'keys', { keys: { a: 'A'.repeat(25) } }])
+    await record(post('/api/projects/import-game', { files: keyed(controls) }));
+  await record(post('/api/projects/import-game', { files: keyed({ keys: { up: 'KeyW', a: 'Space' } }, 4) }));
+  const keys = body<{ id: string; branches: { main: string } }>(await record(post('/api/projects/import-game',
+    { title: 'Keys', files: keyed({ keys: { start: 'Enter', a: 'Space', up: 'ArrowUp', left: 'KeyA', b: 'ShiftLeft' } }) })));
+  await record(post('/api/projects/' + keys.id + '/proposals', { baseRevision: keys.branches.main, branch: 'main', label: 'Keys',
+    operations: [{ op: 'writeGame', game: { html: '<p>keys</p>', controls: { keys: { a: 'KeyX' } } } }] }));
+  const keysManifest = body<{ releaseId: string }>(await record(post('/api/projects/' + keys.id + '/release', { branch: 'main', permissions: rights })));
+  const keysRelease = await record(get('/api/releases/' + keysManifest.releaseId + '/download'));
 
   // Refusals.
   await record(call('POST', '/api/projects', {}, { origin: 'http://evil.example' }));
@@ -221,7 +235,8 @@ async function session(editor: string) {
   await record(get('/api/projects/no-such-project'));
   await record(post('/api/projects/' + id + '/remove'));
   await record(get('/api/projects/' + id));
-  return { steps, release: release.body, templateRelease: templateRelease.body, builtRelease: builtRelease.body, netRelease: netRelease.body };
+  return { steps, release: release.body, templateRelease: templateRelease.body, builtRelease: builtRelease.body, netRelease: netRelease.body,
+    keysRelease: keysRelease.body };
 }
 
 const results = new Map<string, Awaited<ReturnType<typeof session>>>();
@@ -234,6 +249,9 @@ for (const host of editors) {
     for (const [index, step] of result.steps.entries()) {
       assert.ok(step.status < 500, 'step ' + index + ' failed with ' + step.status + ': ' + JSON.stringify(step.body));
     }
+    // The keys come in the release's game, in their inputs' order.
+    assert.equal(JSON.stringify((result.keysRelease as { game: { controls?: unknown } }).game.controls),
+      '{"keys":{"a":"Space","b":"ShiftLeft","left":"KeyA","start":"Enter","up":"ArrowUp"}}');
     results.set(host.name, result);
   });
 }
@@ -249,10 +267,10 @@ if (editors.length > 1) {
   test('a release published by either editor imports into the other', async (t) => {
     const start = async (name: string) => startEditor(t, editors.find((item) => item.name === name)!.command, join(tempDir(t, 'zirbel-cross-'), 'data'));
     for (const [from, to] of [['node', 'go'], ['go', 'node']] as const) {
-      const { release, templateRelease, builtRelease, netRelease } = results.get(from)!;
+      const { release, templateRelease, builtRelease, netRelease, keysRelease } = results.get(from)!;
       const target = await start(to);
       const api = client(target.editor);
-      for (const item of [release, templateRelease, builtRelease, netRelease]) {
+      for (const item of [release, templateRelease, builtRelease, netRelease, keysRelease]) {
         const imported = await api.post('/api/releases/import', item);
         assert.equal(imported.status, 201, from + ' -> ' + to + ': ' + JSON.stringify(imported.body));
       }

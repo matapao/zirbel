@@ -303,7 +303,8 @@ func readGame(entries []treeEntry, index treeEntry, of func(string) ([]byte, boo
 	if _, listed := paths["zirbel.json"]; listed {
 		manifest, present = of("zirbel.json")
 	}
-	players, adapter := describedGame(base64.StdEncoding.EncodeToString(manifest), present, paths)
+	encoded := base64.StdEncoding.EncodeToString(manifest)
+	players, adapter := describedGame(encoded, present, paths)
 	net := players > 1
 	if !net {
 		players, net, adapter = max(own.MaxPlayers, 1), own.Net, ""
@@ -315,7 +316,8 @@ func readGame(entries []treeEntry, index treeEntry, of func(string) ([]byte, boo
 	if err != nil {
 		return nil, "", err
 	}
-	game := &Game{HTML: html, MaxPlayers: players, Net: net, Adapter: adapter, RegisterObjects: own.RegisterObjects}
+	game := &Game{HTML: html, MaxPlayers: players, Net: net, Adapter: adapter, Controls: describedControls(encoded, present),
+		RegisterObjects: own.RegisterObjects}
 	if len(files) > 0 {
 		game.Files = map[string]string{}
 		for _, entry := range files {
