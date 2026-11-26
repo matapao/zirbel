@@ -15,8 +15,8 @@ const data = join(dir, 'data');
 mkdirSync(data);
 try {
   const run = (command, args, env = {}) => execFileSync(command, args, { stdio: 'inherit', env: { ...process.env, ...env } });
-  run('go', ['build', '-cover', '-coverpkg=./...', '-o', binary, './host']);
-  run('go', ['test', '-shuffle=on', '-count=1', '-cover', '-coverpkg=./...', './...', '-args', '-test.gocoverdir=' + data]);
+  run('go', ['build', '-cover', '-covermode=atomic', '-coverpkg=./...', '-o', binary, './host']);
+  run('go', ['test', '-race', '-shuffle=on', '-count=1', '-cover', '-coverpkg=./...', './...', '-args', '-test.gocoverdir=' + data]);
   run(process.execPath, ['--test', '--test-randomize', '--import', './test/setup.ts',
     'test/host.contract.test.ts', 'test/editor.contract.test.ts'], { ZIRBEL_GO_HOST: binary, GOCOVERDIR: data });
   const profile = join(dir, 'cover.txt');
