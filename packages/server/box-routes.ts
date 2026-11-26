@@ -2,22 +2,25 @@
 // box itself behaves as without box mode. A request from elsewhere must come from the box's own network, and then
 // needs a paired device's session for everything but /pair, where a device pairs with a one-time code (or claims a
 // box no device has paired with yet), and /mcp while external MCP access is on, which checks its own project grant.
-import { writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BlockList } from 'node:net';
 import { hostname, networkInterfaces } from 'node:os';
 import { z } from 'zod';
 import { ZirbelError } from '../core/projects.ts';
 import { body, checkOrigin, failure, reply } from './http.ts';
+import { NO_OWN_NETWORK, networkWake, ownNetworkView, readOwnNetwork, wake } from './box-network.ts';
 import { normalizeCode, SESSION_COOKIE, type Pairing } from './box-pairing.ts';
 import { harnessesUnavailable, settingsChange, type BoxHarnesses, type BoxSettings, type Capabilities } from './box-settings.ts';
 
 export type BoxContext = {
   pairing: Pairing; settings: BoxSettings; harnesses: BoxHarnesses; capabilities: Capabilities;
-  /** The editor's port, the turns running now, and a pairing link as a QR code. */
-  port: () => number; turns: () => number; qr: (link: string) => Promise<string>;
-  /** The file that wakes the box's setup service (pi/setup): a systemd path unit starts the service when it appears. */
+  /** The editor's port, the turns running now, and a link (or a Wi-Fi network to join) as a QR code. */
+  port: () => number; turns: () => number; qr: (text: string) => Promise<string>;
+  /** The file that wakes the box's setup service (pi/setup) for its Wi-Fi setup: a systemd path unit starts the service
+   *  when it appears. Beside it, the one for the box's own Wi-Fi (networkWake). */
   setupRequest: string;
+  /** The box's own Wi-Fi's name and password, as the setup service keeps them (box-network.ts). */
+  ownNetwork: string;
 };
 /** Who sent a request: the box itself, or a paired device by its id (none for a project grant's /mcp request). */
 export type Access = { local: boolean; device?: string };
@@ -25,13 +28,6 @@ export type Access = { local: boolean; device?: string };
 /** The box's name on its network: its host name, in mDNS's .local. */
 export function boxName() {
   return (hostname().split('.')[0] || 'zirbel').toLowerCase() + '.local';
-}
-
-/** Wakes the setup service, which removes the file when it is done. A box without the service has no folder for it,
- *  and the request stays in the settings only. */
-function wakeSetup(file: string) {
-  try { writeFileSync(file, '', { mode: 0o660 }); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
 }
 
 const interfaces = () => Object.values(networkInterfaces()).flatMap((items) => items ?? []).filter((item) => !item.internal);
@@ -155,8 +151,8 @@ ${error ? `<p class="error" role="alert">${escape(error)}</p>` : ''}${claim}<for
 const setupInput = z.strictObject({ requested: z.boolean() });
 
 function settingsView(box: BoxContext) {
-  const { harnesses, externalMcp, onboarded, setupRequested } = box.settings.read();
-  return { harnesses, externalMcp, onboarded, setupRequested };
+  const { harnesses, externalMcp, onboarded, setupRequested, ownNetwork } = box.settings.read();
+  return { harnesses, externalMcp, onboarded, setupRequested, ownNetwork };
 }
 
 /** What the workspace knows of the box, in /api/health. */
@@ -198,20 +194,28 @@ export async function boxRequest(box: BoxContext, request: IncomingMessage, resp
     const change = settingsChange.parse(await body(request, 4096));
     const unavailable = harnessesUnavailable(box.capabilities);
     if (change.harnesses && unavailable) throw new ZirbelError(409, unavailable);
-    if (change.harnesses === false && box.settings.read().harnesses) {
+    if (change.ownNetwork && !readOwnNetwork(box.ownNetwork)) throw new ZirbelError(409, NO_OWN_NETWORK);
+    const before = box.settings.read();
+    if (change.harnesses === false && before.harnesses) {
       if (box.turns()) throw new ZirbelError(409, 'A turn is running. Stop it before turning harnesses off.');
       box.settings.update({ harnesses: false });
       await box.harnesses.off();
     }
     box.settings.update(change);
+    // The setup service makes the Wi-Fi follow a switch of the box's own.
+    if (change.ownNetwork !== undefined && change.ownNetwork !== before.ownNetwork) wake(networkWake(box.setupRequest));
     reply(response, settingsView(box));
+    return true;
+  }
+  if (pathID === 'network' && method === 'GET') {
+    reply(response, await ownNetworkView(box.ownNetwork, box.settings.read().ownNetwork, box.qr));
     return true;
   }
   if (pathID === 'setup' && method === 'POST') {
     const { requested } = setupInput.parse(await body(request, 1024));
     if (!requested && !access.local) throw new ZirbelError(403, 'Only the box itself ends its setup.');
     box.settings.update({ setupRequested: requested });
-    if (requested) wakeSetup(box.setupRequest);
+    if (requested) wake(box.setupRequest);
     reply(response, { setupRequested: requested });
     return true;
   }

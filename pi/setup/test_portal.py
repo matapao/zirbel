@@ -1,22 +1,30 @@
 """The setup hotspot's page (portal.py) and the editor calls the setup makes (editor.py): forms read as a network takes
-them, names escaped, the pairing code shown before the box leaves the hotspot, and a request that goes when setup does."""
+them, names escaped, the pairing code shown before the box leaves the hotspot, the box's own Wi-Fi with its password
+shown before the box makes it, and a request that goes when setup does."""
 
+import io
 import json
 import re
 import tempfile
 import threading
 import time
+import types
 import unittest
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 import editor
+import own_network
 import portal
 from improv import Network
+from own_network import Credentials
+from test_own_network import FakeNetworkManager
 
 NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+OWN = Credentials("Zirbel <3F2A>", "abcd-efgh-jkmn")
 
 
 class Forms(unittest.TestCase):
@@ -67,6 +75,26 @@ class Forms(unittest.TestCase):
         self.assertIn("href='http://zirbel.local/pair'", page)
         self.assertNotIn("ABCD-EFGH", page)
         self.assertNotIn("10 minutes", page)
+
+    def test_the_boxs_own_wifi_is_offered_beside_the_networks_with_its_password_before_it_is_made(self):
+        self.assertNotIn("action=/own", portal.choose_page("Zirbel-3456", []).decode())
+        self.assertIn("Make the box's own Wi-Fi", portal.choose_page("Zirbel-3456", [], own=True).decode())
+        pairing = portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair?code=ABCD-EFGH")
+        ready = portal.own_page("Zirbel-3456", OWN, pairing, token="tok").decode()
+        self.assertIn("Zirbel &lt;3F2A&gt;", ready)
+        self.assertNotIn("<3F2A>", ready)
+        self.assertIn("<p class=code>abcd-efgh-jkmn</p>", ready)
+        # On its own Wi-Fi the box is at its own address, which every device opens, and at its .local name.
+        self.assertIn("href='http://10.42.0.1/pair?code=ABCD-EFGH'", ready)
+        self.assertIn("<b>http://zirbel.local/pair</b>", ready)
+        self.assertIn("ABCD-EFGH", ready)
+        self.assertIn("name=token value=tok", ready)
+        self.assertIn("Make Zirbel &lt;3F2A&gt; now", ready)
+        claim = portal.own_page("Zirbel-3456", OWN, portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair", claim=True))
+        self.assertIn("href='http://10.42.0.1/pair'", claim.decode())
+        self.assertIn("Claim this box", claim.decode())
+        self.assertNotIn("action=/go", claim.decode())
+        self.assertIn("http://10.42.0.1", portal.own_page("Zirbel-3456", OWN, None).decode())
 
     def test_a_link_moves_to_the_boxs_own_address(self):
         self.assertEqual(editor.at("http://zirbel.local/pair?code=ABCD-EFGH", "192.168.1.20"),
@@ -121,6 +149,45 @@ class Server(unittest.TestCase):
         finally:
             server.stop()
 
+    def test_the_box_makes_its_own_wifi_only_on_make_it_now_and_after_the_answer_went_out(self):
+        made = threading.Event()
+        joined = []
+        offered = portal.Portal("Zirbel-3456", lambda: [Network(b"Home", -40, "WPA2")],
+                                lambda: portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair?code=ABCD-EFGH"),
+                                joined.append, own=OWN, make=made.set)
+        bare = portal.Portal("Zirbel-3456", lambda: [], lambda: None, joined.append)
+        offered.start("127.0.0.1", 0)
+        bare.start("127.0.0.1", 0)
+        base = f"http://127.0.0.1:{offered._server.server_address[1]}"
+        try:
+            with NO_PROXY.open(base + "/") as answer:
+                self.assertIn("action=/own", answer.read().decode())
+            with NO_PROXY.open(urllib.request.Request(base + "/own", data=b"own=1")) as answer:
+                ready = answer.read().decode()
+            self.assertIn("abcd-efgh-jkmn", ready)
+            token = re.search(r"name=token value=([A-Za-z0-9_-]+)", ready).group(1)
+            self.assertFalse(made.is_set(), "nothing is made before Make it now")
+            started = time.monotonic()
+            with NO_PROXY.open(urllib.request.Request(base + "/go", data=f"token={token}".encode())) as answer:
+                making = answer.read().decode()
+            self.assertIn("is making its own Wi-Fi", making)
+            self.assertIn("abcd-efgh-jkmn", making)
+            self.assertFalse(made.is_set(), "the network waits until the page is out")
+            self.assertTrue(made.wait(5))
+            self.assertGreater(time.monotonic() - started, 1)
+            self.assertEqual(joined, [])
+            # A box that can't make its own Wi-Fi doesn't offer it, nor take its form.
+            other = f"http://127.0.0.1:{bare._server.server_address[1]}"
+            with NO_PROXY.open(other + "/") as answer:
+                self.assertNotIn("action=/own", answer.read().decode())
+            with self.assertRaises(urllib.error.HTTPError) as refused:
+                NO_PROXY.open(urllib.request.Request(other + "/own", data=b"own=1"))
+            with refused.exception as error:
+                self.assertEqual(error.code, 400)
+        finally:
+            offered.stop()
+            bare.stop()
+
 
 class Editor(unittest.TestCase):
     def setUp(self):
@@ -144,7 +211,18 @@ class Editor(unittest.TestCase):
                 test.calls.append(("GET", self.path, None))
                 self._reply({"box": True, "paired": False, "claimable": test.claimable,
                              "settings": {"harnesses": True, "externalMcp": False, "onboarded": False,
-                                          "setupRequested": test.requested}})
+                                          "setupRequested": test.requested, "ownNetwork": test.own}})
+
+            def do_PUT(self):
+                payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                test.calls.append(("PUT", self.path, payload))
+                if test.refuse:
+                    self._reply({"error": "This box can't make its own Wi-Fi: it has no Wi-Fi setup."}, 409)
+                    return
+                test.own = payload["ownNetwork"]
+                editor.network_wake().write_text("")  # as the editor wakes the service for a change
+                self._reply({"harnesses": True, "externalMcp": False, "onboarded": False, "setupRequested": False,
+                             "ownNetwork": test.own})
 
             def do_POST(self):
                 payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -157,6 +235,8 @@ class Editor(unittest.TestCase):
 
         self.requested = False
         self.claimable = True
+        self.own = False
+        self.refuse = False
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.saved = editor.EDITOR, editor.REQUEST
@@ -188,10 +268,81 @@ class Editor(unittest.TestCase):
         self.assertFalse(editor.REQUEST.exists())
         self.assertEqual(self.calls[-1], ("POST", "/api/box/setup", {"requested": False}))
 
+    def test_the_boxs_own_wifi_is_the_editors_setting_which_setup_changes_and_whose_wake_it_clears(self):
+        self.assertEqual(editor.network_wake(), editor.REQUEST.with_name("network"))
+        self.assertIs(editor.own_network(), False)
+        self.assertTrue(editor.set_own_network(True))
+        self.assertEqual(self.calls[-1], ("PUT", "/api/box/settings", {"ownNetwork": True}))
+        self.assertIs(editor.own_network(), True)
+        self.assertTrue(editor.network_wake().exists())
+        editor.clear_network_wake()
+        self.assertFalse(editor.network_wake().exists())
+        editor.clear_network_wake()  # gone already
+        # An editor that refuses is not asked again.
+        self.refuse = True
+        before = len(self.calls)
+        self.assertFalse(editor.set_own_network(True, attempts=3))
+        self.assertEqual(len(self.calls), before + 1)
+
+    def test_as_the_service_starts_its_wake_goes_first_and_the_wifi_follows_the_setting(self):
+        import zirbel_setup
+
+        nm = FakeNetworkManager()
+        editor.network_wake().write_text("")
+        self.own = True
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as said:
+            self.assertEqual(zirbel_setup.follow_setting(nm, OWN), own_network.UP)
+        self.assertFalse(editor.network_wake().exists())
+        self.assertEqual(nm.calls, [("up", OWN.name, OWN.password)])
+        self.assertIn("The box's own Wi-Fi is up.", said.getvalue())
+        self.own = False
+        with mock.patch("sys.stdout", new_callable=io.StringIO):
+            self.assertEqual(zirbel_setup.follow_setting(nm, OWN), own_network.DOWN)
+        editor.EDITOR = "http://127.0.0.1:9"  # an editor that doesn't answer changes nothing
+        self.assertEqual(zirbel_setup.follow_setting(FakeNetworkManager(exists=True, active=True), OWN), own_network.KEEP)
+
+    def test_made_from_the_setup_page_the_setting_comes_first_and_goes_back_if_the_network_does_not_start(self):
+        import zirbel_setup
+
+        def setup_with(nm):
+            # The service as its setup page's worker sees it, its main loop a list of what was handed to it.
+            setup = object.__new__(zirbel_setup.Setup)
+            setup.own, setup.scheduled = OWN, []
+            setup.GLib = types.SimpleNamespace(idle_add=lambda work, *args: setup.scheduled.append((work.__name__, args)))
+            setup._hotspot_down = lambda _nm: nm.calls.append(("hotspot down",))
+            return setup
+
+        nm = FakeNetworkManager()
+        setup = setup_with(nm)
+        setup._make_own(nm)
+        self.assertEqual(self.calls[-1], ("PUT", "/api/box/settings", {"ownNetwork": True}))
+        self.assertFalse(editor.network_wake().exists(), "the service's own change wakes nothing more")
+        self.assertEqual(nm.calls, [("hotspot down",), ("up", OWN.name, OWN.password)])
+        self.assertEqual(setup.scheduled, [("_made_own", ())])
+
+        failing = FakeNetworkManager(starts=False)
+        setup = setup_with(failing)
+        setup._make_own(failing)
+        self.assertEqual(self.calls[-1], ("PUT", "/api/box/settings", {"ownNetwork": False}))
+        self.assertIs(self.own, False)
+        self.assertEqual(failing.calls[-1], ("down",))
+        self.assertEqual(setup.scheduled[0][0], "_failed")
+        self.assertIn("couldn't make its own Wi-Fi", setup.scheduled[0][1][1])
+
+        # An editor that won't take the setting: the radio is left as it is.
+        self.refuse = True
+        untouched = FakeNetworkManager()
+        setup = setup_with(untouched)
+        setup._make_own(untouched)
+        self.assertEqual(untouched.calls, [])
+        self.assertIn("didn't answer", setup.scheduled[0][1][1])
+
     def test_no_editor_means_no_link_and_no_request(self):
         editor.EDITOR = "http://127.0.0.1:9"
         self.assertIsNone(editor.pairing(attempts=1))
         self.assertFalse(editor.requested())
+        self.assertIsNone(editor.own_network())
+        self.assertFalse(editor.set_own_network(False, attempts=1))
         editor.clear_request()
 
 

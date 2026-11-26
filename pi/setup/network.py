@@ -1,15 +1,17 @@
 """The box's network, through NetworkManager's D-Bus API: whether it is online, the Wi-Fi networks it sees, joining one,
-and the open setup hotspot with its firewall.
+the open setup hotspot with its firewall and DNS, and the box's own Wi-Fi (own_network.py).
 
 A password goes to NetworkManager over D-Bus, never on a command line another process could read. The hotspot is a
 volatile connection NetworkManager never saves. While it runs, nftables sends its clients' port 80 to the setup page,
-and lets them reach nothing else on the box or beyond it.
+and lets them reach nothing else on the box or beyond it. The box's own Wi-Fi is saved, a WPA2 access point that comes
+back after a reboot; its clients reach the box, and no internet.
 """
 
 from __future__ import annotations
 
 import subprocess
 import time
+from pathlib import Path
 
 import dbus
 
@@ -35,10 +37,77 @@ KEY_SAE = 0x400
 HOTSPOT_ID = "zirbel-setup"
 HOTSPOT_ADDRESS = "10.42.0.1"
 ONLINE_TYPES = ("802-11-wireless", "802-3-ethernet")
+# The box's own Wi-Fi, on the hotspot's address: the one radio serves one or the other.
+OWN_ID = "zirbel-network"
+# Above every network the box joins (0, unless set otherwise): after a reboot the box makes its own Wi-Fi first.
+OWN_PRIORITY = 100
+PMF_DISABLE = 1
+
+# NetworkManager starts a dnsmasq for each shared connection, the hotspot and the box's own Wi-Fi alike, and has it read
+# this folder as it starts. The file is there only while the hotspot starts and runs: on the hotspot every name resolves
+# to the box, so a phone's captive-portal check opens the setup page, and on the box's own Wi-Fi no name resolves but the
+# box's own (zirbel.local, over mDNS), so a phone finds no internet there rather than the editor. No captive-portal
+# option (RFC 8910) goes out in DHCP: it names an HTTPS API (RFC 8908) the box doesn't have, and a phone that finds none
+# there may close its setup window. A file left by a power cut goes at boot (zirbel-setup.tmpfiles).
+DNS_FILE = Path("/etc/NetworkManager/dnsmasq-shared.d/zirbel-setup.conf")
+WILDCARD = f"# The Zirbel setup hotspot's, while it runs (pi/setup/network.py).\naddress=/#/{HOTSPOT_ADDRESS}\n"
 
 
 def _sv(values: dict) -> dbus.Dictionary:
     return dbus.Dictionary(values, signature="sv")
+
+
+def _shared() -> dbus.Dictionary:
+    """IPv4 shared from the box's own address: NetworkManager hands out addresses and answers DNS."""
+    return _sv(
+        {
+            "method": "shared",
+            "address-data": dbus.Array([_sv({"address": HOTSPOT_ADDRESS, "prefix": dbus.UInt32(24)})], signature="a{sv}"),
+        }
+    )
+
+
+def own_network_settings(name: str, password: str) -> dbus.Dictionary:
+    """The box's own Wi-Fi as NetworkManager saves it: an access point on 2.4 GHz for reach, WPA2-Personal with CCMP
+    alone and management frame protection off (older phones can't do it), shared from the box's address, and connected
+    automatically before any other network."""
+    return dbus.Dictionary(
+        {
+            "connection": _sv(
+                {
+                    "id": OWN_ID,
+                    "type": "802-11-wireless",
+                    "autoconnect": True,
+                    "autoconnect-priority": dbus.Int32(OWN_PRIORITY),
+                }
+            ),
+            "802-11-wireless": _sv({"ssid": dbus.ByteArray(name.encode("utf-8")), "mode": "ap", "band": "bg"}),
+            "802-11-wireless-security": _sv(
+                {
+                    "key-mgmt": "wpa-psk",
+                    "psk": password,
+                    "proto": dbus.Array(["rsn"], signature="s"),
+                    "pairwise": dbus.Array(["ccmp"], signature="s"),
+                    "group": dbus.Array(["ccmp"], signature="s"),
+                    "pmf": dbus.Int32(PMF_DISABLE),
+                }
+            ),
+            "ipv4": _shared(),
+            "ipv6": _sv({"method": "disabled"}),
+        },
+        signature="sa{sv}",
+    )
+
+
+def wildcard_dns(on: bool) -> None:
+    """Every name resolving to the box, for the setup hotspot alone (DNS_FILE): written before it starts, gone with it."""
+    try:
+        if on:
+            DNS_FILE.write_text(WILDCARD)
+        else:
+            DNS_FILE.unlink(missing_ok=True)
+    except OSError as error:
+        print(f"The setup hotspot's DNS could not be {'set' if on else 'taken away'}: {error}", flush=True)
 
 
 def auth_of(flags: int, wpa: int, rsn: int) -> str:
@@ -86,33 +155,88 @@ class NetworkManager:
     def enable_wifi(self) -> None:
         self.props.Set(NM, "WirelessEnabled", dbus.Boolean(True))
 
-    def online(self) -> bool:
-        """Whether the box is on a network: a Wi-Fi or wired connection up, other than its setup hotspot."""
+    def _activated(self) -> list[tuple[str, str]]:
+        """The connections up now: each one's id and type."""
+        up = []
         for path in self.props.Get(NM, "ActiveConnections"):
             try:
-                if (
-                    str(self._get(path, ACTIVE, "Id")) != HOTSPOT_ID
-                    and str(self._get(path, ACTIVE, "Type")) in ONLINE_TYPES
-                    and int(self._get(path, ACTIVE, "State")) == ACTIVATED
-                ):
-                    return True
+                if int(self._get(path, ACTIVE, "State")) == ACTIVATED:
+                    up.append((str(self._get(path, ACTIVE, "Id")), str(self._get(path, ACTIVE, "Type"))))
             except dbus.DBusException:
                 continue  # one that went away meanwhile
-        return False
+        return up
 
-    def _saved(self) -> list[tuple[str, dict]]:
+    def online(self) -> bool:
+        """Whether the box is on a network: a Wi-Fi or wired connection up, other than its setup hotspot. The box's own
+        Wi-Fi counts: the box is on a network of its own."""
+        return any(name != HOTSPOT_ID and kind in ONLINE_TYPES for name, kind in self._activated())
+
+    def _connections(self) -> list[tuple[str, dict]]:
         settings = dbus.Interface(self.bus.get_object(NM, SETTINGS_PATH), NM + ".Settings")
-        saved = []
+        found = []
         for path in settings.ListConnections():
-            connection = dbus.Interface(self.bus.get_object(NM, path), NM + ".Settings.Connection")
-            values = connection.GetSettings()
+            try:
+                connection = dbus.Interface(self.bus.get_object(NM, path), NM + ".Settings.Connection")
+                found.append((str(path), connection.GetSettings()))
+            except dbus.DBusException:
+                continue  # one that went away meanwhile
+        return found
+
+    def _saved(self, connections: list[tuple[str, dict]] | None = None) -> list[tuple[str, dict]]:
+        """The Wi-Fi networks the box joined and saved."""
+        saved = []
+        for path, values in self._connections() if connections is None else connections:
             wifi = values.get("802-11-wireless", {})
             if values["connection"].get("type") == "802-11-wireless" and wifi.get("mode", "infrastructure") != "ap":
-                saved.append((str(path), values))
+                saved.append((path, values))
         return saved
 
+    def _own(self, connections: list[tuple[str, dict]] | None = None) -> list[str]:
+        """The box's own Wi-Fi as saved: one, or none."""
+        connections = self._connections() if connections is None else connections
+        return [path for path, values in connections if values["connection"].get("id") == OWN_ID]
+
     def saved_wifi(self) -> bool:
-        return bool(self._saved())
+        """Whether there is a Wi-Fi network to go back to: one the box joined, or its own."""
+        connections = self._connections()
+        return bool(self._saved(connections) or self._own(connections))
+
+    def own_network_exists(self) -> bool:
+        return bool(self._own())
+
+    def own_network_active(self) -> bool:
+        return any(name == OWN_ID for name, _kind in self._activated())
+
+    def own_network_up(self, name: str, password: str, timeout: float = 30.0) -> bool:
+        """Makes the box's own Wi-Fi: its saved connection set to this name and password (added the first time), then
+        activated on the Wi-Fi radio, which leaves any network the box was on. Whether it came up."""
+        device = self.wifi_device()
+        if not device:
+            return False
+        values = own_network_settings(name, password)
+        saved = self._own()
+        for extra in saved[1:]:
+            self._delete(extra)
+        try:
+            if saved:
+                dbus.Interface(self.bus.get_object(NM, saved[0]), NM + ".Settings.Connection").Update(values)
+                path = saved[0]
+            else:
+                settings = dbus.Interface(self.bus.get_object(NM, SETTINGS_PATH), NM + ".Settings")
+                path = str(settings.AddConnection(values))
+            active = self.nm.ActivateConnection(dbus.ObjectPath(path), dbus.ObjectPath(device), dbus.ObjectPath("/"))
+        except dbus.DBusException as error:
+            print(f"The box's own Wi-Fi did not start: {error.get_dbus_message()}", flush=True)
+            return False
+        return self._wait(str(active), timeout)
+
+    def own_network_down(self) -> bool:
+        """Takes the box's own Wi-Fi away for good: NetworkManager goes back to the networks the box joined. Whether
+        there was one."""
+        saved = self._own()
+        for path in saved:
+            self._delete(path)
+        return bool(saved)
 
     def scan(self, wait: float = 4.0) -> list[Network]:
         """The networks the radio sees, after asking it to look again; the strongest of each name only."""
@@ -222,33 +346,29 @@ class NetworkManager:
             pass
 
     def hotspot_up(self, ssid: str) -> str | None:
-        """The open setup hotspot, on the box's own address, with every name resolving to it (dnsmasq-shared.conf):
-        its active connection, which hotspot_down takes."""
+        """The open setup hotspot, on the box's own address, with every name resolving to it (wildcard_dns): its active
+        connection, which hotspot_down takes."""
         device = self.wifi_device()
         if not device:
             return None
         values = {
             "connection": _sv({"id": HOTSPOT_ID, "type": "802-11-wireless", "autoconnect": False}),
             "802-11-wireless": _sv({"ssid": dbus.ByteArray(ssid.encode("utf-8")), "mode": "ap", "band": "bg"}),
-            "ipv4": _sv(
-                {
-                    "method": "shared",
-                    "address-data": dbus.Array(
-                        [_sv({"address": HOTSPOT_ADDRESS, "prefix": dbus.UInt32(24)})], signature="a{sv}"
-                    ),
-                }
-            ),
+            "ipv4": _shared(),
             "ipv6": _sv({"method": "disabled"}),
         }
+        wildcard_dns(True)
         try:
             _path, active, _result = self.nm.AddAndActivateConnection2(
                 dbus.Dictionary(values, signature="sa{sv}"), dbus.ObjectPath(device), dbus.ObjectPath("/"),
-            _sv({"persist": "volatile"}),
+                _sv({"persist": "volatile"}),
             )
         except dbus.DBusException as error:
+            wildcard_dns(False)
             print(f"The setup hotspot did not start: {error.get_dbus_message()}", flush=True)
             return None
         if not self._wait(str(active), 20.0):
+            wildcard_dns(False)
             return None
         firewall(self.interface())
         return str(active)
@@ -259,6 +379,7 @@ class NetworkManager:
             self.nm.DeactivateConnection(dbus.ObjectPath(active))
         except dbus.DBusException:
             pass  # already down
+        wildcard_dns(False)
 
 
 RULES = """table inet zirbel_setup {{

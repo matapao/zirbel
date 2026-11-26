@@ -1,11 +1,12 @@
 // A Zirbel box (box mode): pairing with one-time codes, claiming a box no device has paired with, the paired devices'
-// sessions, the box's switches and what is off not running, the network it answers, and its door.
+// sessions, the box's switches and what is off not running, its own Wi-Fi, the network it answers, and its door.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request, type IncomingMessage, type ServerResponse } from 'node:http';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { test } from 'node:test';
+import { networkWake, readOwnNetwork, wifiJoinText } from '../packages/server/box-network.ts';
 import { CODE_MS, deviceLabel, normalizeCode, Pairing, sessionToken, WRONG_CODES } from '../packages/server/box-pairing.ts';
 import { boxDoor, boxHosts, boxName, boxRequest, isLoopback, onBoxNetwork, type BoxContext } from '../packages/server/box-routes.ts';
 import { BoxHarnesses, BoxSettings, harnessesUnavailable, type Capabilities } from '../packages/server/box-settings.ts';
@@ -87,8 +88,16 @@ test('the switches start by what the box can do and how much memory it has, and 
   assert.match(harnessesUnavailable(thirtyTwo) ?? '', /aren’t made for this box’s arm system/);
   const folder = tempDir(t, 'zirbel-box-');
   const settings = new BoxSettings(folder, roomy);
-  assert.deepEqual(settings.update({ externalMcp: true }), { version: 1, harnesses: true, externalMcp: true, onboarded: false, setupRequested: false });
+  assert.deepEqual(settings.update({ externalMcp: true }),
+    { version: 1, harnesses: true, externalMcp: true, onboarded: false, setupRequested: false, ownNetwork: false });
   assert.equal(new BoxSettings(folder, roomy).read().externalMcp, true);
+  // Settings from before the box's own Wi-Fi have it off; a null is no setting.
+  const older = tempDir(t, 'zirbel-box-');
+  writeFileSync(join(older, 'settings.json'), JSON.stringify({ version: 1, harnesses: false, externalMcp: true, onboarded: true, setupRequested: false }));
+  assert.equal(new BoxSettings(older, roomy).read().ownNetwork, false);
+  writeFileSync(join(older, 'settings.json'), JSON.stringify({ version: 1, harnesses: false, externalMcp: true, onboarded: true,
+    setupRequested: false, ownNetwork: null }));
+  assert.throws(() => new BoxSettings(older, roomy).read(), /could not be read/);
 
   let built = 0;
   let closed = 0;
@@ -142,8 +151,9 @@ function boxFor(t: Parameters<typeof tempDir>[0], capabilities = roomy, turns = 
   const folder = tempDir(t, 'zirbel-box-');
   const settings = new BoxSettings(folder, capabilities);
   mkdirSync(join(folder, 'run'));
-  return { pairing: new Pairing(folder), settings, capabilities, port: () => 80, turns: () => turns, qr: async () => 'data:image/png;base64,',
-    setupRequest: join(folder, 'run', 'request'),
+  return { pairing: new Pairing(folder), settings, capabilities, port: () => 80, turns: () => turns,
+    qr: async (text) => 'data:qr,' + encodeURIComponent(text),
+    setupRequest: join(folder, 'run', 'request'), ownNetwork: join(folder, 'own-network.json'),
     harnesses: new BoxHarnesses(() => { throw new Error('No harness in this test'); }, () => settings.read().harnesses) };
 }
 const at = (path: string) => new URL(path, 'http://zirbel.local');
@@ -228,6 +238,51 @@ test('the box API: codes, devices, switches and setup (which wakes the setup ser
   const { response } = outgoing();
   await assert.rejects(boxRequest(running, incoming('192.168.1.20', 'PUT', '/', { 'content-type': 'application/json',
     origin: 'http://zirbel.local' }, '{"harnesses":false}'), response, paired, { resource: 'box', pathID: 'settings' }), /A turn is running/);
+});
+
+test('the box’s own Wi-Fi: read as the setup service keeps it, joined by a QR code, switched only where it can be', async (t) => {
+  const box = boxFor(t);
+  const wake = networkWake(box.setupRequest);
+  assert.equal(wake, join(dirname(box.setupRequest), 'network'));
+  const paired = { local: false, device: 'device' };
+  const call = async (method: string, pathID: string, payload?: object) => {
+    const { response, sent } = outgoing();
+    const headers: Record<string, string> = { origin: 'http://zirbel.local', ...(payload ? { 'content-type': 'application/json' } : {}) };
+    await boxRequest(box, incoming('10.42.0.20', method, '/', headers, payload ? JSON.stringify(payload) : ''), response, paired,
+      { resource: 'box', pathID });
+    return JSON.parse(sent.body || '{}');
+  };
+  // A box without its Wi-Fi setup has no network to make, and can't switch it on.
+  assert.deepEqual(await call('GET', 'network'), { ownNetwork: false, network: null });
+  await assert.rejects(call('PUT', 'settings', { ownNetwork: true }), /can’t make its own Wi-Fi/);
+  assert.ok(!existsSync(wake));
+
+  writeFileSync(box.ownNetwork, JSON.stringify({ version: 1, name: 'Zirbel 3F2A', password: 'abcd-efgh-jkmn' }));
+  assert.deepEqual(await call('GET', 'network'), { ownNetwork: false,
+    network: { name: 'Zirbel 3F2A', password: 'abcd-efgh-jkmn', qr: 'data:qr,' + encodeURIComponent('WIFI:T:WPA;S:Zirbel 3F2A;P:abcd-efgh-jkmn;;') } });
+  // Switching it wakes the setup service, which changes the Wi-Fi; setting it to what it is wakes nothing.
+  assert.equal((await call('PUT', 'settings', { ownNetwork: true })).ownNetwork, true);
+  assert.ok(existsSync(wake));
+  rmSync(wake);
+  await call('PUT', 'settings', { ownNetwork: true, onboarded: true });
+  assert.ok(!existsSync(wake));
+  assert.equal((await call('GET', 'network')).ownNetwork, true);
+  assert.equal(box.settings.read().setupRequested, false, 'the box’s own Wi-Fi is no setup request');
+  assert.ok(!existsSync(box.setupRequest));
+  assert.equal((await call('PUT', 'settings', { ownNetwork: false })).ownNetwork, false);
+  assert.ok(existsSync(wake));
+
+  // The kept file is checked as a network takes it.
+  assert.equal(readOwnNetwork(join(dirname(box.ownNetwork), 'none.json')), undefined);
+  for (const kept of [{ version: 1, name: 'Zirbel', password: 'short' }, { version: 1, name: 'x'.repeat(33), password: 'long enough' },
+    { version: 1, name: 'Zirbel', password: 'naïve password' }, { version: 1, name: 'Zirbel', password: 'long enough', extra: 1 }]) {
+    writeFileSync(box.ownNetwork, JSON.stringify(kept));
+    assert.throws(() => readOwnNetwork(box.ownNetwork), /could not be read/, JSON.stringify(kept));
+  }
+  writeFileSync(box.ownNetwork, ' '.repeat(4097));
+  assert.throws(() => readOwnNetwork(box.ownNetwork), /could not be read/);
+  // The QR code's text escapes what the WIFI: scheme reserves.
+  assert.equal(wifiJoinText({ name: 'A;B,C:D"E\\F', password: 'pass:word;' }), 'WIFI:T:WPA;S:A\\;B\\,C\\:D\\"E\\\\F;P:pass\\:word\\;;;');
 });
 
 /** A request to a local port with a Host header of its own, as a device that reached the box by its name sends. */

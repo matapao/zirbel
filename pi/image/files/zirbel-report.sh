@@ -16,6 +16,11 @@ touch /run/zirbel-report
   echo "== reverse path filter: all $(sysctl -n net.ipv4.conf.all.rp_filter), wlan0 $(sysctl -n net.ipv4.conf.wlan0.rp_filter 2>/dev/null)"
   echo "== connections"; nmcli -t -f NAME,TYPE,DEVICE,STATE connection show --active; nmcli -t -f NAME,TYPE,AUTOCONNECT connection show
   echo "== Wi-Fi"; iw dev wlan0 link 2>&1; iw dev wlan0 get power_save 2>&1
+  # The box's own Wi-Fi (pi/setup/own_network.py): whether it runs and how many devices are on it, never its password.
+  if nmcli -t -f NAME connection show --active | grep -qx zirbel-network; then
+    echo "own Wi-Fi: on, $(nmcli -g 802-11-wireless.ssid connection show zirbel-network), $(iw dev wlan0 station dump 2>/dev/null | grep -c '^Station') clients"
+  elif nmcli -t -f NAME connection show | grep -qx zirbel-network; then echo "own Wi-Fi: saved, not running"
+  else echo "own Wi-Fi: off"; fi
   # The security the connection negotiated (WPA2 or WPA3, its ciphers, management frame protection): never a key.
   wpa_cli -i wlan0 status 2>&1 | grep -E "^(wpa_state|key_mgmt|pairwise_cipher|group_cipher|pmf|sae_group|freq)="
   ip -s link show wlan0 2>&1 | sed -n '3,6p'

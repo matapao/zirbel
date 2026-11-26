@@ -222,7 +222,7 @@ func TestTheDoorLetsInTheBoxAndItsNetworkOnly(t *testing.T) {
 
 func TestASetupRequestWakesTheSetupServiceWhereThereIsOne(t *testing.T) {
 	folder := t.TempDir()
-	if err := wakeSetup(filepath.Join(folder, "no-service", "request")); err != nil {
+	if err := wake(filepath.Join(folder, "no-service", "request")); err != nil {
 		t.Fatalf("a box without the setup service fails the request: %v", err)
 	}
 	box, err := NewBox(folder, func() int { return 80 })
@@ -241,6 +241,79 @@ func TestASetupRequestWakesTheSetupServiceWhereThereIsOne(t *testing.T) {
 	}
 	if switches, _ := box.settings.Read(); !switches.SetupRequested {
 		t.Fatal("the request is not kept in the settings")
+	}
+}
+
+func TestTheBoxsOwnWiFiIsReadAsKeptAndSwitchedOnlyWhereItCanBe(t *testing.T) {
+	folder := t.TempDir()
+	box, err := NewBox(folder, func() int { return 80 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	box.setupRequest = filepath.Join(folder, "request")
+	box.ownNetwork = filepath.Join(folder, "own-network.json")
+	woken := networkWake(box.setupRequest)
+	put := func(body string) error {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/api/box/settings", strings.NewReader(body))
+		r.Header.Set("content-type", "application/json")
+		return box.change(httptest.NewRecorder(), r)
+	}
+	exists := func(file string) bool {
+		_, err := os.Stat(file) // #nosec G703 -- this test's own temporary files
+		return err == nil
+	}
+	// A box without its Wi-Fi setup has no network to make, and can't switch it on.
+	if err := put(`{"ownNetwork":true}`); statusOf(err) != http.StatusConflict || exists(woken) {
+		t.Fatalf("switched on without a network to make: %v", err)
+	}
+	if err := os.WriteFile(box.ownNetwork, []byte(`{"version":1,"name":"Zirbel 3F2A","password":"abcd-efgh-jkmn"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	if err := box.network(w); err != nil || strings.TrimSpace(w.Body.String()) != `{"network":{"name":"Zirbel 3F2A","password":"abcd-efgh-jkmn","qr":null},"ownNetwork":false}` {
+		t.Fatalf("the network: %s %v", w.Body.String(), err)
+	}
+	// Switching it wakes the setup service, which changes the Wi-Fi; setting it to what it is wakes nothing.
+	if err := put(`{"ownNetwork":true}`); err != nil || !exists(woken) || exists(box.setupRequest) {
+		t.Fatalf("switching on wakes no service: %v", err)
+	}
+	if err := os.Remove(woken); err != nil {
+		t.Fatal(err)
+	}
+	if err := put(`{"ownNetwork":true,"onboarded":true}`); err != nil || exists(woken) {
+		t.Fatalf("no switch wakes the service: %v", err)
+	}
+	if err := put(`{"ownNetwork":false}`); err != nil || !exists(woken) {
+		t.Fatalf("switching off wakes no service: %v", err)
+	}
+	if err := put(`{"ownNetwork":null}`); statusOf(err) != http.StatusBadRequest {
+		t.Fatalf("a null switch is taken: %v", err)
+	}
+	// The kept file is checked as a network takes it.
+	for _, kept := range []string{`{"version":1,"name":"Zirbel","password":"short"}`, `{"version":1,"name":"` + strings.Repeat("x", 33) + `","password":"long enough"}`,
+		`{"version":1,"name":"Zirbel","password":"naïve password"}`, `{"version":1,"name":"Zirbel","password":"long enough","extra":1}`,
+		`{"version":1,"name":"Zirbel"}`, strings.Repeat(" ", ownNetworkBytes+1)} {
+		if err := os.WriteFile(box.ownNetwork, []byte(kept), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, found, err := readOwnNetwork(box.ownNetwork); found || statusOf(err) != http.StatusInternalServerError {
+			t.Errorf("%.40s is read: %v", kept, err)
+		}
+	}
+	if _, found, err := readOwnNetwork(filepath.Join(folder, "none.json")); found || err != nil {
+		t.Fatalf("a missing file is a network: %v", err)
+	}
+	// Settings from before the box's own Wi-Fi have it off.
+	settings := filepath.Join(folder, "box", "settings.json")
+	if err := os.WriteFile(settings, []byte(`{"version":1,"harnesses":false,"externalMcp":true,"onboarded":true,"setupRequested":false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	older, err := NewBoxSettings(filepath.Join(folder, "box"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if switches, err := older.Read(); err != nil || switches.OwnNetwork || !switches.ExternalMCP {
+		t.Fatalf("older settings: %+v %v", switches, err)
 	}
 }
 

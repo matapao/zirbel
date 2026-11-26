@@ -14,9 +14,10 @@ import (
 // The box's switches (--box), mirroring packages/server/box-settings.ts, in
 // the account folder (box/settings.json): whether harnesses run on the box,
 // whether agents elsewhere on the network may use its MCP server, whether its
-// first-run choice was made, and whether someone asked for the Wi-Fi setup
-// again, which the box's setup service reads from /api/box/status. The Go host
-// has no harnesses: its box answers agents over MCP only.
+// first-run choice was made, whether someone asked for the Wi-Fi setup again,
+// and whether the box makes its own Wi-Fi (box_network.go), the last two of
+// which the box's setup service reads from /api/box/status. The Go host has no
+// harnesses: its box answers agents over MCP only.
 
 type boxSwitches struct {
 	Version        int  `json:"version"`
@@ -24,6 +25,8 @@ type boxSwitches struct {
 	ExternalMCP    bool `json:"externalMcp"`
 	Onboarded      bool `json:"onboarded"`
 	SetupRequested bool `json:"setupRequested"`
+	// OwnNetwork is off in settings written before the box could make its own Wi-Fi.
+	OwnNetwork bool `json:"ownNetwork"`
 }
 
 // boxCapabilities is what the box is, as Node's boxCapabilities reports it.
@@ -107,8 +110,10 @@ func (s *BoxSettings) read() (boxSwitches, error) {
 		return boxSwitches{}, err
 	}
 	var switches boxSwitches
-	if strictKeys(data, "version", "harnesses", "externalMcp", "onboarded", "setupRequested") != nil ||
-		json.Unmarshal(data, &switches) != nil || switches.Version != 1 || !allKeys(data, "version", "harnesses", "externalMcp", "onboarded", "setupRequested") {
+	// Every key but ownNetwork, which settings from before it lack; none null.
+	if strictKeys(data, "version", "harnesses", "externalMcp", "onboarded", "setupRequested", "ownNetwork") != nil ||
+		json.Unmarshal(data, &switches) != nil || switches.Version != 1 || hasNull(data) ||
+		!allKeys(data, "version", "harnesses", "externalMcp", "onboarded", "setupRequested") {
 		return boxSwitches{}, errSettingsUnreadable
 	}
 	s.cached = &switches

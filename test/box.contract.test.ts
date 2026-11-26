@@ -1,10 +1,10 @@
 // A box (--box) on both hosts: `node dist/server.mjs --box` and the Go host's --box. Each runs one scripted session,
 // from the box itself (loopback) and from this computer's own network address, and their normalized answers must
-// match: the door, the pairing page and its codes and claim, the paired devices, the switches, the setup flag and
-// external MCP access. What the hosts differ in by design is compared by its form only: harnesses run in the Node
-// editor alone, and only it draws a pairing link's QR code.
+// match: the door, the pairing page and its codes and claim, the paired devices, the switches, the setup flag, the
+// box's own Wi-Fi and external MCP access. What the hosts differ in by design is compared by its form only: harnesses
+// run in the Node editor alone, and only it draws a QR code, for a pairing link or for joining the box's own Wi-Fi.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -16,17 +16,21 @@ const lan = Object.values(networkInterfaces()).flat().find((item) => item && !it
   /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(item.address))?.address;
 if (!lan) console.log('# No private network address: the box contract runs from loopback only.');
 
-/** A box on loopback, with the file a setup request leaves for the box's setup service. */
+/** A box on loopback, with the files a setup request and a switch of the box's own Wi-Fi leave for the box's setup
+ *  service, and where that service would keep the own Wi-Fi's name and password. */
 async function startBox(t: TestContext, command: string[]) {
   const root = tempDir(t, 'zirbel-box-');
   const account = join(root, 'account');
   mkdirSync(account, { mode: 0o700 });
   mkdirSync(join(root, 'run'));
   const wake = join(root, 'run', 'request');
+  const own = join(root, 'own-network.json');
   const { ready } = launch(t, command, ['--data', join(root, 'data'), '--port', '0', '--box'],
-    (line) => typeof line.editor === 'string' ? line.editor : undefined, { ZIRBEL_ACCOUNT_DIR: account, ZIRBEL_SETUP_REQUEST: wake });
-  return { editor: await ready, wake };
+    (line) => typeof line.editor === 'string' ? line.editor : undefined,
+    { ZIRBEL_ACCOUNT_DIR: account, ZIRBEL_SETUP_REQUEST: wake, ZIRBEL_OWN_NETWORK: own });
+  return { editor: await ready, wake, own, network: join(root, 'run', 'network') };
 }
+type Started = Awaited<ReturnType<typeof startBox>>;
 
 type Step = { status: number; body: unknown; location?: string | null; cookie?: string; headers?: Record<string, string | null> };
 /** The pairing page's headers, which a browser's form and its Origin depend on. */
@@ -83,7 +87,7 @@ function normalizer() {
     headers: step.headers ?? null, ...(step.status >= 300 ? {} : { body: walk(step.body) }) });
 }
 
-async function session(base: string, wake: string) {
+async function session({ editor: base, wake, own, network }: Started) {
   const steps: Step[] = [];
   const box = client(base);
   const record = async (step: Promise<Step>) => { const result = await step; steps.push(result); return result; };
@@ -105,6 +109,21 @@ async function session(base: string, wake: string) {
   assert.ok(existsSync(wake), 'a setup request leaves the file that wakes the setup service');
   rmSync(wake);
   await record(box('POST', '/api/box/setup', { json: {}, origin: true }));
+
+  // The box's own Wi-Fi: none to make until the setup service keeps a name and password; switching it wakes the service.
+  await record(box('GET', '/api/box/network'));
+  await record(box('PUT', '/api/box/settings', { json: { ownNetwork: true } }));
+  assert.ok(!existsSync(network), 'a box with no network to make wakes nothing');
+  writeFileSync(own, JSON.stringify({ version: 1, name: 'Zirbel 3F2A', password: 'abcd-efgh-jkmn' }));
+  await record(box('GET', '/api/box/network'));
+  await record(box('PUT', '/api/box/settings', { json: { ownNetwork: true } }));
+  assert.ok(existsSync(network), 'switching the box’s own Wi-Fi wakes the setup service');
+  rmSync(network);
+  await record(box('PUT', '/api/box/settings', { json: { ownNetwork: true } }));
+  assert.ok(!existsSync(network) && !existsSync(wake), 'a setting kept as it was wakes nothing');
+  await record(box('PUT', '/api/box/settings', { json: { ownNetwork: 'on' } }));
+  await record(box('GET', '/api/box/network'));
+  await record(box('GET', '/api/box/status'));
   await record(box('POST', '/api/pairing', { json: {}, origin: true }));
   await record(box('GET', '/pair'));
   await record(box('GET', '/pair?code=abcd%20efgh'));
@@ -141,6 +160,11 @@ async function session(base: string, wake: string) {
   await record(device('POST', '/api/box/setup', { json: { requested: false }, session: first, origin: true }));
   await record(device('POST', '/api/box/setup', { json: { requested: true }, session: first, origin: true }));
   assert.ok(existsSync(wake), 'a paired device’s setup request wakes the setup service too');
+  // Only a paired device sees the box's own Wi-Fi's password, and switches it.
+  await record(device('GET', '/api/box/network'));
+  await record(device('GET', '/api/box/network', { session: first }));
+  await record(device('PUT', '/api/box/settings', { json: { ownNetwork: false }, session: first, origin: true }));
+  assert.ok(existsSync(network), 'a paired device’s switch wakes the setup service');
   await record(device('POST', '/turn-mcp', { json: ping, session: first, origin: true }));
 
   // External MCP access: off, the network gets no MCP; on, a project grant opens it.
@@ -165,8 +189,7 @@ const results = new Map<string, Step[]>();
 
 for (const host of hosts) {
   test(host.name + ' box runs the scripted session', async (t) => {
-    const { editor, wake } = await startBox(t, host.command);
-    const steps = await session(editor, wake);
+    const steps = await session(await startBox(t, host.command));
     for (const [index, step] of steps.entries()) assert.ok(step.status < 500, 'step ' + index + ': ' + step.status + ' ' + JSON.stringify(step.body));
     results.set(host.name, steps);
   });

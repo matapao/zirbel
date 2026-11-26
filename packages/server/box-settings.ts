@@ -1,8 +1,8 @@
 // The box's switches (box mode, --box), in the account folder (box/settings.json): whether harnesses run on the box,
-// whether agents elsewhere on the network may use its MCP server, whether its first-run choice was made, and whether
-// someone asked for the Wi-Fi setup again, which the box's setup service reads from /api/box/status. What is off does
-// not run: the harnesses are built only while they are on (BoxHarnesses), and /mcp answers the network only while
-// external MCP access is on.
+// whether agents elsewhere on the network may use its MCP server, whether its first-run choice was made, whether
+// someone asked for the Wi-Fi setup again, and whether the box makes its own Wi-Fi (box-network.ts), the last two of
+// which the box's setup service reads from /api/box/status. What is off does not run: the harnesses are built only
+// while they are on (BoxHarnesses), and /mcp answers the network only while external MCP access is on.
 import { readFileSync } from 'node:fs';
 import { totalmem } from 'node:os';
 import { join } from 'node:path';
@@ -14,11 +14,14 @@ import type { ProcessorRun, Processors } from './processors.ts';
 
 const settings = z.strictObject({
   version: z.literal(1), harnesses: z.boolean(), externalMcp: z.boolean(), onboarded: z.boolean(), setupRequested: z.boolean(),
+  // Settings written before the box could make its own Wi-Fi have none: it is off.
+  ownNetwork: z.boolean().default(false),
 });
 export type BoxSwitches = z.infer<typeof settings>;
 /** What a paired device or the box itself may change. */
 export const settingsChange = z.strictObject({
   harnesses: z.boolean().optional(), externalMcp: z.boolean().optional(), onboarded: z.boolean().optional(),
+  ownNetwork: z.boolean().optional(),
 });
 
 /** What the box is, as it starts: harnesses runs only where Claude Code and Codex are made for the system, 64-bit ARM
@@ -50,7 +53,7 @@ export class BoxSettings {
     privateDirectory(folder);
     this.file = join(folder, 'settings.json');
     this.defaults = { version: 1, harnesses: capabilities.harnesses && capabilities.memoryMB >= ROOMY_MB,
-      externalMcp: false, onboarded: false, setupRequested: false };
+      externalMcp: false, onboarded: false, setupRequested: false, ownNetwork: false };
   }
 
   read(): BoxSwitches {
