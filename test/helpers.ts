@@ -7,12 +7,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { TestContext } from 'node:test';
+import WebSocket from 'ws';
 import { PROTOCOL_VERSION, type ServerMessage } from '../packages/sdk/contracts.ts';
+import { importGameFolder } from '../packages/core/game-files.ts';
 import { Projects } from '../packages/core/projects.ts';
 import { Releases } from '../packages/core/releases.ts';
 import { type Peer, type Room } from '../packages/core/rooms.ts';
 import { starterScene, templates } from '../packages/games/templates.ts';
 import type { Template } from '../packages/sdk/contracts.ts';
+import { Reader, Writer } from '../packages/net/codec.ts';
+import { Cursor, writeHello } from '../packages/net/internal.ts';
 
 export const rights = { play: true, download: true, remix: true };
 
@@ -90,12 +94,15 @@ export function launch<T>(t: TestContext, command: string[], args: string[], pic
 
 // The policy and import map every game gets, a single document or a built folder, written out in full: the unit
 // tests hold game-page.ts to them and the contract tests hold both hosts.
-export function sandboxPolicy(runtime: string, base: string, ancestors: string) {
+// A net-v2 game (net: the player's origin) may also import zirbel-net's client and open the relay socket.
+export function sandboxPolicy(runtime: string, base: string, ancestors: string, net?: string) {
   const addons = runtime + 'three/addons/';
   return "sandbox allow-scripts; default-src 'none'; " +
-    "script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + ' ' + runtime + 'game-sdk.js ' + runtime + 'three.module.js ' + addons + '; ' +
+    "script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + ' ' + runtime + 'game-sdk.js ' + runtime + 'three.module.js ' + addons +
+    (net ? ' ' + net + '/zirbel-net.js' : '') + '; ' +
     "style-src 'unsafe-inline' " + base + '; img-src data: blob: ' + base + '; media-src data: blob: ' + base + '; font-src data: ' + base + '; ' +
-    'connect-src ' + base + ' ' + addons + ' data: blob:; worker-src ' + base + " blob:; frame-src 'none'; form-action 'none'; base-uri 'none'; " +
+    'connect-src ' + base + ' ' + addons + ' data: blob:' + (net ? ' ' + net.replace(/^http/, 'ws') + '/mp' : '') +
+    '; worker-src ' + base + " blob:; frame-src 'none'; form-action 'none'; base-uri 'none'; " +
     'frame-ancestors ' + ancestors;
 }
 export const importMap = (runtime: string) => '<script type="importmap">{"imports":{"three":"' + runtime + 'three.module.js",' +
@@ -134,3 +141,67 @@ export function statusForHost(url: string, host: string) {
       .on('error', reject).end();
   });
 }
+
+// A built game folder whose zirbel.json is for this many players: it imports as a net game.
+export function netGame(projects: Projects, players: number, title = 'Relay') {
+  const base64 = (text: string) => Buffer.from(text).toString('base64');
+  return importGameFolder(projects, { title, files: {
+    'index.html': base64('<!doctype html><canvas></canvas>'), 'zirbel.json': base64(JSON.stringify({ players: { max: players } })) } });
+}
+
+// zirbel-net protocol v2 on the wire (packages/net/protocol.ts), for the relay tests.
+export type Wire = { type: number; peer: number; unreliable: boolean; payload: Uint8Array };
+export function wire(frame: Uint8Array): Wire[] {
+  const messages: Wire[] = [];
+  if (frame[0] !== 0) return messages;
+  const c = new Cursor().reset(frame, 1, frame.length);
+  while (c.next()) messages.push({ type: c.type, peer: c.peer, unreliable: c.unreliable, payload: frame.slice(c.start, c.end) });
+  return messages;
+}
+export function frameOf(...messages: { type: number; peer: number; payload?: Uint8Array | number[]; unreliable?: boolean }[]) {
+  const w = new Writer().u8(0);
+  for (const message of messages) {
+    const payload = Uint8Array.from(message.payload ?? []);
+    w.u8(message.type).u8(message.peer).varint(payload.length * 2 + (message.unreliable ? 1 : 0)).raw(payload);
+  }
+  return w.view().slice();
+}
+export const hello = (room: string, key: string, more: { token?: string; nonce?: string; version?: number; game?: string } = {}) =>
+  writeHello({ version: more.version ?? 2, game: more.game ?? 'game', room, key, token: more.token ?? '', nonce: more.nonce ?? 'nonce', caps: 0 });
+export function welcomeOf(message: Wire) {
+  const r = new Reader(message.payload);
+  const id = r.u8(), host = r.u8(), token = r.str(), time = r.f64(), resumed = r.u8(), caps = r.u8();
+  const peers = Array.from({ length: r.varint() }, () => r.u8());
+  const welcome = { id, host, token, time, resumed, caps, peers, maxMsg: r.varint(), revision: r.str(), base: r.str() };
+  assert.equal(r.overrun || r.left() > 0, false, 'a WELCOME of exactly its fields');
+  return welcome;
+}
+export function errorOf(message: Wire) {
+  const r = new Reader(message.payload);
+  return { code: r.u8(), message: r.str() };
+}
+
+// A zirbel-net connection to the relay, speaking protocol v2 by hand.
+export function relaySocket(player: string, origin?: string) {
+  const ws = new WebSocket(player.replace('http', 'ws') + '/mp', origin ? { origin } : {});
+  const messages: Wire[] = [];
+  let changed = () => {};
+  ws.on('message', (data: Buffer) => { messages.push(...wire(new Uint8Array(data))); changed(); });
+  const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
+  const opened = new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject); });
+  return {
+    ws, closed, opened, pending: messages,
+    send(frame: Uint8Array) { ws.send(frame); },
+    /** The first message that passes check, taken from those received. */
+    async next(check: (message: Wire) => boolean = () => true) {
+      const deadline = Date.now() + 3000;
+      for (;;) {
+        const index = messages.findIndex(check);
+        if (index >= 0) return messages.splice(index, 1)[0]!;
+        if (Date.now() > deadline) throw new Error('No matching relay message in ' + JSON.stringify(messages));
+        await new Promise<void>((resolve) => { changed = resolve; setTimeout(resolve, 50); });
+      }
+    },
+  };
+}
+export const about = (type: number, seat: number) => (message: Wire) => message.type === type && message.payload[0] === seat;

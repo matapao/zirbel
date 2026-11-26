@@ -12,7 +12,9 @@ import { importGameFolder } from '../packages/core/game-files.ts';
 import { Projects } from '../packages/core/projects.ts';
 import { Releases } from '../packages/core/releases.ts';
 import type { Release } from '../packages/sdk/contracts.ts';
-import { hostsUnderTest, importMap, launch, legacyProject, rights, sandboxPolicy, statusForHost, stopHost, tempDir } from './helpers.ts';
+import { Reader, Writer } from '../packages/net/codec.ts';
+import { about, errorOf, frameOf, hello, hostsUnderTest, importMap, launch, legacyProject, netGame, relaySocket as relay, rights, sandboxPolicy,
+  statusForHost, stopHost, tempDir, welcomeOf } from './helpers.ts';
 
 const hosts = hostsUnderTest();
 
@@ -42,6 +44,7 @@ function fixtures(t: TestContext) {
     moss: write('moss', releases.package(legacyProject(projects, 'mosslight').id, 'main', rights, false)),
     built: write('built', releases.package(importGameFolder(projects, { title: 'Built', files: Object.fromEntries(
       Object.entries(builtFiles).map(([path, data]) => [path, Buffer.from(data).toString('base64')])) }).id, 'main', rights, false)),
+    net: write('net', releases.package(netGame(projects, 3).id, 'main', rights, false)),
   };
 }
 
@@ -385,5 +388,85 @@ for (const host of hosts) {
     }
     await stopHost(owner.process);
     assert.equal(existsSync(join(shared, 'service.json')), false);
+  });
+
+  test(host.name + ' host relays zirbel-net games: its client, the page\'s policy, seats, routing and the host role', async (t) => {
+    const data = fixtures(t);
+    const { player, rooms } = await startHost(t, host.command, ['--data', join(data.root, 'data'), '--import', data.net.file, '--release', data.net.id]);
+    const [roomId, invite] = rooms[0]!.link.split('/join/')[1]!.split('#') as [string, string];
+    const info = await (await fetch(player + '/rooms/' + roomId + '/info', { headers: { authorization: 'Bearer ' + invite } }))
+      .json() as { gameUrl: string; manifest: { simulation: string; players: { max: number } } };
+    assert.deepEqual([info.manifest.simulation, info.manifest.players.max], ['net-v2', 3]);
+    const key = info.gameUrl.split('/')[3]!;
+
+    const bytes = readFileSync('dist/web/zirbel-net.js');
+    const etag = '"' + createHash('sha256').update(bytes).digest('base64url') + '"';
+    let client = await fetch(player + '/zirbel-net.js', { headers: { 'accept-encoding': 'gzip' } });
+    for (let tries = 0; client.headers.get('content-encoding') !== 'gzip' && tries < 100; tries++) {
+      await new Promise((done) => setTimeout(done, 20));
+      client = await fetch(player + '/zirbel-net.js', { headers: { 'accept-encoding': 'gzip' } });
+    }
+    assert.deepEqual(Object.fromEntries(['content-type', 'cache-control', 'etag', 'vary', 'content-encoding', 'access-control-allow-origin',
+      'x-content-type-options', 'referrer-policy', 'content-security-policy'].map((name) => [name, client.headers.get(name)])), {
+      'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'private, max-age=31536000, immutable', etag, vary: 'accept-encoding',
+      'content-encoding': 'gzip', 'access-control-allow-origin': '*', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
+      'content-security-policy': null });
+    assert.deepEqual(Buffer.from(await client.arrayBuffer()), bytes);
+    assert.equal((await fetch(player + '/zirbel-net.js', { headers: { 'if-none-match': etag } })).status, 304);
+    const page = await fetch(player + info.gameUrl);
+    assert.equal(page.headers.get('content-security-policy'), sandboxPolicy(player + '/runtime/' + roomId + '/', player + info.gameUrl, "'self'", player));
+
+    await assert.rejects(relay(player, 'http://evil.example').opened, /403/);
+    const refused = async (frame: Uint8Array) => {
+      const socket = relay(player, 'null');
+      await socket.opened;
+      socket.send(frame);
+      const message = await socket.next();
+      assert.deepEqual([message.type, message.peer, message.unreliable], [9, 0, false]);
+      assert.equal(await socket.closed, 1008);
+      return errorOf(message);
+    };
+    const silent = relay(player);
+    await silent.opened.then(() => silent.send(frameOf({ type: 32, peer: 0, payload: [1] })));
+    assert.deepEqual([await silent.closed, silent.pending], [1008, []]);
+    assert.deepEqual(await refused(hello(roomId, key, { version: 3 })), { code: 1, message: 'protocol v3 not supported, this host speaks v2' });
+    assert.deepEqual(await refused(hello(roomId, key.slice(1))), { code: 6, message: 'no game with that code is running' });
+
+    const [a, b, c] = [relay(player, 'null'), relay(player, 'null'), relay(player)];
+    t.after(() => { for (const socket of [a, b, c]) socket.ws.terminate(); });
+    await Promise.all([a.opened, b.opened, c.opened]);
+    a.send(hello(roomId.toUpperCase(), key, { nonce: 'a' }));
+    const first = welcomeOf(await a.next());
+    assert.match(first.token, /^[0-9a-f]{32}$/);
+    assert.deepEqual({ ...first, token: '', time: 0 }, { id: 1, host: 1, token: '', time: 0, resumed: 0, caps: 0, peers: [], maxMsg: 1_048_576, revision: '', base: '' });
+    b.send(hello(roomId, key, { nonce: 'b' }));
+    assert.deepEqual({ ...welcomeOf(await b.next()), token: '', time: 0 },
+      { id: 2, host: 1, token: '', time: 0, resumed: 0, caps: 0, peers: [1], maxMsg: 1_048_576, revision: '', base: '' });
+    await a.next(about(3, 2));
+
+    // To everyone else, to the host and to a seat: with the sender's seat, and the type, flags and payload as sent.
+    a.send(frameOf({ type: 40, peer: 0, payload: [1, 2] }));
+    assert.deepEqual(await b.next(), { type: 40, peer: 1, unreliable: false, payload: Uint8Array.of(1, 2) });
+    b.send(frameOf({ type: 41, peer: 255, payload: [3], unreliable: true }, { type: 42, peer: 1, payload: [4] }, { type: 43, peer: 9, payload: [5] }));
+    assert.deepEqual(await a.next((message) => message.type === 41), { type: 41, peer: 2, unreliable: true, payload: Uint8Array.of(3) });
+    assert.deepEqual(await a.next((message) => message.type === 42), { type: 42, peer: 2, unreliable: false, payload: Uint8Array.of(4) });
+    a.send(frameOf({ type: 6, peer: 0, payload: new Writer().f64(42.25).view(), unreliable: true }));
+    const pong = await a.next((message) => message.type === 7);
+    assert.deepEqual([pong.peer, pong.unreliable, pong.payload.length], [0, true, 16]);
+    const times = new Reader(pong.payload);
+    assert.equal(times.f64(), 42.25);
+    assert.ok(Math.abs(times.f64() - Date.now()) < 5000);
+
+    c.send(hello(roomId, key));
+    assert.equal(welcomeOf(await c.next()).id, 3);
+    await b.next(about(3, 3));
+    assert.deepEqual(await refused(hello(roomId, key)), { code: 2, message: 'room is full' });
+    // The host leaves for good: the others hear LEAVE, then the new host.
+    a.ws.close(1000);
+    for (const other of [b, c]) assert.deepEqual([await other.next(), await other.next()].map((message) => [message.type, message.peer,
+      [...message.payload]]), [[4, 0, [1]], [5, 0, [2]]]);
+    // Nothing else came: not the message to seat 9, nor anyone's own.
+    await new Promise((done) => setTimeout(done, 100));
+    assert.deepEqual([b.pending, c.pending], [[], []]);
   });
 }

@@ -5,7 +5,7 @@ import type { Releases } from '../core/releases.ts';
 import type { Room, Rooms } from '../core/rooms.ts';
 import { lanAddresses, roomLink } from './http.ts';
 import { playerListener, type PlayerReach } from './player-listener.ts';
-import { threeAddons, type Addons } from './runtime-files.ts';
+import { netClient, threeAddons, type Addons, type RuntimeEntry } from './runtime-files.ts';
 
 // Shared by the editor and the headless host. Keep editor-only code (harnesses,
 // MCP) out of this file so `--host-only` loads only what players need.
@@ -60,11 +60,13 @@ export class Players {
 
   // Read from the build beside the release runtime, and shared by both listeners.
   private readonly addons: Addons;
+  private readonly client: RuntimeEntry;
 
   // qr renders a LAN link for the editor; the headless host prints links only.
   constructor(readonly rooms: Rooms, private releases: Releases,
     private options: { playerPort: number; lanHost?: string; qr?: (link: string) => Promise<string> }) {
     this.addons = threeAddons(releases.webRoot);
+    this.client = netClient(releases.webRoot);
   }
 
   get lanHost() { return this.options.lanHost; }
@@ -72,7 +74,7 @@ export class Players {
   /** The player for the editor's own playtests: on loopback, or on a box (reach) on every interface, for the box's
    *  network, embedded by the editor on the host name the device reached it by. */
   async openLocal(port: number, editorOrigins: string[] | ((host: string) => string[]) = [], reach?: PlayerReach) {
-    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons,
+    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons, this.client,
       { bind, lan: false, port, editorOrigins, reach });
     // A box without IPv6 listens on IPv4 alone.
     this.local = await (reach ? open('::').catch((error: NodeJS.ErrnoException) => {
@@ -85,7 +87,7 @@ export class Players {
   startLan() {
     if (this.lan) return Promise.resolve(this.lan);
     const { playerPort, lanHost } = this.options;
-    this.startingLan ??= playerListener(this.rooms, this.releases.runtime, this.addons, { bind: '0.0.0.0', lan: true, port: playerPort,
+    this.startingLan ??= playerListener(this.rooms, this.releases.runtime, this.addons, this.client, { bind: '0.0.0.0', lan: true, port: playerPort,
       extraHosts: lanHost ? [lanHost] : [] }).then((active) => (this.lan = active))
       .finally(() => { this.startingLan = undefined; });
     return this.startingLan;

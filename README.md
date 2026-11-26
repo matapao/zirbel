@@ -39,7 +39,7 @@ The game runs in the middle, playable, with its thread beside it. Before a game 
 - **`view_game`**: each turn gets one MCP tool from the editor, on a server of its own for that turn's folder. It serves `game/` through the editor's player and game sandbox in a temporary room, renders it in a real browser with WebGL outside the harness's sandbox, takes the keys, clicks, waits and text it is given, and returns PNG screenshots with the page's console. The desktop app renders with its own Electron; the web editor uses an installed Chrome, Edge or Chromium, headless with a throwaway profile (`ZIRBEL_BROWSER` names another), and says so when there is none.
 - **Edit** (or the E key) shows the editing tools on the running game: the object list to mark objects for chat, the **Source**, which you can change and save as a revision, and the scene tools of a template scene. A click into the game ends Edit.
 - A change staged for review is a card in the thread: **Before** and **After** switch the running game, then **Apply** or **Discard** it. **⋯ → History** switches branches, applies a proposal to a new branch and restores revisions.
-- **Assets** lists the imported images and imports another. **Share → Development multiplayer** opens an invite-only LAN room pinned to the saved revision (up to 4 players, if the game declares it).
+- **Assets** lists the imported images and imports another. **Share → Development multiplayer** opens an invite-only LAN room pinned to the saved revision (up to 4 players, or 16 for a game with its own netcode, if the game declares it).
 
 ## Game API
 
@@ -51,6 +51,8 @@ A revision is one HTML document, or a built web folder imported with its files. 
 | `zirbel.assets[id]` | Data URL for an imported image |
 | `zirbel.send(state)` | Share this player's JSON state |
 | `zirbel.onRoom(cb)` | Get seat, room seats and state per seat. Returns an unsubscribe function |
+
+A game can bring its own netcode instead, for up to 16 players: its document says `net: true`, or the built folder it was imported from has a `zirbel.json` whose `players.max` is above 1. It plays through the host's relay with zirbel-net, the earlier Zirbel's client, which it imports from `/zirbel-net.js`; its sandbox may reach that file and the relay at `/mp`, and nothing else on the network. [`packages/net/README.md`](packages/net/README.md) describes the API.
 
 ## Host
 

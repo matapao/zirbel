@@ -4,6 +4,7 @@ import { mosslight, tessellate, type Simulation } from '../games/simulations.ts'
 import { boundedJson } from '../sdk/game.ts';
 import type { z } from 'zod';
 import { newId, ZirbelError } from './projects.ts';
+import { Relay } from './relay.ts';
 
 export const secret = () => randomBytes(24).toString('base64url');
 // Room secrets travel over the LAN; compare them in constant time.
@@ -49,6 +50,8 @@ export class Room {
   readonly documentKey = secret();
   readonly inviteExpires = Date.now() + INVITE;
   readonly simulation: Simulation | null;
+  /** A net-v2 room's relay, at /mp: the game's own netcode carries its play. */
+  readonly relay: Relay | null;
   readonly seats = new Map<string, Seat>();
   private pending = new Map<string, { name: string; role: SeatInfo['role']; expires: number }>();
   private tickNumber = 0;
@@ -62,6 +65,7 @@ export class Room {
     const kind = release.manifest.simulation;
     this.simulation = kind === 'mosslight-v1' ? mosslight(legacyScene(release)) :
       kind === 'tessellate-v1' ? tessellate(solo) : kind === 'shared-state-v1' ? sharedState() : null;
+    this.relay = kind === 'net-v2' ? new Relay(this.capacity('player'), () => { this.activity = Date.now(); }) : null;
   }
 
   summary() {
@@ -205,6 +209,7 @@ export class Room {
 
   close() {
     this.closed = true;
+    this.relay?.close();
     for (const seat of this.seats.values()) {
       seat.peer?.send({ type: 'closed', message: 'The owner ended this room.' });
       seat.peer?.close(1000);
@@ -242,6 +247,9 @@ export class Rooms {
     if (!room) throw new ZirbelError(404, 'This room does not exist or has closed.');
     return room;
   }
+
+  /** The open room with this id, if there is one. */
+  find(id: string) { return this.rooms.get(id); }
 
   list() { return [...this.rooms.values()].filter((room) => !room.solo).map((room) => room.summary()); }
 

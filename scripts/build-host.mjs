@@ -13,6 +13,8 @@ rmSync(web, { recursive: true, force: true });
 mkdirSync(web + '/chunks', { recursive: true });
 writeFileSync(web + '/.gitkeep', '');
 for (const file of runtime) cpSync('dist/web/' + file, web + '/' + file);
+// zirbel-net's client, which every player listener serves as /zirbel-net.js: the host's own, not a release's runtime.
+cpSync('dist/web/zirbel-net.js', web + '/zirbel-net.js');
 for (const file of readdirSync('dist/web/chunks')) cpSync('dist/web/chunks/' + file, web + '/chunks/' + file);
 // The editor UI, served by the Go host on its loopback editor port.
 for (const file of ['index.html', 'workspace.js', 'workspace.css', 'favicon.svg']) cpSync('dist/web/' + file, web + '/' + file);

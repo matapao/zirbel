@@ -74,6 +74,13 @@ await Promise.all([
     entryPoints: ['packages/web/game-sdk.ts'], outfile: 'dist/web/game-sdk.js',
     bundle: true, format: 'iife', platform: 'browser', target: 'es2022', minify: true,
   }),
+  // zirbel-net, the earlier Zirbel's multiplayer client (packages/net): every player listener serves it as
+  // /zirbel-net.js to games with their own netcode. It is the host's file, not part of a release's runtime.
+  build({
+    entryPoints: ['packages/net/index.ts'], outfile: 'dist/web/zirbel-net.js',
+    bundle: true, format: 'esm', platform: 'browser', target: 'es2022', minify: true,
+    banner: { js: '/*! zirbel-net, MIT License, Copyright (c) 2026 The zirbel authors */' },
+  }),
   build({
     entryPoints: ['node_modules/three/build/three.module.js'], outfile: 'dist/web/three.module.js',
     bundle: true, platform: 'browser', format: 'esm', target: 'es2022', minify: true, legalComments: 'inline',

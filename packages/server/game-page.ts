@@ -7,19 +7,24 @@ export const THREE_ADDONS = 'three/addons/';
 // must enforce the same opaque origin as the player's iframe attribute.
 // base is the document's own address (/game/<room>/<key>/): a game imported as a built folder
 // loads its files from beside it, and only those. Every game gets the same policy: WebAssembly,
-// workers and loaders reading data: and blob: URLs, and no other origin anywhere.
+// workers and loaders reading data: and blob: URLs, and no other origin anywhere. A game with its own netcode
+// (net-v2) also imports zirbel-net's client from its host and opens the host's relay socket, /mp.
 export function gamePage(release: Release, runtime: string, ancestors: string, base: string) {
   const assets = Object.fromEntries(release.manifest.assets.map((asset) =>
     [asset.id, 'data:' + asset.media + ';base64,' + release.assets[asset.hash]]));
   const json = (value: unknown) => JSON.stringify(value).replaceAll('<', '\\u003c');
   const addons = runtime + THREE_ADDONS;
+  const net = release.manifest.simulation === 'net-v2';
+  const host = net ? new URL(base).origin : '';
   const policy = [
     'sandbox allow-scripts', "default-src 'none'",
-    "script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + ' ' + runtime + 'game-sdk.js ' + runtime + 'three.module.js ' + addons,
+    "script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + ' ' + runtime + 'game-sdk.js ' + runtime + 'three.module.js ' + addons +
+      (net ? ' ' + host + '/zirbel-net.js' : ''),
     "style-src 'unsafe-inline' " + base, 'img-src data: blob: ' + base, 'media-src data: blob: ' + base, 'font-src data: ' + base,
     // Loaders turn embedded data into blob: and data: URLs and read them back, and fetch the decoders
     // the addons ship with (Draco, Basis); none of it reaches the network.
-    'connect-src ' + base + ' ' + addons + ' data: blob:', 'worker-src ' + base + ' blob:',
+    'connect-src ' + base + ' ' + addons + ' data: blob:' + (net ? ' ' + host.replace(/^http/, 'ws') + '/mp' : ''),
+    'worker-src ' + base + ' blob:',
     "frame-src 'none'", "form-action 'none'", "base-uri 'none'",
     'frame-ancestors ' + ancestors,
   ].join('; ');
