@@ -1,12 +1,26 @@
-# Generated, vendored or data files.
-dist/
+# Prettier reads .gitignore too. Besides what it ignores:
+# generated, vendored or data files;
 deps/
-node_modules/
 host/webfiles/web/
-host/bin/
 contracts/*.schema.json
 contracts/mcp-tools.json
 contracts/mcp-scene.html
-examples/
+test/fixtures/
 pnpm-lock.yaml
 *.go
+# the Markdown the product serves (.gitattributes `content`), kept as it is written;
+packages/server/guides/
+packages/net/README.md
+skills/
+# and the standard's shared files, kept byte for byte as it writes them.
+.golangci.yml
+.oxlintrc.json
+.github/SECURITY.md
+.github/zizmor.yml
+.github/workflows/codeql.yml
+.github/workflows/dependency-review.yml
+.github/workflows/scorecard.yml
+scripts/check.mjs
+scripts/check-files.mjs
+scripts/check-go.mjs
+scripts/github-settings.mjs

@@ -1,0 +1,26 @@
+# Text is stored with LF everywhere, whatever the checkout's system.
+* text=auto eol=lf
+
+# Generated: GitHub folds these in pull requests and leaves them out of the language bar, and scripts/check-files.mjs
+# leaves them out of the line limit.
+pnpm-lock.yaml linguist-generated=true -diff
+go.sum linguist-generated=true -diff
+# The JSON Schemas, the MCP server's tools and its Scene app page, written by `pnpm contracts` from the Zod schemas.
+contracts/*.schema.json linguist-generated=true
+contracts/mcp-tools.json linguist-generated=true
+contracts/mcp-scene.html linguist-generated=true
+# The player runtime the Go host embeds, copied there by `pnpm build:host`.
+host/webfiles/web/** linguist-generated=true
+
+# Markdown that is the product's content or a test's data, not the repository's documentation: scripts/check-files.mjs
+# allows only README.md and AGENTS.md besides these. One line per path, with what reads it.
+# The guides the project MCP server serves agents as resources (mcp-guides.ts; the build copies them to dist/web).
+packages/server/guides/*.md content
+# The skill every player listener serves as /zirbel-net/SKILL.md, and the MCP server's multiplayer guide.
+skills/zirbel-multiplayer/SKILL.md content
+# zirbel-net's API, which the MCP server serves as its net-api guide.
+packages/net/README.md content
+
+# Data kept by hand that is not code (a catalog, a fixture): no line limit. One line per path, with what it is.
+# Exported projects (.zirbel-project.json) that the import, migration and contract tests read.
+test/fixtures/*.zirbel-project.json data

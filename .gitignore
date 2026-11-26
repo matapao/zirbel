@@ -24,6 +24,11 @@ host/webfiles/web/*
 # The desktop app's packed builds.
 desktop/out/
 
-# Agent worktrees and the box report copied off a card: never part of the repo.
-.claude/
+# The box's report, copied off a card: never part of the repository.
 zirbel-report.txt
+
+# Coding agents' own files: never part of the repository.
+.claude/
+.codex/
+.cursor/
+CLAUDE.local.md
