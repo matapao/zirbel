@@ -64,7 +64,7 @@ func gamePage(release *Release, runtime, ancestors, base string) (policy, html s
 		connects += " " + relay + "/mp"
 	}
 	policy = strings.Join([]string{
-		"sandbox allow-scripts", "default-src 'none'", scripts,
+		"sandbox allow-scripts allow-pointer-lock", "default-src 'none'", scripts,
 		"style-src 'unsafe-inline' " + base, "img-src data: blob: " + base, "media-src data: blob: " + base, "font-src data: " + base,
 		connects, "worker-src " + base + " blob:",
 		"frame-src 'none'", "form-action 'none'", "base-uri 'none'", "frame-ancestors " + ancestors,

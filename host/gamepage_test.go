@@ -10,7 +10,7 @@ import (
 func TestEveryGameGetsTheSameSandbox(t *testing.T) {
 	runtime, base := "http://h/runtime/r/", "http://h/game/r/key/"
 	addons := runtime + "three/addons/"
-	want := "sandbox allow-scripts; default-src 'none'; " +
+	want := "sandbox allow-scripts allow-pointer-lock; default-src 'none'; " +
 		"script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + " " + runtime + "game-sdk.js " + runtime + "three.module.js " + addons + "; " +
 		"style-src 'unsafe-inline' " + base + "; img-src data: blob: " + base + "; media-src data: blob: " + base + "; font-src data: " + base + "; " +
 		"connect-src " + base + " " + addons + " data: blob:; worker-src " + base + " blob:; frame-src 'none'; form-action 'none'; base-uri 'none'; " +

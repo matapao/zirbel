@@ -190,7 +190,9 @@ async function showGame() {
     authoredFrame = document.createElement('iframe');
     authoredFrame.title = info.manifest.title;
     authoredFrame.className = 'authored-game';
-    authoredFrame.sandbox.add('allow-scripts');
+    // Pointer lock, for games aimed with the mouse: it starts only on a click in the game, and the browser always shows
+    // how to leave it (Esc).
+    authoredFrame.sandbox.add('allow-scripts', 'allow-pointer-lock');
     authoredFrame.referrerPolicy = 'no-referrer';
     // A game with its own netcode finds its room on the relay from the address: zirbel-net's launchParams().
     authoredFrame.src = info.manifest.simulation === 'net-v2'

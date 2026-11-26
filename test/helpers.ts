@@ -97,7 +97,7 @@ export function launch<T>(t: TestContext, command: string[], args: string[], pic
 // A net-v2 game (net: the player's origin) may also import zirbel-net's client and open the relay socket.
 export function sandboxPolicy(runtime: string, base: string, ancestors: string, net?: string) {
   const addons = runtime + 'three/addons/';
-  return "sandbox allow-scripts; default-src 'none'; " +
+  return "sandbox allow-scripts allow-pointer-lock; default-src 'none'; " +
     "script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + ' ' + runtime + 'game-sdk.js ' + runtime + 'three.module.js ' + addons +
     (net ? ' ' + net + '/zirbel-net.js' : '') + '; ' +
     "style-src 'unsafe-inline' " + base + '; img-src data: blob: ' + base + '; media-src data: blob: ' + base + '; font-src data: ' + base + '; ' +

@@ -17,7 +17,7 @@ export function gamePage(release: Release, runtime: string, ancestors: string, b
   const net = release.manifest.simulation === 'net-v2';
   const host = net ? new URL(base).origin : '';
   const policy = [
-    'sandbox allow-scripts', "default-src 'none'",
+    'sandbox allow-scripts allow-pointer-lock', "default-src 'none'",
     "script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + ' ' + runtime + 'game-sdk.js ' + runtime + 'three.module.js ' + addons +
       (net ? ' ' + host + '/zirbel-net.js' : ''),
     "style-src 'unsafe-inline' " + base, 'img-src data: blob: ' + base, 'media-src data: blob: ' + base, 'font-src data: ' + base,
