@@ -1,4 +1,52 @@
 {
+  "instructions": {
+    "propose": "Zirbel is a local editor, player and host for browser games. This connection reaches one game, the project its grant names, and nothing else. Read zirbel://guide/overview first, then zirbel://guide/game-format and zirbel://guide/files before you change anything; zirbel://guide/revisions explains history and conflicts, and zirbel://guide/multiplayer games for several players. Every change is staged as a proposal against the branch’s current revision (its baseRevision), with propose or write_files. This grant reads and proposes: what you stage waits in the editor until the game’s owner applies or discards it.",
+    "write": "Zirbel is a local editor, player and host for browser games. This connection reaches one game, the project its grant names, and nothing else. Read zirbel://guide/overview first, then zirbel://guide/game-format and zirbel://guide/files before you change anything; zirbel://guide/revisions explains history and conflicts, and zirbel://guide/multiplayer games for several players. Every change is staged as a proposal against the branch’s current revision (its baseRevision), with propose or write_files. This grant may also apply: apply_proposal makes a staged proposal the branch’s next revision straight away."
+  },
+  "guides": [
+    {
+      "uri": "zirbel://guide/overview",
+      "name": "overview",
+      "title": "Zirbel overview",
+      "description": "What Zirbel is: games, revisions, the editor, the lobby and its sessions, a box, and what this grant allows.",
+      "mimeType": "text/markdown"
+    },
+    {
+      "uri": "zirbel://guide/game-format",
+      "name": "game-format",
+      "title": "Game format",
+      "description": "A game as a folder: index.html and the files beside it, zirbel.json, players, the sandbox it runs in and window.zirbel.",
+      "mimeType": "text/markdown"
+    },
+    {
+      "uri": "zirbel://guide/files",
+      "name": "files",
+      "title": "Reading and writing files",
+      "description": "How to download the game’s files and stage changes to them with read_file and write_files.",
+      "mimeType": "text/markdown"
+    },
+    {
+      "uri": "zirbel://guide/revisions",
+      "name": "revisions",
+      "title": "Revisions and proposals",
+      "description": "History, branches, proposals and changes applied straight in, and what to do when the branch has moved on.",
+      "mimeType": "text/markdown"
+    },
+    {
+      "uri": "zirbel://guide/multiplayer",
+      "name": "multiplayer",
+      "title": "Multiplayer",
+      "description": "The skill for making a game multiplayer with a thin adapter over zirbel-net, and how to do it over this connection.",
+      "mimeType": "text/markdown"
+    },
+    {
+      "uri": "zirbel://guide/net-api",
+      "name": "net-api",
+      "title": "zirbel-net API",
+      "description": "The zirbel-net client’s API: connecting, events, sending, and playing alone.",
+      "mimeType": "text/markdown"
+    }
+  ],
   "resource": {
     "uri": "ui://zirbel/scene",
     "name": "Scene",
@@ -83,10 +131,161 @@
       }
     },
     {
+      "access": "read",
+      "descriptor": {
+        "name": "read_file",
+        "description": "Read one of the game's files by its path: index.html or a file beside it, from a branch head or a revision. UTF-8 text comes back as text, anything else as base64.",
+        "annotations": {
+          "readOnlyHint": true
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "maxLength": 240,
+              "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\\/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.(?:html|js|mjs|css|json|map|txt|csv|wasm|glb|gltf|bin|ktx2|obj|mtl|fbx|hdr|exr|glsl|vert|frag|ts|tsx|jsx|png|jpg|jpeg|webp|gif|avif|svg|ico|woff2|woff|ttf|otf|mp3|ogg|opus|wav|m4a|aac|flac|mp4|webm)$"
+            },
+            "branch": {
+              "default": "main",
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "_meta": {
+          "ui": {
+            "visibility": [
+              "model"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "access": "propose",
+      "descriptor": {
+        "name": "write_files",
+        "description": "Stage a revision that writes or removes the game's files by path, each written as text or base64; the other files stay as they are. Read zirbel://guide/files first.",
+        "annotations": {
+          "readOnlyHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "branch": {
+              "default": "main",
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+            },
+            "baseRevision": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "files": {
+              "minItems": 1,
+              "maxItems": 1001,
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "maxLength": 240,
+                        "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\\/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.(?:html|js|mjs|css|json|map|txt|csv|wasm|glb|gltf|bin|ktx2|obj|mtl|fbx|hdr|exr|glsl|vert|frag|ts|tsx|jsx|png|jpg|jpeg|webp|gif|avif|svg|ico|woff2|woff|ttf|otf|mp3|ogg|opus|wav|m4a|aac|flac|mp4|webm)$"
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 48000000
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "maxLength": 240,
+                        "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\\/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.(?:html|js|mjs|css|json|map|txt|csv|wasm|glb|gltf|bin|ktx2|obj|mtl|fbx|hdr|exr|glsl|vert|frag|ts|tsx|jsx|png|jpg|jpeg|webp|gif|avif|svg|ico|woff2|woff|ttf|otf|mp3|ogg|opus|wav|m4a|aac|flac|mp4|webm)$"
+                      },
+                      "base64": {
+                        "type": "string",
+                        "maxLength": 48000000,
+                        "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "base64"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "maxLength": 240,
+                        "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\\/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.(?:html|js|mjs|css|json|map|txt|csv|wasm|glb|gltf|bin|ktx2|obj|mtl|fbx|hdr|exr|glsl|vert|frag|ts|tsx|jsx|png|jpg|jpeg|webp|gif|avif|svg|ico|woff2|woff|ttf|otf|mp3|ogg|opus|wav|m4a|aac|flac|mp4|webm)$"
+                      },
+                      "remove": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "remove"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          },
+          "required": [
+            "baseRevision",
+            "label",
+            "files"
+          ],
+          "additionalProperties": false
+        },
+        "_meta": {
+          "ui": {
+            "visibility": [
+              "model"
+            ]
+          }
+        }
+      }
+    },
+    {
       "access": "propose",
       "descriptor": {
         "name": "propose",
-        "description": "Stage a revision. Use writeGame with a complete HTML document to implement any game or edit.",
+        "description": "Stage a revision. Use writeGame with a complete HTML document to implement any game or edit; a game with files beside its index.html changes through write_files.",
         "annotations": {
           "readOnlyHint": false
         },

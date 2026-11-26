@@ -1,0 +1,25 @@
+{
+  "$id": "https://zirbel.app/contracts/mcp-read-file.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "maxLength": 240,
+      "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\\/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.(?:html|js|mjs|css|json|map|txt|csv|wasm|glb|gltf|bin|ktx2|obj|mtl|fbx|hdr|exr|glsl|vert|frag|ts|tsx|jsx|png|jpg|jpeg|webp|gif|avif|svg|ico|woff2|woff|ttf|otf|mp3|ogg|opus|wav|m4a|aac|flac|mp4|webm)$"
+    },
+    "branch": {
+      "default": "main",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "additionalProperties": false
+}

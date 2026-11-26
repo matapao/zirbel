@@ -11,6 +11,8 @@ import {
 } from '../packages/sdk/contracts.ts';
 import { gameDocument } from '../packages/sdk/game.ts';
 import { grantSchema, toolDescriptors } from '../packages/server/mcp.ts';
+import { readFileInput, writeFilesInput } from '../packages/server/mcp-files.ts';
+import { guideResources, instructions } from '../packages/server/mcp-guides.ts';
 import { sceneDocument, sceneResource } from '../packages/server/scene-app.ts';
 
 // Reserve is defined beside the player listener, which imports the editor's HTTP
@@ -38,6 +40,8 @@ const schemas = {
   'client-message': ClientMessage, 'server-message': ServerMessage, release: portableRelease,
   'game-document': gameDocument, project, proposal: proposalInput, reserve, scene, ...editor,
   'lobby-start': lobbyStart, 'lobby-join': lobbyJoin, 'lobby-offer': lobbyOffer, 'lobby-file': lobbyFile,
+  // The arguments of the MCP tools for the game's files (packages/server/mcp-files.ts).
+  'mcp-read-file': readFileInput, 'mcp-write-files': writeFilesInput,
 };
 
 // Zod trims some strings, and its URL check trims and drops tabs and newlines,
@@ -63,8 +67,10 @@ for (const [name, schema] of Object.entries(schemas)) {
   generated['contracts/' + name + '.schema.json'] =
     JSON.stringify({ $id: 'https://zirbel.app/contracts/' + name + '.schema.json', ...json }, null, 2) + '\n';
 }
-// MCP: the advertised tools and the Scene app page, served verbatim by every host.
-generated['contracts/mcp-tools.json'] = JSON.stringify({ resource: sceneResource, tools: toolDescriptors }, null, 2) + '\n';
+// MCP: the orientation at initialize, the guides (their text is in the build), the advertised tools and the Scene app
+// page, served verbatim by every host.
+generated['contracts/mcp-tools.json'] = JSON.stringify({ instructions, guides: guideResources, resource: sceneResource,
+  tools: toolDescriptors }, null, 2) + '\n';
 generated['contracts/mcp-scene.html'] = sceneDocument;
 
 const check = process.argv.includes('--check');

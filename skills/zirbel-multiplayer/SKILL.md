@@ -165,7 +165,7 @@ A game runs in a sandboxed frame with its own opaque origin and a strict content
 
 - Load scripts, styles, images, fonts and `fetch` only from your own folder, by relative path (for Vite: `--base ./`), plus `/zirbel-net.js` and the relay. No CDNs: bundle every dependency. `import 'three'` and `three/addons/…` resolve to the host's three.js.
 - `localStorage`, `sessionStorage`, IndexedDB and cookies throw: wrap them in `try`. A reload takes a new seat.
-- No pointer lock, popups or navigation of the page around the frame. Offer the game's controls without pointer lock.
+- Pointer lock works, from a click in the game. No popups, and no navigation of the page around the frame.
 - `net.data('rules.json')` reads `data/rules.json` from your folder.
 
 ## 9. Test with two browsers on a local host

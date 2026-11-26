@@ -17,7 +17,7 @@ export const gameFolder = z.strictObject({
 // 1 there says the game brings its own netcode (zirbel-net): it plays over the host's relay, with up to
 // 16 players. A file that says otherwise, can't be read or is over 64 KB leaves a game for one.
 const MANIFEST_BASE64 = Math.ceil(65_536 / 3) * 4;
-function netPlayers(manifest: string | undefined): number {
+export function netPlayers(manifest: string | undefined): number {
   if (manifest === undefined || manifest.length > MANIFEST_BASE64) return 1;
   let max: unknown;
   try { max = (JSON.parse(Buffer.from(manifest, 'base64').toString('utf8')) as { players?: { max?: unknown } } | null)?.players?.max; }

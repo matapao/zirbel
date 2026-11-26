@@ -1,0 +1,95 @@
+{
+  "$id": "https://zirbel.app/contracts/mcp-write-files.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "branch": {
+      "default": "main",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "baseRevision": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "x-zirbel-prepare": "trim"
+    },
+    "files": {
+      "minItems": 1,
+      "maxItems": 1001,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 240,
+                "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\\/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.(?:html|js|mjs|css|json|map|txt|csv|wasm|glb|gltf|bin|ktx2|obj|mtl|fbx|hdr|exr|glsl|vert|frag|ts|tsx|jsx|png|jpg|jpeg|webp|gif|avif|svg|ico|woff2|woff|ttf|otf|mp3|ogg|opus|wav|m4a|aac|flac|mp4|webm)$"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 48000000
+              }
+            },
+            "required": [
+              "path",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 240,
+                "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\\/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.(?:html|js|mjs|css|json|map|txt|csv|wasm|glb|gltf|bin|ktx2|obj|mtl|fbx|hdr|exr|glsl|vert|frag|ts|tsx|jsx|png|jpg|jpeg|webp|gif|avif|svg|ico|woff2|woff|ttf|otf|mp3|ogg|opus|wav|m4a|aac|flac|mp4|webm)$"
+              },
+              "base64": {
+                "type": "string",
+                "maxLength": 48000000,
+                "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+              }
+            },
+            "required": [
+              "path",
+              "base64"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 240,
+                "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\\/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.(?:html|js|mjs|css|json|map|txt|csv|wasm|glb|gltf|bin|ktx2|obj|mtl|fbx|hdr|exr|glsl|vert|frag|ts|tsx|jsx|png|jpg|jpeg|webp|gif|avif|svg|ico|woff2|woff|ttf|otf|mp3|ogg|opus|wav|m4a|aac|flac|mp4|webm)$"
+              },
+              "remove": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "path",
+              "remove"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "baseRevision",
+    "label",
+    "files"
+  ],
+  "additionalProperties": false
+}
