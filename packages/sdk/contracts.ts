@@ -202,7 +202,9 @@ export const padsScreenMessage = z.discriminatedUnion('type', [
 ]);
 export const padsPadMessage = z.strictObject({ type: z.literal('place'), place: padPlace });
 export const padsServiceMessage = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('device'), device: padDevice, name: z.string().min(1).max(128), standard: z.boolean() }),
+  // uid: who the gamepad is across a reconnect (its Bluetooth address, or the USB port it is in), so it keeps its place.
+  z.strictObject({ type: z.literal('device'), device: padDevice, name: z.string().min(1).max(128), standard: z.boolean(),
+    uid: z.string().min(1).max(128).optional() }),
   z.strictObject({ type: z.literal('gone'), device: padDevice }),
   // The service's view of the box's controllers and Bluetooth, which Box settings shows.
   z.looseObject({ type: z.literal('controllers') }),
@@ -224,7 +226,6 @@ export const controllersView = z.strictObject({
   found: z.array(z.strictObject({ address: bluetoothAddress, name: controllerName })).max(32),
   scanning: z.boolean(), bluetooth: z.boolean(), pairing: bluetoothAddress.nullable(), error: z.string().max(400).nullable(),
 });
-export type ControllersView = z.infer<typeof controllersView>;
 
 export type SceneObject = z.infer<typeof sceneObject>;
 export type Scene = z.infer<typeof scene>;

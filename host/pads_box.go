@@ -34,6 +34,9 @@ type padsServiceMessage struct {
 	Device   int    `json:"device"`
 	Name     string `json:"name"`
 	Standard bool   `json:"standard"`
+	// UID is who the gamepad is across a reconnect (its Bluetooth address,
+	// or the USB port it is in), so it keeps its place.
+	UID string `json:"uid"`
 }
 
 type padRumble struct {
@@ -186,6 +189,9 @@ func (p *Pads) ServiceMessage(link padsLink, message padsServiceMessage, raw jso
 	}
 	if message.Type == "controllers" {
 		p.controllers = raw
+		if p.viewed != nil {
+			p.viewed()
+		}
 		return
 	}
 	index := -1
@@ -196,20 +202,28 @@ func (p *Pads) ServiceMessage(link padsLink, message padsServiceMessage, raw jso
 	}
 	switch {
 	case message.Type == "gone" && index >= 0:
+		p.goAway(p.devices[index])
 		p.leave(p.devices[index])
 		p.devices = append(p.devices[:index:index], p.devices[index+1:]...)
 	case message.Type == "gone":
 	case index >= 0:
 		known := p.devices[index]
-		known.name, known.standard = message.Name, message.Standard
+		known.name, known.standard, known.uid = message.Name, message.Standard, message.UID
 		if known.on != nil {
 			p.list(known.on)
 		}
 	default:
-		device := &padController{box: true, device: message.Device, name: message.Name, standard: message.Standard}
+		device := &padController{box: true, device: message.Device, name: message.Name, standard: message.Standard, uid: message.UID}
 		p.devices = append(p.devices, device)
-		// The box's own screen takes each gamepad that appears.
-		if target := p.newestBox(nil, true); target != nil {
+		// One that went a moment ago takes its place again, where it is
+		// still free; else the box's own screen takes it.
+		back, ok := p.away[message.UID]
+		if message.UID != "" {
+			delete(p.away, message.UID)
+		}
+		if ok && p.now().Sub(back.at) < padResume && p.screens[back.screen.id] == back.screen && back.screen.isOpen(back.place) {
+			p.seat(device, back.screen, back.place, true)
+		} else if target := p.newestBox(nil, true); target != nil {
 			p.seat(device, target, target.free(), true)
 		}
 	}
@@ -280,6 +294,7 @@ func (p *Pads) serviceGone(link padsLink) {
 	}
 	p.service, p.controllers = nil, nil
 	for _, device := range p.devices {
+		p.goAway(device)
 		p.leave(device)
 	}
 	p.devices = nil
@@ -297,6 +312,24 @@ func (p *Pads) ToService(message any) bool {
 	return true
 }
 
+// goAway remembers where a gamepad that goes was, by its uid, for a minute:
+// one that comes back takes its place again.
+func (p *Pads) goAway(device *padController) {
+	if device.on == nil || device.uid == "" {
+		return
+	}
+	if len(p.away) >= padsKept {
+		oldest := ""
+		for uid, item := range p.away {
+			if oldest == "" || item.at.Before(p.away[oldest].at) {
+				oldest = uid
+			}
+		}
+		delete(p.away, oldest)
+	}
+	p.away[device.uid] = padAway{screen: device.on, place: device.place, at: p.now()}
+}
+
 // leave: a gamepad leaves its screen.
 func (p *Pads) leave(device *padController) {
 	screen := device.on
@@ -306,4 +339,40 @@ func (p *Pads) leave(device *padController) {
 	device.on = nil
 	screen.slots[device.place] = nil
 	p.list(screen)
+}
+
+// Connected says whether the box's controller service is connected.
+func (p *Pads) Connected() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.service != nil
+}
+
+// Controllers is the service's last view of the box's controllers, nil while
+// it has sent none or isn't connected.
+func (p *Pads) Controllers() json.RawMessage {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.controllers
+}
+
+// OnViewed has viewed called with each view the service sends, while the
+// pads are locked.
+func (p *Pads) OnViewed(viewed func()) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.viewed = viewed
+}
+
+// ScreenOf is the screen a box gamepad is on now, by its number: its code,
+// whether it is the box's own, and its place there.
+func (p *Pads) ScreenOf(device int) (controllerScreen, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, item := range p.devices {
+		if item.device == device && item.on != nil {
+			return controllerScreen{Code: item.on.code, TV: item.on.box, Place: item.place}, true
+		}
+	}
+	return controllerScreen{}, false
 }
