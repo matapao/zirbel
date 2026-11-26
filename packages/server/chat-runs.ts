@@ -3,7 +3,7 @@
 // that ended stays here for a while, so a page that comes back just after it ended still gets its result. What the
 // harness asks during a turn waits here for one answer.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { AgentAsk, AskAnswer } from '@matapao/celler/harness';
+import type { AgentAsk, AskAnswer } from 'celler/harness';
 import { z } from 'zod';
 import { newId, ZirbelError } from '../core/projects.ts';
 import { boundEntry, TurnLog } from '../sdk/activity.ts';

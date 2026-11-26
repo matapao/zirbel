@@ -8,7 +8,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import type { AgentAsk, McpServerSpec } from '@matapao/celler/harness';
+import type { AgentAsk, McpServerSpec } from 'celler/harness';
 import { newId, ZirbelError } from '../packages/core/projects.ts';
 import { main } from '../packages/server/main.ts';
 import type { ActivityEntry } from '../packages/sdk/chat-stream.ts';

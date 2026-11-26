@@ -14,15 +14,15 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.330
         version: 0.3.330(@anthropic-ai/sdk@1.12.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(zod@4.6.7)
-      '@matapao/celler':
-        specifier: link:deps/celler
-        version: link:deps/celler
       '@matapao/vindu':
         specifier: link:deps/vindu
         version: link:deps/vindu
       '@openai/codex-sdk':
         specifier: 0.171.0
         version: 0.171.0(patch_hash=4145206da2d04b311ea05523c4a85f8a226c8a22777f043946639dafa89d589a)
+      celler:
+        specifier: link:deps/celler
+        version: link:deps/celler
       esbuild:
         specifier: 0.28.2
         version: 0.28.2

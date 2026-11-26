@@ -2,7 +2,7 @@
 // that turn's thread folder alone, behind a credential made for the turn and given up as it ends. The harness reaches
 // it from outside its sandbox, as it reaches any of a run's MCP servers.
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import type { McpServerSpec } from '@matapao/celler/harness';
+import type { McpServerSpec } from 'celler/harness';
 import { z } from 'zod';
 import { digest, ZirbelError } from '../core/projects.ts';
 import { viewGame, viewGameInput, type TurnGame } from './view-game.ts';

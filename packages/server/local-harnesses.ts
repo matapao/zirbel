@@ -2,7 +2,7 @@
 // person is. A turn works in its thread's folder (threads.ts) and continues the thread's session; without a thread it
 // gets a folder of its own that goes after it.
 import { AgentRuntime, claudeAgent, codexAgent, findProgram, type AgentLogin, type Host, type RunHandle, type RunProgress,
-  type RunSpec, type Runtime } from '@matapao/celler/harness';
+  type RunSpec, type Runtime } from 'celler/harness';
 import { constants, copyFileSync, existsSync, lstatSync, chmodSync, realpathSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';

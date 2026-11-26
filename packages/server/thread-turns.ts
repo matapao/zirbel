@@ -2,7 +2,7 @@
 // (interrupted when the editor stops meanwhile), the thread's session continued, and the turn's own MCP server for as
 // long as it runs. A new session starts in the same folder when the harness changes, the old one's transcript going
 // with it, and when the harness no longer has the session, which the thread is told.
-import type { McpServerSpec } from '@matapao/celler/harness';
+import type { McpServerSpec } from 'celler/harness';
 import { EditorStopping } from './chat-runs.ts';
 import { TurnEndedError, type Processors } from './processors.ts';
 import type { Threads } from './threads.ts';

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentAsk, AskAnswer, McpServerSpec, RunResult } from '@matapao/celler/harness';
+import type { AgentAsk, AskAnswer, McpServerSpec, RunResult } from 'celler/harness';
 import { ZirbelError } from '../core/projects.ts';
 import type { ChatUpdate } from '../sdk/chat-stream.ts';
 import type { AskPlace } from './ask-summary.ts';

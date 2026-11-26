@@ -4,7 +4,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
-import type { RunSpec } from '@matapao/celler/harness';
+import type { RunSpec } from 'celler/harness';
 import { chatStreamType, type ChatEvent, type ChatUpdate } from '../packages/sdk/chat-stream.ts';
 import { head } from '../packages/core/projects.ts';
 import { rights, legacyProject, install, tempDir } from './helpers.ts';

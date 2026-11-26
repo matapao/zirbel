@@ -2,7 +2,7 @@
 // the turn's sandbox, the harness's own reason where it gives one, and the command, file or change for the details. The
 // harness's own title for a shell command is the raw command, so the headline comes from what the request carries.
 import { basename, isAbsolute, relative, resolve } from 'node:path';
-import type { AgentAsk } from '@matapao/celler/harness';
+import type { AgentAsk } from 'celler/harness';
 import type { ActionReach, PermissionRequest } from '../sdk/chat-stream.ts';
 import { textDiff } from './text-diff.ts';
 

@@ -2,7 +2,7 @@
 // one of the turn's MCP servers by that server and tool), the helpers it starts, the files it changes and the settings
 // its run started with. The reply itself is the turn's result, never a step.
 import { isAbsolute, relative, resolve } from 'node:path';
-import type { RunProgress } from '@matapao/celler/harness';
+import type { RunProgress } from 'celler/harness';
 import { boundEntry } from '../sdk/activity.ts';
 import type { ActivityEntry, ChatUpdate } from '../sdk/chat-stream.ts';
 

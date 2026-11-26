@@ -1,7 +1,7 @@
 // A permission request in plain language: its headline, its scope and the details behind it.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { AgentAsk } from '@matapao/celler/harness';
+import type { AgentAsk } from 'celler/harness';
 import { describeAsk, programsOf, SANDBOXED } from '../packages/server/ask-summary.ts';
 
 const folder = '/work/zirbel/turn-1';
