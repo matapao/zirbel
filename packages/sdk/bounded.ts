@@ -26,6 +26,12 @@ export function boundedJson(value: unknown, depth = 0, budget = { remaining: 256
   return true;
 }
 
+/** A copy of bounded JSON: by structuredClone where the browser has it, and as JSON where it doesn't (Chromium before 98,
+ *  as some TV browsers are), which for JSON is the same copy. */
+export function jsonCopy<T>(value: T, clone: ((value: T) => T) | undefined = globalThis.structuredClone): T {
+  return typeof clone === 'function' ? clone(value) : JSON.parse(JSON.stringify(value)) as T;
+}
+
 export function compactProperties(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value) &&
     boundedJson(value) && JSON.stringify(value).length <= 4096;

@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"regexp"
 	"strings"
 
 	"zirbel/contracts"
@@ -22,17 +23,36 @@ func seatLink(base string, room *Room, ticket string) string {
 	return base + "/join/" + room.ID + "#seat=" + ticket
 }
 
-// serveLobby answers the lobby's page, its files and its API; handled says
-// whether the path was the lobby's.
+// padPolicy mirrors the pad page's in lobby-routes.ts: it also reaches the
+// pads socket on its own host, over plain ws: as the player page does.
+func padPolicy(host string) string {
+	return "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
+		// nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+		"connect-src 'self' ws://" + host + "; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+}
+
+// padPage mirrors PAD_PAGE: /pad, or /pad/<code>, a phone as a controller of
+// the screen whose code it has.
+var padPage = regexp.MustCompile(`^/pad(?:/[A-Za-z0-9-]{1,16})?$`)
+
+// serveLobby answers the lobby's page, its files and its API, and the pad
+// page and its files; handled says whether the path was one of theirs.
 func (l *Listener) serveLobby(w http.ResponseWriter, r *http.Request, pathname string) (bool, error) {
 	get, post := r.Method == http.MethodGet, r.Method == http.MethodPost
 	name := strings.TrimPrefix(pathname, "/")
-	if pathname == "/" {
+	page := pathname == "/" || padPage.MatchString(pathname)
+	switch {
+	case pathname == "/":
 		name = "lobby.html"
+	case padPage.MatchString(pathname):
+		name = "pad.html"
 	}
-	if file := l.lobbyFiles[name]; get && file != nil && (pathname == "/" || name != "lobby.html") {
-		if name == "lobby.html" {
+	if file := l.lobbyFiles[name]; get && file != nil && (page || !strings.HasSuffix(name, ".html")) {
+		switch name {
+		case "lobby.html":
 			w.Header().Set("content-security-policy", lobbyPolicy)
+		case "pad.html":
+			w.Header().Set("content-security-policy", padPolicy(r.Host))
 		}
 		sendFile(w, r, typeFor(name), "no-cache", file)
 		return true, nil

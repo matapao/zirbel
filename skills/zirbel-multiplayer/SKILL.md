@@ -202,7 +202,26 @@ A game runs in a sandboxed frame with its own opaque origin and a strict content
 - No popups or navigation of the page around the frame. Pointer lock works, after a click in the game.
 - `session.net.data('rules.json')` reads `data/rules.json` from your folder.
 
-## 11. Test with two browsers, then a bad network
+## 11. Controllers: phones, gamepads and the keyboard
+
+Every screen that shows a game (a laptop, a TV's browser, the box's own TV) takes controllers: gamepads on that device, phones that open the screen's pad page (`/pad/<code>`, from the QR code in the player's **Controllers** panel), and gamepads on the box. **The game reads them all through the standard Gamepad API**, `navigator.getGamepads()` and `gamepadconnected`/`gamepaddisconnected`, so a game's gamepad code reaches phones and box gamepads unchanged, and the game imports nothing for it.
+
+- Each controller holds a **place**, P1 to P8, and its gamepad `index` is its place (0 to 7), with `null` at empty places: "gamepad i is player i + 1" puts P1 on player 1, P2 on player 2. The screen shows each place, its controller and what it drives; people swap places there.
+- Phones have the standard layout (`mapping: 'standard'`, 17 buttons, 4 axes: a left stick, a d-pad, A B X Y, LB RB LT RT, Select and Start). A phone's or box gamepad's `vibrationActuator.playEffect('dual-rumble', { duration, strongMagnitude, weakMagnitude })` rumbles it.
+- A gamepad press is no user gesture in every browser: unlock audio and fullscreen on a click, a tap or a key (a TV remote's OK arrives as Enter), never only on a gamepad's button.
+- **A game that reads only the keyboard** gets keys from its `zirbel.json`, written beside the game and never in it: `controls.keys` are P1's, and `controls.players` gives each place its own keys, and the name and colour the screen and that place's phone show:
+
+```json
+{ "controls": { "players": [
+  { "keys": { "up": "KeyW", "down": "KeyS", "left": "KeyA", "right": "KeyD", "a": "Space" }, "name": "Red car", "color": "#d03030" },
+  { "keys": { "up": "ArrowUp", "down": "ArrowDown", "left": "ArrowLeft", "right": "ArrowRight", "a": "Enter" }, "name": "Blue car", "color": "#3050d0" }
+] } }
+```
+
+  Inputs are `a b x y lb rb lt rt select start ls rs up down left right home` (`up`/`down`/`left`/`right` are the d-pad and the left stick past half way); values are `KeyboardEvent.code`s. Each press is one `keydown` and each release one `keyup`, with the `key` and `keyCode` a keyboard gives, at the focused element. Up to 8 players; a name is at most 24 characters, a colour `#rrggbb`.
+- An adapter that knows what each place drives at run time names it with `zirbel.place(k, { name, color })` (`window.zirbel` is in every game's frame), which the screen and that place's phone show; a game itself never needs it.
+
+## 12. Test with two browsers, then a bad network
 
 1. Build the game to a folder with `index.html`, `zirbel.json` and the adapter at its top. Zirbel takes the file types in section 10 (no hidden files), up to 1000 files and 36 MB.
 2. Start a Zirbel host from its repository (`pnpm build` first): `node dist/server.mjs --data /tmp/zirbel-test`. It prints one JSON line with `editor` (default `http://127.0.0.1:4173`) and `player` (`http://127.0.0.1:4174`). The Go host, `host/bin/zirbel-host`, takes the same flags. Add `--lan` to play from phones on your network.

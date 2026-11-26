@@ -32,7 +32,7 @@ Work in your folder, then send what changed with `write_files`:
 - Files you leave out stay as they are. A new path adds a file.
 - `index.html` can be written, never removed. A project without a game yet needs it in the change.
 - `label` (1 to 120 characters) is the revision's name in History: say what changed.
-- Writing `zirbel.json` sets the game's players as an import reads it (`zirbel://guide/game-format`).
+- Writing `zirbel.json` sets the game's players, adapter and controls (the keys gamepads press) as an import reads them (`zirbel://guide/game-format`).
 - A folder game keeps at least one file besides `index.html`.
 
 `write_files` stages a proposal, and answers `{ "proposal", "preview" }`: the proposal's `id`, and the game as it would be. `preview_proposal` reads it again later. What happens next depends on the grant:

@@ -125,6 +125,18 @@ test('write_files reads zirbel.json for the players, as an import does', (t) => 
   assert.deepEqual([game.maxPlayers, game.net], [1, undefined]);
 });
 
+test('write_files reads zirbel.json for the keys gamepads press, and keeps them while other files change', (t) => {
+  const keys = { a: 'Space', start: 'Enter' };
+  const { ok, current } = connect(t, true, (projects) => importGameFolder(projects, { files: { ...folder,
+    'zirbel.json': base64(JSON.stringify({ controls: { keys } })) } }));
+  type Keyed = { preview: { game: { controls?: unknown } } };
+  const staged = (files: object[]) => ok<Keyed>('write_files', { baseRevision: current(), label: 'Keys', files }).preview.game.controls;
+  assert.deepEqual(staged([{ path: 'assets/main.js', text: '1' }]), { keys });
+  assert.deepEqual(staged([{ path: 'zirbel.json', text: '{ "controls": { "keys": { "up": "KeyW" } } }' }]), { keys: { up: 'KeyW' } });
+  assert.equal(staged([{ path: 'zirbel.json', text: '{ "controls": { "keys": { "up": "Key W" } } }' }]), undefined);
+  assert.equal(staged([{ path: 'zirbel.json', remove: true }]), undefined);
+});
+
 test('write_files gives a one-page game files, and starts a game for a project without one', (t) => {
   const page = connect(t, false, (projects) => projects.createGame('Page', { html: '<p>one</p>', maxPlayers: 3 }));
   const grown = page.ok<Staged>('write_files', { baseRevision: page.current(), label: 'Style', files: [{ path: 'style.css', text: 'p{}' }] });

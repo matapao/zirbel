@@ -103,6 +103,27 @@ for (const host of hosts) {
     assert.deepEqual(error(await call(player, 'POST', '/lobby/state', {})), [404, 'Lobby route does not exist.']);
   });
 
+  test(host.name + ' host serves the pad page, a phone as a screen\'s controller, beside the lobby', async (t) => {
+    const data = fixtures(t);
+    const { player } = await startEditor(t, host.command, data.data, []);
+    const policy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws://" +
+      new URL(player).host + "; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+    for (const path of ['/pad', '/pad/K7QX', '/pad/k7qx', '/pad/K7QX?place=2']) {
+      const page = await fetch(player + path);
+      assert.deepEqual([page.status, ...['content-type', 'cache-control', 'content-security-policy', 'referrer-policy']
+        .map((name) => page.headers.get(name))], [200, 'text/html; charset=utf-8', 'no-cache', policy, 'no-referrer'], path);
+      assert.equal(await page.text(), readFileSync('dist/web/pad.html', 'utf8'), path);
+    }
+    for (const [file, type] of [['pad.js', 'application/javascript; charset=utf-8'], ['pad.css', 'text/css; charset=utf-8']]) {
+      const served = await fetch(player + '/' + file);
+      assert.deepEqual([served.status, served.headers.get('content-type'), served.headers.get('cache-control')], [200, type, 'no-cache'], file);
+      assert.equal(await served.text(), readFileSync('dist/web/' + file!, 'utf8'));
+    }
+    for (const path of ['/pad.html', '/pad/', '/pad/K7QX/', '/pad/K7QX/more', '/pad/' + 'K'.repeat(17), '/pad/K%20X', '/pads'])
+      assert.equal((await fetch(player + path)).status, 404, path);
+    assert.equal((await fetch(player + '/pad', { method: 'POST', headers: { origin: player } })).status, 404);
+  });
+
   test(host.name + ' host serves agents the skill that makes a game multiplayer, beside zirbel-net\'s client', async (t) => {
     const data = fixtures(t);
     const { player } = await startEditor(t, host.command, data.data, []);

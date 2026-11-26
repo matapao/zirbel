@@ -103,6 +103,12 @@ await Promise.all([
     entryPoints: ['packages/web/lobby.ts'], outfile: 'dist/web/lobby.js',
     bundle: true, format: 'esm', platform: 'browser', target: 'es2022', minify: true,
   }),
+  // The pad page, a phone as a controller of a screen, which every player listener serves at /pad and /pad/<code>: the
+  // host's own, like the lobby's.
+  build({
+    entryPoints: ['packages/web/pad.ts'], outfile: 'dist/web/pad.js',
+    bundle: true, format: 'esm', platform: 'browser', target: 'es2022', minify: true,
+  }),
   build({
     entryPoints: ['node_modules/three/build/three.module.js'], outfile: 'dist/web/three.module.js',
     bundle: true, platform: 'browser', format: 'esm', target: 'es2022', minify: true, legalComments: 'inline',

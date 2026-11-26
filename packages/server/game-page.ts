@@ -1,3 +1,4 @@
+import { checkedControls } from '../sdk/controls.ts';
 import type { Release } from '../sdk/contracts.ts';
 
 // three.js's addons, served from the host's own build beside three.module.js (runtime-files.ts).
@@ -30,10 +31,14 @@ export function gamePage(release: Release, runtime: string, ancestors: string, b
     'frame-ancestors ' + ancestors,
   ].join('; ');
   const imports = { three: runtime + 'three.module.js', [THREE_ADDONS]: addons };
+  // The keys its zirbel.json gives gamepad inputs, which game-sdk presses for a game that reads only the keyboard, and its
+  // places' names and colours: in the order the Go host writes them.
+  const controls = checkedControls(release.game?.controls);
+  const keys = controls ? '<script type="application/json" id="zirbel-controls">' + json(controls) + '</script>' : '';
   const bootstrap = '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<script type="importmap">' + json({ imports }) + '</script>' +
     '<script type="application/json" id="zirbel-assets"' + (release.game?.registerObjects === false ? ' data-registration="off"' : '') + '>' + json(assets) + '</script>' +
-    '<script crossorigin="anonymous" src="' + runtime + 'game-sdk.js"></script>';
+    keys + '<script crossorigin="anonymous" src="' + runtime + 'game-sdk.js"></script>';
   const source = release.game!.html.replace(/^\s*<!doctype\s+html\s*>/i, '');
   const adapter = net && release.game!.adapter ? '<script type="module" src="' + base + release.game!.adapter + '"></script>' : '';
   return { policy, html: '<!doctype html>' + bootstrap + source + adapter };

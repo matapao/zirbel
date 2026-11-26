@@ -4,7 +4,7 @@ A Zirbel game is a web page and the files it loads: a built folder, as a bundler
 
 ```
 index.html          the page, at the top
-zirbel.json         optional: how many play
+zirbel.json         optional: how many play, and the keys gamepads press
 assets/main.js      everything else, beside it, loaded by relative paths
 models/hero.glb
 sounds/jump.ogg
@@ -45,13 +45,36 @@ A game without files sets them in `propose`'s `writeGame` (`maxPlayers`, `net`).
 
 ## zirbel.json
 
-`zirbel.json` beside `index.html` describes the game, as it did for the earlier Zirbel. Zirbel reads `players.max` from it and nothing else:
+`zirbel.json` beside `index.html` describes the game, as it did for the earlier Zirbel. Zirbel reads `players.max`, a net game's `multiplayer.adapter` (`zirbel://guide/multiplayer`) and `controls` (below) from it, and nothing else:
 
 ```json
 { "players": { "min": 1, "max": 8 } }
 ```
 
-An integer `players.max` above 1 makes the game a net game for that many players, up to 16. Anything else (no `players.max`, 1, not an integer, not JSON, or a file over 64 KB) makes it a game for one. Zirbel reads it when a folder is imported, and when `write_files` writes it; a change that leaves `zirbel.json` as it is keeps the game's players as they are.
+An integer `players.max` above 1 makes the game a net game for that many players, up to 16. Anything else (no `players.max`, 1, not an integer, not JSON, or a file over 64 KB) makes it a game for one. Zirbel reads it when a folder is imported, and when `write_files` writes it; a change that leaves `zirbel.json` as it is keeps the game's players, adapter and controls as they are.
+
+## Controllers: gamepads, phones and the keyboard
+
+Every screen that shows a game takes controllers: the gamepads of the device it runs on, phones that open the screen's pad page (`/pad/<code>`, from the QR code in the player's **Controllers** panel), and gamepads on a Zirbel box. The game reads them all through the standard Gamepad API, `navigator.getGamepads()` and the `gamepadconnected` and `gamepaddisconnected` events, so **a game that reads gamepads plays with phones and the box's gamepads unchanged**, with no line about Zirbel.
+
+- Each controller holds a place, P1 to P8: its gamepad's `index` is its place (0 to 7), with `null` at empty places, so "gamepad i is player i + 1" puts P1 on player 1. People choose and swap places on the screen.
+- A phone has the standard layout (`mapping` `'standard'`, 17 buttons and 4 axes: a left stick, a d-pad, A B X Y, LB RB LT RT, Select and Start), and its `vibrationActuator.playEffect('dual-rumble', …)` vibrates it where the phone can. A box gamepad has its own layout, or the standard one where it maps to it.
+- A gamepad's press doesn't count as a user gesture in every browser: unlock audio and fullscreen on a click, a tap or a key too (a TV remote's OK arrives as Enter).
+
+A game that reads only the keyboard gets keys from its `zirbel.json`, written beside the game and never in it. `controls.keys` are P1's keys; `controls.players`, a list of up to 8, gives each place its own `keys`, and the `name` (at most 24 characters) and `color` (`#rrggbb`) of what it drives there, which the screen and that place's phone show. Where `players` is given, `keys` is not used:
+
+```json
+{ "controls": { "keys": { "a": "Space", "start": "Enter", "up": "ArrowUp", "down": "ArrowDown", "left": "ArrowLeft", "right": "ArrowRight" } } }
+```
+
+```json
+{ "controls": { "players": [
+  { "keys": { "up": "KeyW", "down": "KeyS", "left": "KeyA", "right": "KeyD", "a": "Space" }, "name": "Red car", "color": "#d03030" },
+  { "keys": { "up": "ArrowUp", "down": "ArrowDown", "left": "ArrowLeft", "right": "ArrowRight", "a": "Enter" }, "name": "Blue car", "color": "#3050d0" }
+] } }
+```
+
+The inputs are `a` `b` `x` `y` `lb` `rb` `lt` `rt` `select` `start` `ls` `rs` `up` `down` `left` `right` `home`; `up`, `down`, `left` and `right` are the d-pad, and the left stick past half way. The values are `KeyboardEvent.code`s: letters and digits, 1 to 24 of them (`KeyA`, `Digit1`, `Space`, `ShiftLeft`, `ArrowUp`, `Enter`, `Escape`). Each press of the gamepad at a place is one `keydown`, each release one `keyup`, with the `code`, and the `key` and `keyCode` a keyboard gives, at the focused element, bubbling to `document` and `window`. Keys with an input Zirbel doesn't know, or a code that isn't one, leave the game without `keys`; a player that isn't right leaves it without `players`.
 
 ## Where the game runs
 
@@ -82,6 +105,7 @@ The SDK the host puts in every game's page, before the game's own scripts:
 - `zirbel.register(id, properties)`: shows one of the game's objects in the editor's inspector. The id has 1 to 120 characters; the properties are compact JSON (at most 4096 characters, 8 levels deep and 256 values, strings up to 2048 characters). Call it again when the object changes, for up to 512 objects. A game whose `registerObjects` is `false` has it do nothing.
 - `zirbel.unregister(id)`: takes an object out of the inspector.
 - `zirbel.send(state)`: in a game sharing state, this player's state for the others: compact JSON of at most 4096 characters, bounded as properties are. A larger one is dropped.
+- `zirbel.place(k, { name, color })`: what place `k` (0 to 7) drives, for the screen and that place's phone to show, as `controls.players` says it for a game that knows it ahead. It is an adapter's, for what a game decides as it runs; a game needs no line about Zirbel.
 - `zirbel.onRoom(listener)`: calls `listener({ self, seats, states })` now, if the room is known, and whenever it changes, also after a reconnect. `self` and each of `seats` are `{ id, name, role, connected }`, `role` being `player` or `spectator`; `states` holds each seat's last state by its id. It returns a function that removes the listener.
 
 Errors the page doesn't catch, and rejected promises nobody handles, go to the page around the frame: in the editor, the owner sees them.

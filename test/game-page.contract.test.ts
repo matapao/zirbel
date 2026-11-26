@@ -1,5 +1,6 @@
 // The game page on both hosts, byte for byte as game-page.ts writes it: a net game whose zirbel.json names an adapter
-// loads it last, as a module from beside its document, and every other game's page is as it was.
+// loads it last, as a module from beside its document; a game whose zirbel.json gives gamepad inputs keys (controls.keys)
+// carries them ahead of game-sdk; and every other game's page is as it was.
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -27,6 +28,9 @@ for (const host of hostsUnderTest()) {
       adapter: importGameFolder(projects, { title: 'Adapter', files: adapterGame }),
       net: netGame(projects, 2),
       built: importGameFolder(projects, { title: 'Built', files: encoded({ 'index.html': '<p>built</p>', 'main.js': 'export {};' }) }),
+      keys: importGameFolder(projects, { title: 'Keys', files: encoded({ 'index.html': '<p>keys</p>',
+        'zirbel.json': JSON.stringify({ controls: { keys: { start: 'Enter', a: 'Space', left: 'ArrowLeft' },
+          players: [{ name: 'Red </script> car', color: '#d03030', keys: { a: 'KeyJ' } }, {}, { name: 'Line\u2028break' }] } }) }) }),
       single: projects.createGame('Single', { html: '<canvas></canvas>', maxPlayers: 1 }),
     }).map(([name, project]) => {
       const release = releases.package(project.id, 'main', rights, false);
@@ -51,6 +55,13 @@ for (const host of hostsUnderTest()) {
       assert.deepEqual([page.headers.get('content-security-policy'), await page.text()], [expected.policy, expected.html], name);
       const adapter = '<script type="module" src="' + player + gameUrl + 'net/adapter.js"></script>';
       assert.equal(expected.html.endsWith(release.game!.html.replace(/^<!doctype html>/, '') + adapter), name === 'adapter', name);
+      // A game's controls reach game-sdk ahead of it, keys sorted by input and each place's fields in order, no "<" to close
+      // the tag; a game without them has none.
+      const controls = '<script type="application/json" id="zirbel-controls">{"keys":{"a":"Space","left":"ArrowLeft","start":"Enter"},' +
+        '"players":[{"keys":{"a":"KeyJ"},"name":"Red \\u003c/script> car","color":"#d03030"},{},{"name":"Line\u2028break"}]}</script>' +
+        '<script crossorigin="anonymous" src="' + runtime + 'game-sdk.js"></script>';
+      assert.equal(expected.html.includes(controls), name === 'keys', name);
+      assert.equal(expected.html.includes('zirbel-controls'), name === 'keys', name);
       if (name !== 'adapter') continue;
       // The policy lets the module load from beside the document, as the net game's policy always did; the module is a
       // CORS request from the game's opaque origin.

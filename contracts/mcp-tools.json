@@ -15,7 +15,7 @@
       "uri": "zirbel://guide/game-format",
       "name": "game-format",
       "title": "Game format",
-      "description": "A game as a folder: index.html and the files beside it, zirbel.json, players, the sandbox it runs in and window.zirbel.",
+      "description": "A game as a folder: index.html and the files beside it, zirbel.json, players, controllers and keys, the sandbox it runs in and window.zirbel.",
       "mimeType": "text/markdown"
     },
     {

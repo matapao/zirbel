@@ -5,6 +5,7 @@ import { mossState, tileState } from '../games/simulations.ts';
 import { templates } from '../games/templates.ts';
 import { createQuest, type Quest } from '../games/quest.ts';
 import { drawScene } from './scene.ts';
+import { screenControllers, type Controllers } from './controllers.ts';
 
 function byId<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
 const room = location.pathname.split('/').at(-1) ?? '';
@@ -32,6 +33,9 @@ let frame = 0;
 let disposeGarden: (() => void) | undefined;
 let ready = false;
 let quest: Quest | undefined;
+// The seat's own credential, which Show on TV hands to the box's screen, and the page's controllers once its game starts.
+let seatCredential: string | undefined;
+let controllers: Controllers | undefined;
 
 const keys = new Set<string>();
 const north = ['w', 'arrowup'];
@@ -82,6 +86,43 @@ byId('full').addEventListener('click', () => {
   if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
   else void document.documentElement.requestFullscreen().catch(() => {});
 });
+// This page as a screen once its game starts: its controllers, and the panel that shows them. In the editor's preview
+// it reads only the device's own gamepads.
+const controllersButton = byId<HTMLButtonElement>('controllers');
+const controllersPanel = byId('controllers-panel');
+let panel: { draw(): void } | undefined;
+function toggleControllers(open = controllersPanel.hidden) {
+  controllersPanel.hidden = !open;
+  controllersButton.setAttribute('aria-expanded', String(open));
+  if (open) void import('./controllers-panel.ts').then(({ controllersPanel: drawn }) => {
+    panel ??= drawn(controllersPanel, controllers!, { showOnTv, close: () => toggleControllers(false) });
+    panel.draw();
+  });
+}
+controllersButton.addEventListener('click', () => toggleControllers());
+function startControllers() {
+  if (controllers) return;
+  const open = document.body.dataset.preview === undefined;
+  controllers = screenControllers({ open, onChange: () => { if (!controllersPanel.hidden) panel?.draw(); }, onShown: onTv });
+  controllersButton.hidden = !open;
+}
+// Show on TV: the box's screen takes this seat, and this page becomes the game's controller there.
+function showOnTv() {
+  if (seatCredential) controllers?.show('/join/' + room + '#seat=' + seatCredential);
+}
+function onTv(code: string) {
+  client?.stop(false);
+  remember();
+  showLobby();
+  controllers?.close();
+  controllers = undefined;
+  toggleControllers(false);
+  controllersButton.hidden = true;
+  lobby.hidden = true;
+  byId('tv-pad').hidden = false;
+  void import('./tv-pad.ts').then(({ controlTv }) => controlTv(code, { place: byId('tv-pad-place'), status: byId('tv-pad-status') }));
+}
+
 byId('leave').addEventListener('click', () => {
   client?.stop();
   remember();
@@ -110,6 +151,7 @@ window.addEventListener('message', (event) => {
   gamePort = port;
   port.onmessage = ({ data }) => { if (gamePort === port) receiveGameMessage(data); };
   updateRoom();
+  controllers?.attach(port);
 });
 
 // Games may call zirbel.send every frame. Forward only the latest state at the
@@ -123,6 +165,7 @@ function sendLatestState(value: unknown) {
 
 function receiveGameMessage(data: MessageEvent['data']) {
   const { type, value } = data ?? {};
+  if (type === 'zirbel.rumble' || type === 'zirbel.place') controllers?.fromGame(type, value);
   if (type === 'zirbel.error' && typeof value === 'string') error.textContent = value.slice(0, 500);
   if (type === 'zirbel.state' && info.manifest.simulation === 'shared-state-v1' && seat?.role === 'player' &&
       boundedJson(value) && JSON.stringify(value).length <= 4096) sendLatestState(value);
@@ -193,7 +236,10 @@ async function showGame() {
     // Pointer lock, for games aimed with the mouse: it starts only on a click in the game, and the browser always shows
     // how to leave it (Esc).
     authoredFrame.sandbox.add('allow-scripts', 'allow-pointer-lock');
+    // The device's own gamepads, which game-sdk gives the game at the places this page gives them.
+    authoredFrame.allow = 'gamepad';
     authoredFrame.referrerPolicy = 'no-referrer';
+    startControllers();
     // A game with its own netcode finds its room on the relay from the address: zirbel-net's launchParams().
     // A simulated network for testing (zirbel-net's ?net=lag:120,…) goes from the player's address to the game's.
     const simulated = new URLSearchParams(location.search).get('net');
@@ -304,6 +350,7 @@ function connect(credential: string) {
     switch (message.type) {
       case 'welcome':
         seat = message.seat;
+        seatCredential = message.resume;
         remember(message.resume);
         error.textContent = '';
         if (keys.size) movement();

@@ -64,8 +64,8 @@ export function stageFiles(projects: Projects, projectId: string, input: z.outpu
   }
   const base = assertCurrent(projects.read(projectId), branch, baseRevision);
   let html = base.game?.html;
-  // zirbel.json says how many play and names the adapter, as in an imported folder: read again from the files the
-  // game ends with whenever it, or the adapter it names, changes.
+  // zirbel.json says how many play and names the adapter and the controls, as in an imported folder: read again from the
+  // files the game ends with whenever it, or the adapter it names, changes.
   let described = paths.has('zirbel.json') || (base.game?.adapter !== undefined && paths.has(base.game.adapter));
   const kept = new Map(Object.entries(base.game?.files ?? {}));
   const written = new Map<string, Buffer>();
@@ -106,7 +106,8 @@ export function stageFiles(projects: Projects, projectId: string, input: z.outpu
   const manifest = written.get('zirbel.json') ?? (kept.has('zirbel.json') ? projects.readAsset(kept.get('zirbel.json')!) : undefined);
   const players = described ? describedGame(manifest?.toString('base64'), (path) => stored.has(path))
     : { maxPlayers: base.game?.maxPlayers ?? 1, ...(base.game?.net ? { net: true as const } : {}),
-      ...(base.game?.adapter === undefined ? {} : { adapter: base.game.adapter }) };
+      ...(base.game?.adapter === undefined ? {} : { adapter: base.game.adapter }),
+      ...(base.game?.controls === undefined ? {} : { controls: base.game.controls }) };
   const game: GameDocument = { html, ...players,
     ...(base.game?.registerObjects === undefined ? {} : { registerObjects: base.game.registerObjects }),
     ...(count || base.game?.files ? { files } : {}) };

@@ -122,7 +122,7 @@ function readGame(entries: Entry[], index: Entry, of: (path: string) => Buffer |
   const listedFiles = Object.fromEntries(files.map(({ path, oid }) => [path, hashes.get(oid) ?? ''] as const)
     .sort(([a], [b]) => (a < b ? -1 : 1)));
   const game: GameDocument = { html: html.data, maxPlayers: players.maxPlayers, ...(players.net ? { net: true as const } : {}),
-    ...(players.adapter ? { adapter: players.adapter } : {}),
+    ...(players.adapter ? { adapter: players.adapter } : {}), ...(described.controls ? { controls: described.controls } : {}),
     ...(own.registerObjects === undefined ? {} : { registerObjects: own.registerObjects }),
     ...(files.length ? { files: listedFiles } : {}) };
   if (!gameDocument.safeParse(game).success) { problems.push('The game’s files could not be read.'); return; }
