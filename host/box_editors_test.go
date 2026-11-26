@@ -195,10 +195,21 @@ func TestWrongEditCodesAreLimitedPerAddressAndAGameKeepsSoManyEditors(t *testing
 	if _, _, err := editors.Redeem(code.Code, "Ada", "192.168.1.10", ""); statusOf(err) != http.StatusConflict {
 		t.Fatalf("a game past its editors takes another: %v", err)
 	}
-	for _, name := range []string{"", strings.Repeat("a", editorNameLength+1)} {
+	for _, name := range []string{"", strings.Repeat("a", editorNameLength+1), strings.Repeat("😀", editorNameLength+1)} {
 		if _, _, err := editors.Redeem(code.Code, name, "192.168.1.10", ""); statusOf(err) != http.StatusBadRequest {
 			t.Errorf("the name %q is kept: %v", name, err)
 		}
+	}
+	// Names are counted in code points, as Zod counts them, and kept as they are read.
+	other, _ := editors.CreateCode("walk")
+	if _, _, err := editors.Redeem(other.Code, strings.Repeat("😀", editorNameLength), "192.168.1.10", ""); err != nil {
+		t.Fatalf("a name of 24 emoji: %v", err)
+	}
+	if listed, err := editors.List("walk"); err != nil || len(listed) != 1 {
+		t.Fatalf("the emoji name is not read back: %v %v", listed, err)
+	}
+	if editors.End("") != nil || editors.End("zirbel_editor="+strings.Repeat("b", 43)) != nil {
+		t.Fatal("ending no editor's session fails")
 	}
 	for _, damaged := range []string{`{"version":1,"codes":[],"editors":[{"id":"x"}]}`, `{"version":1,"codes":[]}`,
 		`{"version":1,"codes":[],"editors":[],"more":1}`, `{"version":1,"codes":[{"project":"garden","code":"ABCDEF","createdAt":"2026-01-02T03:04:05.000Z","expiresAt":"2026-01-02T03:04:05.000Z","x":1}],"editors":[]}`,

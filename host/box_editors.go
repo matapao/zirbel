@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // A box's editors of one game (--box), mirroring packages/server/box-editors.ts:
@@ -34,8 +35,11 @@ const editAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 const (
 	editCodeLifetime = 7 * 24 * time.Hour
 	editorsPerGame   = 64
-	editorNameLength = 24 // UTF-16 code units, as the owner sees a device
+	editorNameLength = 24   // code points, as Zod counts them
+	editorsKept      = 4096 // codes, and editors, the file keeps at most
 	editorCookie     = "zirbel_editor"
+	// endEditorCookie ends an editor's session on a device, when it pairs as an owner.
+	endEditorCookie = editorCookie + "=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
 )
 
 var (
@@ -45,6 +49,7 @@ var (
 	errNoEditor     = fail(http.StatusNotFound, "That device doesn't edit this game.")
 	errWrongCodes   = fail(http.StatusTooManyRequests, "Too many wrong codes. Wait a minute and try again.")
 	errEditorsStore = fail(http.StatusInternalServerError, "The game editors could not be read.")
+	errEditingEnded = fail(http.StatusUnauthorized, "This device’s edit access has ended. Ask the box’s owner for a new edit code.")
 )
 
 // editCode is a game's code as box/editors.json keeps it: plain, for the owner sees it again.
@@ -210,8 +215,12 @@ func (e *Editors) Stop(project string) error {
 // name it gave: its session's token and the game. A device that edited a game
 // on the session cookie it sends edits this one instead.
 func (e *Editors) Redeem(input, name, address, cookie string) (token, project string, err error) {
-	if name == "" || utf16Length(name) > editorNameLength { // the form checks it; the store never keeps one it can't read
-		return "", "", fail(http.StatusBadRequest, "Give this device a name of up to 24 characters.")
+	// The form has checked it; the store never keeps a name it can't read.
+	if name == "" {
+		return "", "", fail(http.StatusBadRequest, "Too small: expected string to have >=1 characters")
+	}
+	if utf8.RuneCountInString(name) > editorNameLength {
+		return "", "", fail(http.StatusBadRequest, "Too big: expected string to have <=24 characters")
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -287,6 +296,27 @@ func (e *Editors) Session(cookie string) (editor gameEditor, editing bool, err e
 	return store.Editors[found], true, nil
 }
 
+// End ends the editor's session a Cookie header carries, if it carries one.
+func (e *Editors) End(cookie string) error {
+	token := editorToken(cookie)
+	if token == "" {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	store, err := e.read()
+	if err != nil {
+		return err
+	}
+	hash := hashToken(token)
+	kept := without(store.Editors, func(editor gameEditor) bool { return sameHash(editor.TokenHash, hash) })
+	if len(kept) == len(store.Editors) {
+		return nil
+	}
+	store.Editors = kept
+	return e.write(store)
+}
+
 // List is the devices that edit the game, the first first.
 func (e *Editors) List(project string) ([]editorView, error) {
 	e.mu.Lock()
@@ -355,7 +385,8 @@ func (e *Editors) read() (editorsStore, error) {
 	var store editorsStore
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields() // a strict object, its items too
-	if decoder.Decode(&store) != nil || decoder.More() || store.Version != 1 || store.Codes == nil || store.Editors == nil || hasNull(data) {
+	if decoder.Decode(&store) != nil || decoder.More() || store.Version != 1 || store.Codes == nil || store.Editors == nil || hasNull(data) ||
+		len(store.Codes) > editorsKept || len(store.Editors) > editorsKept {
 		return editorsStore{}, errEditorsStore
 	}
 	for _, code := range store.Codes {
@@ -366,7 +397,7 @@ func (e *Editors) read() (editorsStore, error) {
 	}
 	for _, editor := range store.Editors {
 		if !idPattern.MatchString(editor.ID) || !idPattern.MatchString(editor.Project) || editor.Name == "" ||
-			utf16Length(editor.Name) > editorNameLength || !tokenHashText.MatchString(editor.TokenHash) ||
+			utf8.RuneCountInString(editor.Name) > editorNameLength || !tokenHashText.MatchString(editor.TokenHash) ||
 			!isoStamp.MatchString(editor.Since) || !isoStamp.MatchString(editor.LastSeen) {
 			return editorsStore{}, errEditorsStore
 		}

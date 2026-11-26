@@ -142,18 +142,23 @@ func TestAnEditorWorksOnItsGameAndNothingElse(t *testing.T) {
 	// The owner sees who edits, and removes it: its next request is refused.
 	listed := call(t, s, http.MethodGet, boxHost, "/api/projects/"+garden.ID+"/editors", fromBox, "", nil)
 	var editors struct {
-		Code    *editCodeView
+		Code    *editCodeLink
 		Editors []editorView
 	}
-	if json.Unmarshal([]byte(listed.body), &editors) != nil || editors.Code == nil || editors.Code.Code != code.Code ||
+	if json.Unmarshal([]byte(listed.body), &editors) != nil || editors.Code == nil || *editors.Code != (editCodeLink{code.Code, code.Link, code.ExpiresAt}) ||
 		len(editors.Editors) != 1 || editors.Editors[0].Name != "Ada" {
 		t.Fatalf("the game's editors: %+v", listed)
 	}
 	if got := call(t, s, http.MethodDelete, boxHost, "/api/projects/"+garden.ID+"/editors/"+editors.Editors[0].ID, fromBox, "", owner); got.status != http.StatusOK || got.body != "{}\n" {
 		t.Fatalf("removing the editor: %+v", got)
 	}
-	if got := as(http.MethodGet, "/api/projects", ""); got.status != http.StatusUnauthorized {
+	const ended = `{"error":"This device’s edit access has ended. Ask the box’s owner for a new edit code."}` + "\n"
+	if got := as(http.MethodGet, "/api/projects", ""); got.status != http.StatusUnauthorized || got.body != ended {
 		t.Fatalf("a removed editor: %+v", got)
+	}
+	// Its pages go where any device's do that isn't paired.
+	if got := as(http.MethodGet, "/", ""); got.status != http.StatusSeeOther || got.header.Get("location") != "/pair" {
+		t.Fatalf("a removed editor's page: %+v", got)
 	}
 	if got := call(t, s, http.MethodDelete, boxHost, "/api/projects/"+garden.ID+"/editors/"+editors.Editors[0].ID, fromBox, "", owner); got.status != http.StatusNotFound {
 		t.Fatalf("removing it again: %+v", got)
@@ -181,7 +186,8 @@ func TestAnEditorWorksOnItsGameAndNothingElse(t *testing.T) {
 	if got := call(t, s, http.MethodPost, boxHost, "/api/projects/"+walk.ID+"/remove", fromBox, "{}", owner); got.status != http.StatusOK {
 		t.Fatalf("removing the game: %+v", got)
 	}
-	if got := call(t, s, http.MethodGet, boxHost, "/api/me", fromDevice, "", map[string]string{"cookie": "zirbel_editor=" + again[1]}); got.status != http.StatusUnauthorized {
+	if got := call(t, s, http.MethodGet, boxHost, "/api/me", fromDevice, "", map[string]string{"cookie": "zirbel_editor=" + again[1]}); got.status != http.StatusUnauthorized ||
+		got.body != ended {
 		t.Fatalf("an editor of a removed game: %+v", got)
 	}
 	if got := redeem(t, s, code.Code, "Ada", nil); got.status != http.StatusForbidden {
@@ -212,6 +218,38 @@ func TestAnOwnerDeviceIsNoEditorAndWhoIsWhoIsToldApart(t *testing.T) {
 	if got := redeem(t, s, code.Code, "Ada", owner); got.status != http.StatusConflict || got.header.Get("set-cookie") != "" ||
 		!strings.Contains(got.body, "This device owns the box") {
 		t.Fatalf("an owner device redeems: %+v", got)
+	}
+	// So does the box itself, and its tries are no wrong codes.
+	form := url.Values{"code": {"ZZZ-ZZZ"}, "name": {"Box"}}.Encode()
+	for range wrongSessionCodes + 1 {
+		if got := call(t, s, http.MethodPost, boxHost, "/edit", fromBox, form, map[string]string{"content-type": "application/x-www-form-urlencoded",
+			"origin": boxOrigin}); got.status != http.StatusConflict || !strings.Contains(got.body, "This device owns the box and edits every game already.") {
+			t.Fatalf("the box itself redeems: %+v", got)
+		}
+	}
+	if s.box.editors.wrong.blocked("127.0.0.1") {
+		t.Fatal("the box's own tries were counted as wrong codes")
+	}
+
+	// An editor that pairs is an owner from then on: its editor's session ends, and its cookie with it.
+	editing := editorCookieText.FindStringSubmatch(redeem(t, s, code.Code, "Ada", nil).header.Get("set-cookie"))
+	if editing == nil {
+		t.Fatal("the code opens nothing")
+	}
+	pairing, _ := s.box.pairing.CreateCode()
+	paired := call(t, s, http.MethodPost, boxHost, "/pair", fromDevice, "code="+pairing, map[string]string{"content-type": "application/x-www-form-urlencoded",
+		"origin": boxOrigin, "cookie": "zirbel_editor=" + editing[1]})
+	if cookies := paired.header.Values("set-cookie"); paired.status != http.StatusSeeOther || len(cookies) != 2 ||
+		!strings.HasPrefix(cookies[0], "zirbel_session=") || cookies[1] != "zirbel_editor=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0" {
+		t.Fatalf("an editor pairs: %+v", paired)
+	}
+	if _, still, _ := s.box.editors.Session("zirbel_editor=" + editing[1]); still {
+		t.Fatal("an editor that paired still edits")
+	}
+	pairing, _ = s.box.pairing.CreateCode()
+	if cookies := call(t, s, http.MethodPost, boxHost, "/pair", fromDevice, "code="+pairing, map[string]string{"content-type": "application/x-www-form-urlencoded",
+		"origin": boxOrigin}).header.Values("set-cookie"); len(cookies) != 1 {
+		t.Fatalf("a device that never edited pairs: %v", cookies)
 	}
 	// An owner's paired device must send its origin for the box's own API, as for pairing.
 	if got := call(t, s, http.MethodPost, boxHost, "/api/projects/"+garden.ID+"/edit-code", fromDevice, "{}", map[string]string{"cookie": owner["cookie"]}); got.status != http.StatusForbidden {
@@ -251,6 +289,9 @@ func TestTheEditFormTakesOnlyItsFields(t *testing.T) {
 	}
 	for body, status := range map[string]int{"code=ABC-DEF&name=Ada": 0, "code=ABC-DEF": 400, "name=Ada": 400, "code=x&name=Ada&other=1": 400,
 		"code=x&name=" + strings.Repeat("a", 25): 400, "code=x&name=" + strings.Repeat("é", 24): 0,
+		// Zod counts code points: 13 to 24 emoji, past 24 UTF-16 units, are a name.
+		url.Values{"code": {"x"}, "name": {strings.Repeat("😀", 13)}}.Encode(): 0, url.Values{"code": {"x"}, "name": {strings.Repeat("😀", 24)}}.Encode(): 0,
+		url.Values{"code": {"x"}, "name": {strings.Repeat("😀", 25)}}.Encode(): 400, url.Values{"code": {strings.Repeat("😀", 40)}, "name": {"Ada"}}.Encode(): 0,
 		"code=" + strings.Repeat("A", 41) + "&name=Ada": 400, "code=" + strings.Repeat("A", 1100): 413} {
 		if got := statusOf(read("application/x-www-form-urlencoded", body)); got != status {
 			t.Errorf("%.30s: %d, want %d", body, got, status)
