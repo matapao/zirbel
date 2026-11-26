@@ -39,7 +39,31 @@ export function newCode(taken: (code: string) => boolean) {
 
 /** An address as the limits count it: an IPv4 address mapped into IPv6 as itself. */
 const plainAddress = (address: string) => address.replace(/^::ffff:(?=\d+\.)/, '');
-const loopback = (address: string) => address === '::1' || address.startsWith('127.');
+export const loopback = (address: string) => address === '::1' || address.startsWith('127.');
+
+/** The wrong codes each address tried, which stop it for the rest of the minute that began with its first: the lobby's
+ *  session codes, and a screen's on the pads socket (pads.ts), each counted apart. */
+export class CodeTries {
+  private readonly wrong = new Map<string, { since: number; count: number }>();
+  constructor(private readonly now = Date.now) {}
+
+  /** The address tried too many wrong codes this minute. */
+  blocked(address: string) {
+    const tries = this.wrong.get(plainAddress(address));
+    return Boolean(tries && this.now() - tries.since < MINUTE && tries.count >= WRONG_CODES);
+  }
+
+  /** Counts a wrong code from the address. */
+  miss(input: string) {
+    const address = plainAddress(input), at = this.now();
+    for (const [counted, tries] of this.wrong) if (at - tries.since >= MINUTE) this.wrong.delete(counted);
+    const tries = this.wrong.get(address);
+    this.wrong.delete(address);
+    this.wrong.set(address, tries ? { since: tries.since, count: tries.count + 1 } : { since: at, count: 1 });
+    if (this.wrong.size > COUNTED) this.wrong.delete(this.wrong.keys().next().value!);
+  }
+}
+
 /** Titles as a reader orders them: case aside, then by case. */
 const byTitle = (a: string, b: string) => {
   const [x, y] = [a.toLowerCase(), b.toLowerCase()];
@@ -49,11 +73,12 @@ const byTitle = (a: string, b: string) => {
 export class Lobby {
   private offers: string[];
   private readonly manifests = new Map<string, Manifest>();
-  private readonly wrong = new Map<string, { since: number; count: number }>();
+  private readonly tries: CodeTries;
 
   /** Reads the offers as the host starts: a lobby.json that is not one stops it. */
   constructor(private readonly rooms: Rooms, private readonly releases: Releases, private readonly file = join(releases.root, 'lobby.json'),
-    private readonly now = Date.now) {
+    now = Date.now) {
+    this.tries = new CodeTries(now);
     let text = '';
     try { text = readFileSync(this.file, 'utf8'); } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
@@ -116,26 +141,14 @@ export class Lobby {
   /** Seats the person at address in the open session with this code, on this listener: a player's seat while there is
    *  one, else a spectator's. */
   join(access: Room['access'], address: string, input: string, name: string) {
-    const from = plainAddress(address);
-    const at = this.now();
-    const tries = this.wrong.get(from);
-    if (tries && at - tries.since < MINUTE && tries.count >= WRONG_CODES)
-      throw new ZirbelError(429, 'Too many wrong codes. Wait a minute and try again.');
+    if (this.tries.blocked(address)) throw new ZirbelError(429, 'Too many wrong codes. Wait a minute and try again.');
     const code = readCode(input);
     const room = code ? this.rooms.open().find((item) => item.code === code && item.access === access) : undefined;
     if (!room) {
-      this.miss(from, at);
+      this.tries.miss(address);
       throw new ZirbelError(404, 'No session has that code.');
     }
     return { room, ticket: room.seat(name) };
-  }
-
-  private miss(address: string, at: number) {
-    for (const [counted, tries] of this.wrong) if (at - tries.since >= MINUTE) this.wrong.delete(counted);
-    const tries = this.wrong.get(address);
-    this.wrong.delete(address);
-    this.wrong.set(address, tries ? { since: tries.since, count: tries.count + 1 } : { since: at, count: 1 });
-    if (this.wrong.size > COUNTED) this.wrong.delete(this.wrong.keys().next().value!);
   }
 
   // A release never changes under its id, so its manifest is read once.

@@ -34,6 +34,8 @@ type listenerConfig struct {
 	box *playerReach
 	// lobby, when set, answers / and /lobby/... (lobby_routes.go).
 	lobby *Lobby
+	// pads, when set, answers /pads (pads_socket.go): every listener's screens and controllers.
+	pads *Pads
 }
 
 // playerReach mirrors PlayerReach in packages/server/player-listener.ts.
@@ -80,7 +82,7 @@ type Listener struct {
 	handshakes atomic.Int32
 	server     *http.Server
 	sockets    sync.WaitGroup
-	pending    sync.Map // *context.CancelFunc of sockets still in their handshake
+	pending    sync.Map // *context.CancelFunc of sockets still in their handshake, and of pads sockets
 }
 
 func (l *Listener) hosts() []string {
@@ -136,6 +138,9 @@ func (l *Listener) serve(w http.ResponseWriter, r *http.Request) error {
 	if strings.EqualFold(r.Header.Get("upgrade"), "websocket") {
 		if pathname == "/mp" {
 			return l.serveRelay(w, r)
+		}
+		if pathname == "/pads" {
+			return l.servePads(w, r)
 		}
 		return l.serveSocket(w, r, pathname)
 	}
