@@ -2,7 +2,7 @@
 # The app stage, in the image's own root (provision.sh), on the base stage, owned by root in /opt/zirbel so the
 # service's own user can't change it: on a 64-bit box the Node editor build for Linux arm64 (build.mjs stages it), on a
 # 32-bit box the Go host built for it; then the services.
-#   chroot-app.sh COUNTRY
+#   chroot-app.sh COUNTRY [GAMES]   (GAMES: how many game folders build.mjs handed over, all of which must arrive)
 set -euo pipefail
 B=/tmp/zirbel-build
 rm -rf /opt/zirbel
@@ -31,6 +31,7 @@ dir=$(runuser -u zirbel -- mktemp -d)
 data="$dir/data"
 games=("$B"/games/*.json)
 [ -e "${games[0]}" ] || games=()
+[ ${#games[@]} -eq "${2:-0}" ] || { echo "Expected ${2:-0} games for the box's library, found ${#games[@]}." >&2; exit 1; }
 [ ${#games[@]} -eq 0 ] || data=/home/zirbel/.zirbel
 runuser -u zirbel -- env ZIRBEL_ACCOUNT_DIR="$dir/account" "${program[@]}" --box --data "$data" --port 48173 \
   >"$dir/log" 2>&1 &

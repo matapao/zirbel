@@ -135,7 +135,7 @@ if (values.game.length) app[games] = '/games';
 const setup = path.join(REPO, 'pi', 'setup');
 if (fs.existsSync(setup)) app[setup] = '/setup';
 const image = path.join(out, `zirbel-${values.target}.img`);
-stage(base, image, 'app', [values.country], app);
+stage(base, image, 'app', [values.country, String(values.game.length)], app);
 // Beside it, compressed for keeping or sharing: Raspberry Pi Imager writes an .img.xz as it is.
 execFileSync('xz', ['--compress', '--keep', '--force', '--threads=0', image], { stdio: 'inherit' });
 for (const file of [image, image + '.xz']) {
