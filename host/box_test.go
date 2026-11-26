@@ -182,6 +182,8 @@ func TestTheDoorLetsInTheBoxAndItsNetworkOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Loopback from port 6000 is another user's on the box (its TV's browser).
+	box.loopbackOwned = func(r *http.Request) bool { return !strings.HasSuffix(r.RemoteAddr, ":6000") }
 	open := func(method, path, from string) (*httptest.ResponseRecorder, boxAccess, bool, error) {
 		r := httptest.NewRequestWithContext(t.Context(), method, path, http.NoBody)
 		r.RemoteAddr = from
@@ -191,6 +193,12 @@ func TestTheDoorLetsInTheBoxAndItsNetworkOnly(t *testing.T) {
 	}
 	if _, access, handled, err := open("GET", "/api/projects", "127.0.0.1:5000"); err != nil || handled || !access.local {
 		t.Fatalf("the box itself: %+v %v %v", access, handled, err)
+	}
+	if _, _, _, err := open("GET", "/api/box/status", "127.0.0.1:6000"); statusOf(err) != http.StatusUnauthorized {
+		t.Fatalf("another user on the box: %v", err)
+	}
+	if w, _, handled, _ := open("GET", "/", "[::1]:6000"); !handled || w.Header().Get("location") != "/pair" {
+		t.Fatalf("another user's page on the box: %v %s", handled, w.Header().Get("location"))
 	}
 	if _, _, _, err := open("GET", "/", "203.0.113.5:5000"); statusOf(err) != http.StatusForbidden {
 		t.Fatalf("an address off the network: %v", err)

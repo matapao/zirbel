@@ -14,7 +14,9 @@ import (
 
 // The box's door and its own routes (--box), mirroring packages/server/box-routes.ts.
 // The editor listens on every interface, and a request from the box itself
-// behaves as without box mode. A request from elsewhere must come from the
+// behaves as without box mode: one from loopback whose other end is the
+// host's own user or root (loopback_owner.go); one from any other user on the
+// box comes as from its network. A request from elsewhere must come from the
 // box's own network, and then needs a paired device's session (an owner's) or
 // an editor's of one game for everything but /pair, where a device pairs with
 // a one-time code (or claims a box no device has paired with yet), /edit,
@@ -40,6 +42,9 @@ type Box struct {
 	// ownNetwork is the box's own Wi-Fi's name and password, as the setup
 	// service keeps them (box_network.go).
 	ownNetwork string
+	// loopbackOwned says whether a loopback request is the box's own: its
+	// other end is the host's user or root (loopback_owner.go).
+	loopbackOwned func(*http.Request) bool
 }
 
 func NewBox(account string, port func() int) (*Box, error) {
@@ -58,7 +63,7 @@ func NewBox(account string, port func() int) (*Box, error) {
 	}
 	return &Box{pairing: pairing, editors: editors, settings: settings, capabilities: detectCapabilities(), port: port,
 		setupRequest: env("ZIRBEL_SETUP_REQUEST", "/run/zirbel-setup/request"),
-		ownNetwork:   env("ZIRBEL_OWN_NETWORK", "/var/lib/zirbel-setup/own-network.json")}, nil
+		ownNetwork:   env("ZIRBEL_OWN_NETWORK", "/var/lib/zirbel-setup/own-network.json"), loopbackOwned: ownLoopback}, nil
 }
 
 // boxAccess is who sent a request: the box itself, a paired device (an owner)
@@ -172,7 +177,7 @@ func portSuffix(port int) string {
 // door decides a request's access, or answers it itself (handled).
 func (b *Box) door(w http.ResponseWriter, r *http.Request) (access boxAccess, handled bool, err error) {
 	address := remoteAddress(r)
-	local := isLoopbackAddress(address)
+	local := isLoopbackAddress(address) && b.loopbackOwned(r)
 	if !local && !onBoxNetwork(address) {
 		return access, false, fail(http.StatusForbidden, "This box answers only its own network.")
 	}

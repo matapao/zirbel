@@ -239,6 +239,8 @@ func TestABoxSendsDevicesThatArentPairedToTheLobby(t *testing.T) {
 		t.Fatal(err)
 	}
 	box.lobbyPort = func() int { return 4174 }
+	// Loopback from port 6000 is another user's on the box (its TV's browser).
+	box.loopbackOwned = func(r *http.Request) bool { return !strings.HasSuffix(r.RemoteAddr, ":6000") }
 	door := func(path, host, from string) (*httptest.ResponseRecorder, bool) {
 		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, http.NoBody)
 		r.Host, r.RemoteAddr = host, from
@@ -257,6 +259,9 @@ func TestABoxSendsDevicesThatArentPairedToTheLobby(t *testing.T) {
 	}
 	if _, handled := door("/", "zirbel.local", "127.0.0.1:5000"); handled {
 		t.Fatal("the box itself was sent to the lobby")
+	}
+	if w, handled := door("/", "127.0.0.1", "127.0.0.1:6000"); !handled || w.Header().Get("location") != "http://127.0.0.1:4174/" {
+		t.Fatalf("another user on the box is not sent to the lobby: %s", w.Header().Get("location"))
 	}
 
 	// The lobby there links to pairing, on the editor's port and the name the device asked by.

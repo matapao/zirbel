@@ -130,6 +130,14 @@ test('the box answers loopback, private, link-local and unique-local addresses, 
 test('the door lets the box itself in, sends an unpaired device to the lobby or pairing, and lets a paired one in', async (t) => {
   const box = boxFor(t);
   assert.deepEqual(await boxDoor(box, incoming('127.0.0.1', 'GET', '/'), outgoing().response, at('/')), { local: true });
+  // Loopback from another user on the box (its TV's browser) comes as from its network: / goes to the lobby, the rest
+  // needs pairing.
+  const stranger = (method: string, path: string) => incoming('::ffff:127.0.0.1', method, path, {}, '', true);
+  const tv = outgoing();
+  assert.equal(await boxDoor(box, stranger('GET', '/'), tv.response, at('/')), undefined);
+  assert.deepEqual([tv.sent.status, tv.sent.headers.location], [303, 'http://zirbel.local:4174/']);
+  await assert.rejects(boxDoor(box, stranger('GET', '/api/box/status'), outgoing().response, at('/api/box/status')), /Pair this device/);
+  await assert.rejects(boxDoor(box, stranger('POST', '/turn-mcp'), outgoing().response, at('/turn-mcp')), /does not exist/);
   // Its / goes to the lobby on the LAN player listener, by the name the device asked for; the editor's pages to pairing.
   const page = outgoing();
   assert.equal(await boxDoor(box, incoming('192.168.1.20', 'GET', '/'), page.response, at('/')), undefined);
