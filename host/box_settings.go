@@ -15,9 +15,11 @@ import (
 // the account folder (box/settings.json): whether harnesses run on the box,
 // whether agents elsewhere on the network may use its MCP server, whether its
 // first-run choice was made, whether someone asked for the Wi-Fi setup again,
-// and whether the box makes its own Wi-Fi (box_network.go), the last two of
-// which the box's setup service reads from /api/box/status. The Go host has no
-// harnesses: its box answers agents over MCP only.
+// whether the box makes its own Wi-Fi (box_network.go), the last two of which
+// the box's setup service reads from /api/box/status, and whether a TV
+// plugged into the box shows its lobby (tv), which the box's console service
+// reads there (docs/box-tv.md). The Go host has no harnesses: its box answers
+// agents over MCP only.
 
 type boxSwitches struct {
 	Version        int  `json:"version"`
@@ -27,6 +29,8 @@ type boxSwitches struct {
 	SetupRequested bool `json:"setupRequested"`
 	// OwnNetwork is off in settings written before the box could make its own Wi-Fi.
 	OwnNetwork bool `json:"ownNetwork"`
+	// TV is as on a new box in settings written before its TV console.
+	TV bool `json:"tv"`
 }
 
 // boxCapabilities is what the box is, as Node's boxCapabilities reports it.
@@ -73,11 +77,23 @@ func harnessesUnavailable(capabilities boxCapabilities) string {
 	return "Claude Code and Codex aren’t made for this box’s " + capabilities.Arch + " system. Use your own agent over MCP instead."
 }
 
+// roomyMB is the memory under which, as in Node's box settings, the TV starts
+// off: its browser needs room beside the host (a 2 GB board reports a little
+// less).
+const roomyMB = 1536
+
+// tvByDefault: the TV starts on only on a 64-bit box with the memory for it.
+func tvByDefault(capabilities boxCapabilities) bool {
+	return capabilities.Arch == "arm64" && capabilities.MemoryMB >= roomyMB
+}
+
 // BoxSettings keeps the switches, read once and written on every change.
 type BoxSettings struct {
 	mu     sync.Mutex
 	file   string
 	cached *boxSwitches
+	// tv is the TV switch on a new box (tvByDefault).
+	tv bool
 }
 
 func NewBoxSettings(folder string) (*BoxSettings, error) {
@@ -102,7 +118,7 @@ func (s *BoxSettings) read() (boxSwitches, error) {
 	data, err := os.ReadFile(s.file)
 	if errors.Is(err, os.ErrNotExist) {
 		// Harnesses start off: there are none in this host.
-		defaults := boxSwitches{Version: 1}
+		defaults := boxSwitches{Version: 1, TV: s.tv}
 		s.cached = &defaults
 		return defaults, nil
 	}
@@ -110,8 +126,9 @@ func (s *BoxSettings) read() (boxSwitches, error) {
 		return boxSwitches{}, err
 	}
 	var switches boxSwitches
-	// Every key but ownNetwork, which settings from before it lack; none null.
-	if strictKeys(data, "version", "harnesses", "externalMcp", "onboarded", "setupRequested", "ownNetwork") != nil ||
+	// Every key but ownNetwork and tv, which settings from before them lack; none null.
+	switches.TV = s.tv
+	if strictKeys(data, "version", "harnesses", "externalMcp", "onboarded", "setupRequested", "ownNetwork", "tv") != nil ||
 		json.Unmarshal(data, &switches) != nil || switches.Version != 1 || hasNull(data) ||
 		!allKeys(data, "version", "harnesses", "externalMcp", "onboarded", "setupRequested") {
 		return boxSwitches{}, errSettingsUnreadable

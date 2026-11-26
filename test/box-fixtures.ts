@@ -44,7 +44,7 @@ export function boxFor(t: TestContext, capabilities = roomy, turns = 0, lobby: (
   return { pairing: new Pairing(folder), editors: new Editors(folder), settings, capabilities, port: () => 80, turns: () => turns,
     lobbyPort: lobby, sharedHost: shared, qr: async (text) => 'data:qr,' + encodeURIComponent(text),
     setupRequest: join(folder, 'run', 'request'), ownNetwork: join(folder, 'own-network.json'),
-    ownLoopback: (socket) => !(socket as unknown as { stranger: boolean }).stranger,
+    tvWake: join(folder, 'tv', 'wake'), ownLoopback: (socket) => !(socket as unknown as { stranger: boolean }).stranger,
     harnesses: new BoxHarnesses(() => { throw new Error('No harness in this test'); }, () => settings.read().harnesses) };
 }
 

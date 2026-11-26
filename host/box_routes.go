@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -42,6 +43,10 @@ type Box struct {
 	// ownNetwork is the box's own Wi-Fi's name and password, as the setup
 	// service keeps them (box_network.go).
 	ownNetwork string
+	// tvWake is the file that wakes the box's console service
+	// (docs/box-tv.md) when the tv switch changes; a box without the console
+	// has no folder for it.
+	tvWake string
 	// loopbackOwned says whether a loopback request is the box's own: its
 	// other end is the host's user or root (loopback_owner.go).
 	loopbackOwned func(*http.Request) bool
@@ -61,9 +66,12 @@ func NewBox(account string, port func() int) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Box{pairing: pairing, editors: editors, settings: settings, capabilities: detectCapabilities(), port: port,
+	capabilities := detectCapabilities()
+	settings.tv = tvByDefault(capabilities)
+	return &Box{pairing: pairing, editors: editors, settings: settings, capabilities: capabilities, port: port,
 		setupRequest: env("ZIRBEL_SETUP_REQUEST", "/run/zirbel-setup/request"),
-		ownNetwork:   env("ZIRBEL_OWN_NETWORK", "/var/lib/zirbel-setup/own-network.json"), loopbackOwned: ownLoopback}, nil
+		ownNetwork:   env("ZIRBEL_OWN_NETWORK", "/var/lib/zirbel-setup/own-network.json"),
+		tvWake:       env("ZIRBEL_TV_WAKE", "/run/zirbel-tv/wake"), loopbackOwned: ownLoopback}, nil
 }
 
 // boxAccess is who sent a request: the box itself, a paired device (an owner)
@@ -251,10 +259,12 @@ type boxSettingsView struct {
 	Onboarded      bool `json:"onboarded"`
 	SetupRequested bool `json:"setupRequested"`
 	OwnNetwork     bool `json:"ownNetwork"`
+	TV             bool `json:"tv"`
 }
 
 func viewOf(switches boxSwitches) boxSettingsView {
-	return boxSettingsView{switches.Harnesses, switches.ExternalMCP, switches.Onboarded, switches.SetupRequested, switches.OwnNetwork}
+	return boxSettingsView{switches.Harnesses, switches.ExternalMCP, switches.Onboarded, switches.SetupRequested, switches.OwnNetwork,
+		switches.TV}
 }
 
 // health is what the workspace knows of the box, in /api/health.
@@ -265,7 +275,8 @@ func (b *Box) health() (map[string]any, error) {
 	}
 	return map[string]any{"harnesses": switches.Harnesses, "externalMcp": switches.ExternalMCP, "onboarded": switches.Onboarded,
 		"setupRequested": switches.SetupRequested, "ownNetwork": switches.OwnNetwork, "canRunHarnesses": b.capabilities.Harnesses,
-		"harnessesUnavailable": harnessesUnavailable(b.capabilities), "memoryMB": b.capabilities.MemoryMB, "name": boxName()}, nil
+		"harnessesUnavailable": harnessesUnavailable(b.capabilities), "memoryMB": b.capabilities.MemoryMB, "name": boxName(),
+		"tv": switches.TV, "canShowTv": exists(filepath.Dir(b.tvWake))}, nil
 }
 
 // serve answers the box's own API, /api/pairing… and /api/box/…; handled says whether it did.
@@ -335,8 +346,9 @@ func (b *Box) change(w http.ResponseWriter, r *http.Request) error {
 		ExternalMCP *bool `json:"externalMcp"`
 		Onboarded   *bool `json:"onboarded"`
 		OwnNetwork  *bool `json:"ownNetwork"`
+		TV          *bool `json:"tv"`
 	}
-	if err := strictKeys(data, "harnesses", "externalMcp", "onboarded", "ownNetwork"); err != nil {
+	if err := strictKeys(data, "harnesses", "externalMcp", "onboarded", "ownNetwork", "tv"); err != nil {
 		return fail(http.StatusBadRequest, "Invalid input")
 	}
 	if json.Unmarshal(data, &input) != nil || hasNull(data) {
@@ -354,7 +366,7 @@ func (b *Box) change(w http.ResponseWriter, r *http.Request) error {
 			return errNoOwnNetwork
 		}
 	}
-	switched := false
+	switched, tv := false, false
 	switches, err := b.settings.Update(func(next *boxSwitches) {
 		if input.Harnesses != nil {
 			next.Harnesses = *input.Harnesses
@@ -369,10 +381,17 @@ func (b *Box) change(w http.ResponseWriter, r *http.Request) error {
 			switched = next.OwnNetwork != *input.OwnNetwork
 			next.OwnNetwork = *input.OwnNetwork
 		}
+		if input.TV != nil {
+			tv = next.TV != *input.TV
+			next.TV = *input.TV
+		}
 	})
+	// The setup service makes the Wi-Fi follow a switch of the box's own, and the console service the TV.
 	if err == nil && switched {
-		// The setup service makes the Wi-Fi follow a switch of the box's own.
 		err = wake(networkWake(b.setupRequest))
+	}
+	if err == nil && tv {
+		err = wake(b.tvWake)
 	}
 	return send(w, http.StatusOK, viewOf(switches), err)
 }

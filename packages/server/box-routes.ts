@@ -6,9 +6,11 @@
 // a device pairs with a one-time code (or claims a box no device has paired with yet), /edit, where a device redeems a
 // game's edit code (box-edit-routes.ts), and /mcp while external MCP access is on, which checks its own project grant.
 // A device that isn't paired and opens the box's / goes to the lobby on its LAN player listener: playing needs no pairing.
+import { existsSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BlockList } from 'node:net';
 import { hostname, networkInterfaces } from 'node:os';
+import { dirname } from 'node:path';
 import { z } from 'zod';
 import { ZirbelError } from '../core/projects.ts';
 import { body, checkOrigin, failure, reply } from './http.ts';
@@ -33,6 +35,9 @@ export type BoxContext = {
   setupRequest: string;
   /** The box's own Wi-Fi's name and password, as the setup service keeps them (box-network.ts). */
   ownNetwork: string;
+  /** The file that wakes the box's console service (docs/box-tv.md) when the tv switch changes; a box without the
+   *  console has no folder for it. */
+  tvWake: string;
   /** Whether a loopback connection is the box's own: its other end is the editor's user or root (loopback-owner.ts). */
   ownLoopback: (connection: IncomingMessage['socket']) => boolean;
 };
@@ -153,15 +158,15 @@ ${error ? `<p class="error" role="alert">${escape(error)}</p>` : ''}${claim}<for
 const setupInput = z.strictObject({ requested: z.boolean() });
 
 function settingsView(box: BoxContext) {
-  const { harnesses, externalMcp, onboarded, setupRequested, ownNetwork } = box.settings.read();
-  return { harnesses, externalMcp, onboarded, setupRequested, ownNetwork };
+  const { harnesses, externalMcp, onboarded, setupRequested, ownNetwork, tv } = box.settings.read();
+  return { harnesses, externalMcp, onboarded, setupRequested, ownNetwork, tv };
 }
 
 /** What the workspace knows of the box, in /api/health. */
 export function boxHealth(box: BoxContext) {
   const { capabilities } = box;
   return { ...settingsView(box), canRunHarnesses: capabilities.harnesses, harnessesUnavailable: harnessesUnavailable(capabilities),
-    memoryMB: capabilities.memoryMB, name: boxName() };
+    memoryMB: capabilities.memoryMB, name: boxName(), canShowTv: existsSync(dirname(box.tvWake)) };
 }
 
 /** The box's own API: /api/pairing… and /api/box/…. Says whether it answered the request. */
@@ -204,8 +209,9 @@ export async function boxRequest(box: BoxContext, request: IncomingMessage, resp
       await box.harnesses.off();
     }
     box.settings.update(change);
-    // The setup service makes the Wi-Fi follow a switch of the box's own.
+    // The setup service makes the Wi-Fi follow a switch of the box's own, and the console service the TV.
     if (change.ownNetwork !== undefined && change.ownNetwork !== before.ownNetwork) wake(networkWake(box.setupRequest));
+    if (change.tv !== undefined && change.tv !== before.tv) wake(box.tvWake);
     reply(response, settingsView(box));
     return true;
   }
