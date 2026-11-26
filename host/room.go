@@ -27,7 +27,8 @@ type Room struct {
 	tick      int64
 	activity  time.Time
 	closed    bool
-	gamePages sync.Map // origin -> *gamePageEntry
+	gamePages sync.Map  // origin -> *gamePageEntry
+	relay     relayRoom // a net-v2 game's seats on the relay (relay.go)
 }
 
 func newRoom(release *Release, solo bool, access string, development bool) *Room {
@@ -36,7 +37,15 @@ func newRoom(release *Release, solo bool, access string, development bool) *Room
 		ID: hex.EncodeToString(randomBytes(6)), Invite: secret(), DocumentKey: secret(),
 		InviteExpires: now.Add(inviteLifetime), Release: release, Solo: solo, Access: access, Development: development,
 		sim: newSimulation(release, solo), seats: map[string]*seat{}, pending: map[string]ticket{}, activity: now,
+		relay: relayRoom{seats: map[byte]*relaySeat{}},
 	}
+}
+
+// touch counts relay traffic as the room's activity.
+func (r *Room) touch() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.activity = time.Now()
 }
 func encode(value any) []byte {
 	data, err := json.Marshal(value)
@@ -371,6 +380,7 @@ func (r *Room) step() bool {
 	return !r.closed
 }
 func (r *Room) close() {
+	r.relay.close()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.closed = true

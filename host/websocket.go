@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
@@ -33,6 +34,8 @@ const (
 	closeInvalidData   = 1007
 	closePolicy        = 1008
 	closeTooBig        = 1009
+	closeGoingAway     = 1001
+	closeNoStatus      = 1005 // a close frame without a code; never sent
 	websocketGUID      = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 	closeHandshakeWait = 5 * time.Second
 )
@@ -51,6 +54,7 @@ type wsConn struct {
 	closeSent bool // a close frame went out or a write failed; guarded by writeMu
 	peerOnce  sync.Once
 	peerClose chan struct{} // closed when the peer's close frame arrives
+	peerCode  atomic.Int32  // the code in the peer's close frame, 1005 for none
 }
 
 func headerHas(h http.Header, name, token string) bool {
@@ -67,6 +71,10 @@ func headerHas(h http.Header, name, token string) bool {
 func newWSConn(conn net.Conn, reader *bufio.Reader, readLimit int64) *wsConn {
 	return &wsConn{conn: conn, reader: reader, readLimit: readLimit, pong: make(chan struct{}, 1), peerClose: make(chan struct{})}
 }
+
+// PeerCloseCode is the code of the close frame the peer sent: 1005 if it gave
+// none, 0 if it sent no close frame.
+func (c *wsConn) PeerCloseCode() int { return int(c.peerCode.Load()) }
 
 // acceptWebSocket completes the opening handshake and takes over the
 // connection. readLimit bounds one incoming message.
@@ -130,6 +138,11 @@ func (c *wsConn) writeFrame(opcode byte, payload []byte, deadline time.Time) err
 // Write sends one text message, giving up at the deadline.
 func (c *wsConn) Write(data []byte, deadline time.Time) error {
 	return c.writeFrame(opText, data, deadline)
+}
+
+// WriteBinary sends one binary message, giving up at the deadline.
+func (c *wsConn) WriteBinary(data []byte, deadline time.Time) error {
+	return c.writeFrame(opBinary, data, deadline)
 }
 
 // Ping sends a ping and waits for the pong.
@@ -253,10 +266,12 @@ func (c *wsConn) Read(ctx context.Context) (byte, []byte, error) {
 			// A room keeps reading after its own read loop ends, to receive the
 			// peer's close reply; a client can send more than one close frame.
 			c.peerOnce.Do(func() { close(c.peerClose) })
-			code := uint16(closeNormal)
+			code, received := uint16(closeNormal), int32(closeNoStatus)
 			if len(payload) >= 2 {
 				code = binary.BigEndian.Uint16(payload)
+				received = int32(code)
 			}
+			c.peerCode.CompareAndSwap(0, received) // the first close frame counts
 			return 0, nil, c.closeAfterError(code)
 		case opText, opBinary:
 			if message != nil {

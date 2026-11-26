@@ -69,6 +69,7 @@ func hostnameOf(host string) string {
 type Listener struct {
 	rooms      *Rooms
 	runtime    map[string]*webfiles.File
+	net        *webfiles.File // zirbel-net.js, if the build has it
 	config     listenerConfig
 	port       int
 	playerPage string
@@ -129,10 +130,23 @@ func (l *Listener) serve(w http.ResponseWriter, r *http.Request) error {
 	}
 	pathname := r.URL.EscapedPath()
 	if strings.EqualFold(r.Header.Get("upgrade"), "websocket") {
+		if pathname == "/mp" {
+			return l.serveRelay(w, r)
+		}
 		return l.serveSocket(w, r, pathname)
 	}
 	if r.Method == http.MethodGet && pathname == "/health" {
 		reply(w, http.StatusOK, map[string]string{"status": "ok", "role": "player"})
+		return nil
+	}
+	if r.Method == http.MethodGet && pathname == "/zirbel-net.js" {
+		if l.net == nil {
+			return fail(http.StatusNotFound, "Runtime file does not exist.")
+		}
+		// Games run with an opaque origin and import it as a module: a CORS request. Its
+		// address stays the same from one build to the next, so a client asks each time.
+		w.Header().Set("access-control-allow-origin", "*")
+		sendFile(w, r, "text/javascript; charset=utf-8", "no-cache", l.net)
 		return nil
 	}
 	segments := strings.Split(pathname, "/")
@@ -226,14 +240,21 @@ func (l *Listener) serveRuntime(w http.ResponseWriter, r *http.Request, parts []
 	if isAddon || name == "three.module.js" || name == "game-sdk.js" {
 		w.Header().Set("access-control-allow-origin", "*")
 	}
+	sendFile(w, r, typeFor(name), immutable, file)
+	return nil
+}
+
+// sendFile mirrors sendImmutable in packages/server/runtime-files.ts: a file
+// fixed for the life of the process, gzipped when the client takes it.
+func sendFile(w http.ResponseWriter, r *http.Request, contentType, cache string, file *webfiles.File) {
 	header := w.Header()
-	header.Set("content-type", typeFor(name))
-	header.Set("cache-control", immutable)
+	header.Set("content-type", contentType)
+	header.Set("cache-control", cache)
 	header.Set("etag", file.ETag)
 	header.Set("vary", "accept-encoding")
 	if r.Header.Get("if-none-match") == file.ETag {
 		w.WriteHeader(http.StatusNotModified)
-		return nil
+		return
 	}
 	body := file.Bytes
 	if compressed := file.Gzip(); compressed != nil && acceptsGzip(r) {
@@ -244,7 +265,6 @@ func (l *Listener) serveRuntime(w http.ResponseWriter, r *http.Request, parts []
 	// Not XSS: runtime files with their own content type, nosniff and a CSP.
 	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 	_, _ = w.Write(body) // #nosec G705 -- the request only picks which embedded runtime file to send
-	return nil
 }
 
 // Listen starts a player listener on bind:port and returns it once it accepts.
@@ -257,7 +277,7 @@ func Listen(ctx context.Context, rooms *Rooms, runtime map[string]*webfiles.File
 	if err != nil {
 		return nil, err
 	}
-	l := &Listener{rooms: rooms, runtime: runtime, config: config, port: port, playerPage: string(page.Bytes)}
+	l := &Listener{rooms: rooms, runtime: runtime, net: webfiles.Net(), config: config, port: port, playerPage: string(page.Bytes)}
 	l.server = &http.Server{Handler: l, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 20 * time.Second, IdleTimeout: 5 * time.Second}
 	go func() { _ = l.server.Serve(&limitListener{socket, make(chan struct{}, 256)}) }()
 	return l, nil

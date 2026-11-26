@@ -195,7 +195,7 @@ func normalizeGame(game *Game) error {
 	if game.MaxPlayers == 0 {
 		game.MaxPlayers = 1
 	}
-	return nil
+	return withinPlayers(game)
 }
 
 // normalizeProject applies what project.parse does beyond the JSON Schema.

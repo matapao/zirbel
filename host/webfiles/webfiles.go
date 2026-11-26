@@ -150,17 +150,35 @@ func Load() (map[string]*File, error) {
 	}
 	go func() {
 		for name, file := range files {
-			if !compressible(name, len(file.Bytes)) {
-				continue
-			}
-			var out bytes.Buffer
-			writer, _ := gzip.NewWriterLevel(&out, gzip.BestCompression)
-			if _, err := writer.Write(file.Bytes); err != nil || writer.Close() != nil {
-				continue
-			}
-			data := out.Bytes()
-			file.gzip.Store(&data)
+			compress(name, file)
 		}
 	}()
 	return files, nil
 }
+
+// compress keeps a compressible file's gzip beside it.
+func compress(name string, file *File) {
+	if !compressible(name, len(file.Bytes)) {
+		return
+	}
+	var out bytes.Buffer
+	writer, _ := gzip.NewWriterLevel(&out, gzip.BestCompression)
+	if _, err := writer.Write(file.Bytes); err != nil || writer.Close() != nil {
+		return
+	}
+	data := out.Bytes()
+	file.gzip.Store(&data)
+}
+
+// Net is zirbel-net.js, the client a game with its own netcode imports to
+// reach the relay, or nil when the build has none. The host provides it to
+// every game like game-sdk.js, but it is not part of a release's runtime.
+var Net = sync.OnceValue(func() *File {
+	data, err := fs.ReadFile(embedded, "web/zirbel-net.js")
+	if err != nil {
+		return nil
+	}
+	file := newFile(data)
+	compress("zirbel-net.js", file)
+	return file
+})
