@@ -26,6 +26,7 @@ func testBoxEditor(t *testing.T) (s *EditorServer, garden, walk *Project) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	box.loopbackOwned = func(*http.Request) bool { return true }
 	rooms := NewRooms()
 	t.Cleanup(rooms.Dispose)
 	s = &EditorServer{Editor: &Editor{projects: projects, releases: releases}, rooms: rooms, box: box, port: 4173,

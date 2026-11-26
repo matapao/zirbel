@@ -111,7 +111,7 @@ func TestTheLobbyIsServedOnPlayerListeners(t *testing.T) {
 	if state.status != http.StatusOK || state.header.Get("cache-control") != "no-store" || room.Session == room.ID ||
 		!strings.Contains(state.body, `"sessions":[{"id":"`+room.Session+`","title":"Garden","players":0,"max":2,"started":"`) ||
 		!strings.HasPrefix(state.body, `{"games":[{"release":"shared","title":"Garden","players":{"min":1,"max":2},"multiplayer":true},`+
-			`{"release":"alone","title":"Walk","players":{"min":1,"max":1},"multiplayer":false}],`) || !strings.HasSuffix(state.body, `,"pair":null,"edit":null}`+"\n") {
+			`{"release":"alone","title":"Walk","players":{"min":1,"max":1},"multiplayer":false}],`) || !strings.HasSuffix(state.body, `,"pair":null,"edit":null,"link":null}`+"\n") {
 		t.Fatalf("the state: %+v", state)
 	}
 	for _, secret := range []string{*session.Code, room.ID, ticket, "Ada"} {
@@ -239,6 +239,8 @@ func TestABoxSendsDevicesThatArentPairedToTheLobby(t *testing.T) {
 		t.Fatal(err)
 	}
 	box.lobbyPort = func() int { return 4174 }
+	// Loopback from port 6000 is another user's on the box (its TV's browser).
+	box.loopbackOwned = func(r *http.Request) bool { return !strings.HasSuffix(r.RemoteAddr, ":6000") }
 	door := func(path, host, from string) (*httptest.ResponseRecorder, bool) {
 		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, http.NoBody)
 		r.Host, r.RemoteAddr = host, from
@@ -258,14 +260,19 @@ func TestABoxSendsDevicesThatArentPairedToTheLobby(t *testing.T) {
 	if _, handled := door("/", "zirbel.local", "127.0.0.1:5000"); handled {
 		t.Fatal("the box itself was sent to the lobby")
 	}
+	if w, handled := door("/", "127.0.0.1", "127.0.0.1:6000"); !handled || w.Header().Get("location") != "http://127.0.0.1:4174/" {
+		t.Fatalf("another user on the box is not sent to the lobby: %s", w.Header().Get("location"))
+	}
 
 	// The lobby there links to pairing, on the editor's port and the name the device asked by.
 	lobby, rooms, _ := testLobby(t)
+	// And, on its LAN listener, to the lobby's own address for other devices.
+	lobby.link = func(host string) *string { link := "http://" + host + ":4174/"; return &link }
 	for port, want := range map[int]string{8080: "http://[fd00::2]:8080", 80: "http://[fd00::2]"} {
 		lobby.editorAt = func(host string) string { return "http://" + host + portSuffix(port) }
 		l := &Listener{rooms: rooms, port: 4174, config: listenerConfig{lan: true, lobby: lobby,
 			box: &playerReach{hosts: func() []string { return []string{"zirbel.local", "[fd00::2]"} }, network: onBoxNetwork}}}
-		if got := call(t, l, http.MethodGet, "[fd00::2]:4174", "/lobby/state", "[fd00::5]:5000", "", nil); got.body != `{"games":[],"sessions":[],"pair":"`+want+`/pair","edit":"`+want+`/edit"}`+"\n" {
+		if got := call(t, l, http.MethodGet, "[fd00::2]:4174", "/lobby/state", "[fd00::5]:5000", "", nil); got.body != `{"games":[],"sessions":[],"pair":"`+want+`/pair","edit":"`+want+`/edit","link":"http://[fd00::2]:4174/"}`+"\n" {
 			t.Errorf("the pairing link with the editor on %d: %+v", port, got)
 		}
 	}

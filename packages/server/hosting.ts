@@ -97,7 +97,8 @@ export class Players {
     this.addons = threeAddons(releases.webRoot);
     this.net = netFiles(releases.webRoot);
     this.lobby = new Lobby(rooms, releases);
-    this.lobbyContext = { lobby: this.lobby, files: lobbyFiles(releases.webRoot), pair: options.box?.pair, edit: options.box?.edit };
+    this.lobbyContext = { lobby: this.lobby, files: lobbyFiles(releases.webRoot), pair: options.box?.pair, edit: options.box?.edit,
+      link: (host) => this.lobbyLink(host) };
   }
 
   get lanHost() { return this.options.lanHost; }

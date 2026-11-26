@@ -1,13 +1,13 @@
 // A Zirbel box (box mode): pairing with one-time codes, claiming a box no device has paired with, the paired devices'
-// sessions, the box's switches and what is off not running, its own Wi-Fi, the network it answers, and its door.
+// sessions, the box's switches and what is off not running, its own Wi-Fi, its TV, the network it answers, and its door.
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { networkWake, readOwnNetwork, wifiJoinText } from '../packages/server/box-network.ts';
 import { CODE_MS, deviceLabel, normalizeCode, Pairing, sessionToken, WRONG_CODES } from '../packages/server/box-pairing.ts';
-import { boxDoor, boxHosts, boxName, boxRequest, isLoopback, onBoxNetwork } from '../packages/server/box-routes.ts';
+import { boxDoor, boxHealth, boxHosts, boxName, boxRequest, isLoopback, onBoxNetwork } from '../packages/server/box-routes.ts';
 import { BoxHarnesses, BoxSettings, harnessesUnavailable, type Capabilities } from '../packages/server/box-settings.ts';
 import type { Processors } from '../packages/server/processors.ts';
 import { at, boxFor, incoming, outgoing, roomy } from './box-fixtures.ts';
@@ -88,12 +88,17 @@ test('the switches start by what the box can do and how much memory it has, and 
   const folder = tempDir(t, 'zirbel-box-');
   const settings = new BoxSettings(folder, roomy);
   assert.deepEqual(settings.update({ externalMcp: true }),
-    { version: 1, harnesses: true, externalMcp: true, onboarded: false, setupRequested: false, ownNetwork: false });
+    { version: 1, harnesses: true, externalMcp: true, onboarded: false, setupRequested: false, ownNetwork: false, tv: true });
   assert.equal(new BoxSettings(folder, roomy).read().externalMcp, true);
   // Settings from before the box's own Wi-Fi have it off; a null is no setting.
   const older = tempDir(t, 'zirbel-box-');
   writeFileSync(join(older, 'settings.json'), JSON.stringify({ version: 1, harnesses: false, externalMcp: true, onboarded: true, setupRequested: false }));
   assert.equal(new BoxSettings(older, roomy).read().ownNetwork, false);
+  // And before the TV, it is as on a new box: on a 64-bit box with the memory for its browser alone.
+  assert.equal(new BoxSettings(older, roomy).read().tv, true);
+  assert.equal(new BoxSettings(older, { ...roomy, memoryMB: 906 }).read().tv, false);
+  assert.equal(new BoxSettings(tempDir(t, 'zirbel-box-'), thirtyTwo).read().tv, false);
+  assert.equal(new BoxSettings(tempDir(t, 'zirbel-box-'), { ...roomy, arch: 'x64' }).read().tv, false);
   writeFileSync(join(older, 'settings.json'), JSON.stringify({ version: 1, harnesses: false, externalMcp: true, onboarded: true,
     setupRequested: false, ownNetwork: null }));
   assert.throws(() => new BoxSettings(older, roomy).read(), /could not be read/);
@@ -130,6 +135,14 @@ test('the box answers loopback, private, link-local and unique-local addresses, 
 test('the door lets the box itself in, sends an unpaired device to the lobby or pairing, and lets a paired one in', async (t) => {
   const box = boxFor(t);
   assert.deepEqual(await boxDoor(box, incoming('127.0.0.1', 'GET', '/'), outgoing().response, at('/')), { local: true });
+  // Loopback from another user on the box (its TV's browser) comes as from its network: / goes to the lobby, the rest
+  // needs pairing.
+  const stranger = (method: string, path: string) => incoming('::ffff:127.0.0.1', method, path, {}, '', true);
+  const tv = outgoing();
+  assert.equal(await boxDoor(box, stranger('GET', '/'), tv.response, at('/')), undefined);
+  assert.deepEqual([tv.sent.status, tv.sent.headers.location], [303, 'http://zirbel.local:4174/']);
+  await assert.rejects(boxDoor(box, stranger('GET', '/api/box/status'), outgoing().response, at('/api/box/status')), /Pair this device/);
+  await assert.rejects(boxDoor(box, stranger('POST', '/turn-mcp'), outgoing().response, at('/turn-mcp')), /does not exist/);
   // Its / goes to the lobby on the LAN player listener, by the name the device asked for; the editor's pages to pairing.
   const page = outgoing();
   assert.equal(await boxDoor(box, incoming('192.168.1.20', 'GET', '/'), page.response, at('/')), undefined);
@@ -262,6 +275,29 @@ test('the box’s own Wi-Fi: read as the setup service keeps it, joined by a QR 
   assert.throws(() => readOwnNetwork(box.ownNetwork), /could not be read/);
   // The QR code's text escapes what the WIFI: scheme reserves.
   assert.equal(wifiJoinText({ name: 'A;B,C:D"E\\F', password: 'pass:word;' }), 'WIFI:T:WPA;S:A\\;B\\,C\\:D\\"E\\\\F;P:pass\\:word\\;;;');
+});
+
+test('the TV switch wakes the box’s console service where it has one, and says whether it has', async (t) => {
+  const box = boxFor(t);
+  const paired = { local: false, device: 'device' };
+  const put = async (payload: object) => {
+    const { response, sent } = outgoing();
+    await boxRequest(box, incoming('10.42.0.20', 'PUT', '/', { origin: 'http://zirbel.local', 'content-type': 'application/json' },
+      JSON.stringify(payload)), response, paired, { resource: 'box', pathID: 'settings' });
+    return JSON.parse(sent.body) as { tv: boolean };
+  };
+  // A box without the console: the switch is kept, and nothing is woken.
+  assert.deepEqual([boxHealth(box).tv, boxHealth(box).canShowTv], [true, false]);
+  assert.equal((await put({ tv: false })).tv, false);
+  assert.ok(!existsSync(box.tvWake));
+  mkdirSync(dirname(box.tvWake));
+  assert.equal(boxHealth(box).canShowTv, true);
+  assert.equal((await put({ tv: true })).tv, true);
+  assert.ok(existsSync(box.tvWake));
+  rmSync(box.tvWake);
+  await put({ tv: true, onboarded: true });
+  assert.ok(!existsSync(box.tvWake), 'a switch kept as it was wakes nothing');
+  await assert.rejects(put({ tv: 'on' }), /expected boolean/);
 });
 
 /** A request to a local port with a Host header of its own, as a device that reached the box by its name sends. */

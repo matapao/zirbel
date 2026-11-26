@@ -24,6 +24,8 @@ install -m 644 "$B/files/zirbel-report.service" "$B/files/zirbel-report.timer" /
 systemctl enable zirbel-report.timer >/dev/null 2>&1
 systemctl enable zirbel.service >/dev/null 2>&1
 [ ! -d "$B/setup" ] || bash "$B/setup-install.sh" "$B/setup" "$1"
+# The HDMI console on a 64-bit box (build.mjs hands its follower over there alone).
+[ ! -d "$B/tv" ] || bash "$B/tv-install.sh" "$B/tv"
 # The installed program starts in box mode, as `zirbel`, with a throwaway account folder, and answers its health check on
 # loopback. Its data folder is throwaway too, unless the box starts with games: then it is the box's own (~/.zirbel,
 # both hosts' default), and each game goes into its library as the editor's folder import puts it, then into its lobby.

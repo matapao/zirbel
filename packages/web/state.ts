@@ -9,6 +9,8 @@ import type { modelPicker } from './model-picker.ts';
 export type BoxHealth = {
   harnesses: boolean; externalMcp: boolean; onboarded: boolean; setupRequested: boolean; ownNetwork: boolean;
   canRunHarnesses: boolean; harnessesUnavailable?: string; memoryMB: number; name: string;
+  /** Whether a TV plugged into the box shows its lobby, and whether this box has the console that does it. */
+  tv: boolean; canShowTv: boolean;
 };
 /** Who this page is, as /api/me says on a box: the box itself, an owner, or an editor of one game. */
 export type Me = { role: 'box' | 'owner' | 'editor'; game?: string };

@@ -6,6 +6,7 @@ import { templates } from '../games/templates.ts';
 import { createQuest, type Quest } from '../games/quest.ts';
 import { drawScene } from './scene.ts';
 import { screenControllers, type Controllers } from './controllers.ts';
+import { fromTv, TV_PAGE } from './tv-return.ts';
 
 function byId<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
 const room = location.pathname.split('/').at(-1) ?? '';
@@ -123,9 +124,12 @@ function onTv(code: string) {
   void import('./tv-pad.ts').then(({ controlTv }) => controlTv(code, { place: byId('tv-pad-place'), status: byId('tv-pad-status') }));
 }
 
+// A game the TV page went into goes back there when it is left, and its lobby link too.
+if (fromTv()) byId<HTMLAnchorElement>('to-lobby').href = TV_PAGE;
 byId('leave').addEventListener('click', () => {
   client?.stop();
   remember();
+  if (fromTv()) { location.assign(TV_PAGE); return; }
   showLobby('You left the room.');
 });
 reset.addEventListener('click', () => client?.send({ type: 'reset' }));

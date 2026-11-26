@@ -182,6 +182,8 @@ func TestTheDoorLetsInTheBoxAndItsNetworkOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Loopback from port 6000 is another user's on the box (its TV's browser).
+	box.loopbackOwned = func(r *http.Request) bool { return !strings.HasSuffix(r.RemoteAddr, ":6000") }
 	open := func(method, path, from string) (*httptest.ResponseRecorder, boxAccess, bool, error) {
 		r := httptest.NewRequestWithContext(t.Context(), method, path, http.NoBody)
 		r.RemoteAddr = from
@@ -191,6 +193,12 @@ func TestTheDoorLetsInTheBoxAndItsNetworkOnly(t *testing.T) {
 	}
 	if _, access, handled, err := open("GET", "/api/projects", "127.0.0.1:5000"); err != nil || handled || !access.local {
 		t.Fatalf("the box itself: %+v %v %v", access, handled, err)
+	}
+	if _, _, _, err := open("GET", "/api/box/status", "127.0.0.1:6000"); statusOf(err) != http.StatusUnauthorized {
+		t.Fatalf("another user on the box: %v", err)
+	}
+	if w, _, handled, _ := open("GET", "/", "[::1]:6000"); !handled || w.Header().Get("location") != "/pair" {
+		t.Fatalf("another user's page on the box: %v %s", handled, w.Header().Get("location"))
 	}
 	if _, _, _, err := open("GET", "/", "203.0.113.5:5000"); statusOf(err) != http.StatusForbidden {
 		t.Fatalf("an address off the network: %v", err)
@@ -312,8 +320,61 @@ func TestTheBoxsOwnWiFiIsReadAsKeptAndSwitchedOnlyWhereItCanBe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if switches, err := older.Read(); err != nil || switches.OwnNetwork || !switches.ExternalMCP {
+	if switches, err := older.Read(); err != nil || switches.OwnNetwork || !switches.ExternalMCP || switches.TV {
 		t.Fatalf("older settings: %+v %v", switches, err)
+	}
+	// And before the TV, it is as on a new box.
+	older.cached, older.tv = nil, true
+	if switches, err := older.Read(); err != nil || !switches.TV {
+		t.Fatalf("older settings on a box with a TV: %+v %v", switches, err)
+	}
+}
+
+func TestTheTVStartsOnOnlyOnARoomy64BitBoxAndWakesTheConsoleWhereThereIsOne(t *testing.T) {
+	for capabilities, want := range map[boxCapabilities]bool{{Arch: "arm64", MemoryMB: 8064}: true, {Arch: "arm64", MemoryMB: 906}: false,
+		{Arch: "arm", MemoryMB: 924}: false, {Arch: "x64", MemoryMB: 16000}: false} {
+		if tvByDefault(capabilities) != want {
+			t.Errorf("%+v: %v", capabilities, !want)
+		}
+	}
+	folder := t.TempDir()
+	box, err := NewBox(folder, func() int { return 80 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	box.tvWake = filepath.Join(folder, "tv", "wake")
+	put := func(body string) error {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/api/box/settings", strings.NewReader(body))
+		r.Header.Set("content-type", "application/json")
+		return box.change(httptest.NewRecorder(), r)
+	}
+	health := func() map[string]any {
+		view, err := box.health()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return view
+	}
+	if health()["canShowTv"] != false {
+		t.Fatal("a box without the console says it can show the TV")
+	}
+	if err := put(`{"tv":false}`); err != nil || exists(box.tvWake) {
+		t.Fatalf("a box without the console: %v", err)
+	}
+	if err := os.Mkdir(filepath.Dir(box.tvWake), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := put(`{"tv":true}`); err != nil || !exists(box.tvWake) || health()["canShowTv"] != true || health()["tv"] != true {
+		t.Fatalf("switching the TV on: %v %v", err, health())
+	}
+	if err := os.Remove(box.tvWake); err != nil {
+		t.Fatal(err)
+	}
+	if err := put(`{"tv":true,"onboarded":true}`); err != nil || exists(box.tvWake) {
+		t.Fatalf("a switch kept as it was: %v", err)
+	}
+	if err := put(`{"tv":"on"}`); statusOf(err) != http.StatusBadRequest {
+		t.Fatalf("a switch that isn't one: %v", err)
 	}
 }
 

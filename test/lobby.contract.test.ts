@@ -1,6 +1,6 @@
 // The lobby on both hosts: `node dist/server.mjs` and the Go host (host/bin/zirbel-host). The owner offers releases in
-// the editor; anyone who reaches a player listener opens the lobby page at /, starts a session of an offered game and
-// joins one by its code. Every check runs against each host, with the same answers.
+// the editor; anyone who reaches a player listener opens the lobby page at / (or the TV page at /tv), starts a session
+// of an offered game and joins one by its code. Every check runs against each host, with the same answers.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -124,6 +124,24 @@ for (const host of hosts) {
     assert.equal((await fetch(player + '/pad', { method: 'POST', headers: { origin: player } })).status, 404);
   });
 
+  test(host.name + ' host serves the TV page and its files on the player listener', async (t) => {
+    const data = fixtures(t);
+    const { player } = await startEditor(t, host.command, data.data, []);
+    const page = await fetch(player + '/tv');
+    // The lobby page's policy, and the pads socket on this host for the screen it is.
+    const policy = PAGE_POLICY.replace("connect-src 'self'", "connect-src 'self' ws://" + new URL(player).host);
+    assert.deepEqual([page.status, page.headers.get('content-type'), page.headers.get('cache-control'), page.headers.get('content-security-policy')],
+      [200, 'text/html; charset=utf-8', 'no-cache', policy]);
+    assert.equal(await page.text(), readFileSync('dist/web/tv.html', 'utf8'));
+    for (const [file, type] of [['tv.js', 'application/javascript; charset=utf-8'], ['tv.css', 'text/css; charset=utf-8']]) {
+      const served = await fetch(player + '/' + file);
+      assert.deepEqual([served.status, served.headers.get('content-type'), served.headers.get('cache-control')], [200, type, 'no-cache'], file);
+      assert.equal(await served.text(), readFileSync('dist/web/' + file!, 'utf8'));
+    }
+    for (const path of ['/tv.html', '/tv/', '/tv/more']) assert.equal((await fetch(player + path)).status, 404, path);
+    assert.equal((await fetch(player + '/tv', { method: 'POST' })).status, 404);
+  });
+
   test(host.name + ' host serves agents the skill that makes a game multiplayer, beside zirbel-net\'s client', async (t) => {
     const data = fixtures(t);
     const { player } = await startEditor(t, host.command, data.data, []);
@@ -150,6 +168,9 @@ for (const host of hosts) {
     assert.notEqual(new URL(link).port, new URL(editor).port);
     const page = await fetch(link.replace('games.lan', '127.0.0.1'));
     assert.deepEqual([page.status, await page.text()], [200, readFileSync('dist/web/lobby.html', 'utf8')]);
+    // The lobby there names the same address, for its pages' QR codes, even to a device that reached it by loopback.
+    const state = await fetch(link.replace('games.lan', '127.0.0.1') + 'lobby/state');
+    assert.equal((await state.json() as { link: string }).link, link);
   });
 
   test(host.name + ' host offers games in its lobby, starts sessions and seats players by their code', async (t) => {
@@ -186,7 +207,7 @@ for (const host of hosts) {
     assert.deepEqual(empty.body, { games: [
       { release: data.alone.id, title: 'Alone', players: { min: 1, max: 1 }, multiplayer: false },
       { release: data.shared.id, title: 'Shared', players: { min: 1, max: 2 }, multiplayer: true },
-    ], sessions: [], pair: null, edit: null });
+    ], sessions: [], pair: null, edit: null, link: null });
 
     // Starting a session: from this listener's own page, of an offered game, for a name.
     const start = { release: data.shared.id, name: 'Ada' };

@@ -12,10 +12,12 @@ import { tempDir } from './helpers.ts';
 
 export const roomy: Capabilities = { arch: 'arm64', memoryMB: 8064, model: 'Raspberry Pi 5 Model B Rev 1.0', harnesses: true };
 
-/** A request as the box's door sees it, from an address, with a body when one is given. */
-export function incoming(address: string, method: string, path: string, headers: Record<string, string> = {}, text = '') {
+/** A request as the box's door sees it, from an address, with a body when one is given. From loopback it is the box's
+ *  own unless its socket is another user's (stranger). */
+export function incoming(address: string, method: string, path: string, headers: Record<string, string> = {}, text = '',
+  stranger = false) {
   return Object.assign(Readable.from(text ? [Buffer.from(text)] : []), {
-    method, url: path, socket: { remoteAddress: address }, headers: { host: 'zirbel.local', ...headers },
+    method, url: path, socket: { remoteAddress: address, stranger }, headers: { host: 'zirbel.local', ...headers },
   }) as unknown as IncomingMessage;
 }
 
@@ -42,6 +44,7 @@ export function boxFor(t: TestContext, capabilities = roomy, turns = 0, lobby: (
   return { pairing: new Pairing(folder), editors: new Editors(folder), settings, capabilities, port: () => 80, turns: () => turns,
     lobbyPort: lobby, sharedHost: shared, qr: async (text) => 'data:qr,' + encodeURIComponent(text),
     setupRequest: join(folder, 'run', 'request'), ownNetwork: join(folder, 'own-network.json'),
+    tvWake: join(folder, 'tv', 'wake'), ownLoopback: (socket) => !(socket as unknown as { stranger: boolean }).stranger,
     harnesses: new BoxHarnesses(() => { throw new Error('No harness in this test'); }, () => settings.read().harnesses) };
 }
 

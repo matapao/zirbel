@@ -1,0 +1,35 @@
+# The box's HDMI console (docs/box-tv.md): the lobby's TV page full screen on a TV or monitor plugged into the box, in
+# the image's Chromium under the cage kiosk compositor (/usr/local/libexec/zirbel-tv), as its own user zirbel-tv: video,
+# render and audio, never the editor's user and never input, since the box's gamepads reach the page through the
+# editor. zirbel-tv-follow.service starts and stops it as a display comes and goes and as the editor's TV switch says.
+# A session on the seat (logind, through its PAM file) on tty7 gives cage the display and the keyboard, and the user's
+# PipeWire the HDMI sound.
+[Unit]
+Description=Zirbel TV console
+After=systemd-user-sessions.service systemd-logind.service zirbel.service getty@tty7.service
+Conflicts=getty@tty7.service
+ConditionPathExists=/dev/tty7
+
+[Service]
+Type=simple
+User=zirbel-tv
+WorkingDirectory=/home/zirbel-tv
+PAMName=zirbel-tv
+TTYPath=/dev/tty7
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty7
+UtmpMode=user
+# The lobby's player listener, on the port the editor's unit fixes.
+Environment=XDG_SESSION_TYPE=wayland ZIRBEL_PLAYER_PORT=4174
+ExecStart=/usr/local/libexec/zirbel-tv
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes

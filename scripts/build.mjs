@@ -109,6 +109,11 @@ await Promise.all([
     entryPoints: ['packages/web/pad.ts'], outfile: 'dist/web/pad.js',
     bundle: true, format: 'esm', platform: 'browser', target: 'es2022', minify: true,
   }),
+  // The TV page every player listener serves at /tv, built as the lobby's is, for browsers as old as a TV's.
+  build({
+    entryPoints: ['packages/web/tv.ts'], outfile: 'dist/web/tv.js',
+    bundle: true, format: 'esm', platform: 'browser', target: 'chrome80', minify: true,
+  }),
   build({
     entryPoints: ['node_modules/three/build/three.module.js'], outfile: 'dist/web/three.module.js',
     bundle: true, platform: 'browser', format: 'esm', target: 'es2022', minify: true, legalComments: 'inline',

@@ -26,6 +26,9 @@ type Lobby struct {
 	// reached the lobby by, where the lobby links to its pairing page for those
 	// who own the box and to its edit page for those with a game's edit code.
 	editorAt func(host string) string
+	// link is the lobby's address for other devices on the network
+	// (Players.LobbyLink), set once the players are.
+	link func(host string) *string
 
 	mu      sync.Mutex
 	offered []string             // release IDs, in the order they were offered
@@ -62,6 +65,10 @@ type lobbyState struct {
 	Sessions []lobbySession `json:"sessions"`
 	Pair     *string        `json:"pair"` // the box's pairing page; null elsewhere
 	Edit     *string        `json:"edit"` // the box's edit page; null elsewhere
+	// Link is the lobby's address for other devices on the network, as the
+	// owner's side names it (Players.LobbyLink), on the LAN listener; null
+	// elsewhere. The TV page's QR codes hold it.
+	Link *string `json:"link"`
 }
 
 // The sentence the host stops with, word for word as the Node host says it.
@@ -173,7 +180,11 @@ func (l *Lobby) State(access, host string) lobbyState {
 		pairing, editing := l.editorAt(host)+"/pair", l.editorAt(host)+"/edit"
 		pair, edit = &pairing, &editing
 	}
-	return lobbyState{games, sessions, pair, edit}
+	var link *string
+	if access == "lan" && l.link != nil {
+		link = l.link(host)
+	}
+	return lobbyState{games, sessions, pair, edit, link}
 }
 
 // byTitle orders titles as a reader does: case aside, then by case.

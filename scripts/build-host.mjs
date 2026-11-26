@@ -19,9 +19,10 @@ cpSync('dist/web/zirbel-net.js', web + '/zirbel-net.js');
 cpSync('dist/web/zirbel-net/SKILL.md', web + '/zirbel-net/SKILL.md');
 // The guides the editor's MCP server gives agents, served as resources (mcp.go).
 cpSync('dist/web/mcp-guides', web + '/mcp-guides', { recursive: true });
-// The lobby's page and files, which every player listener serves at / and beside it, and the pad page's at /pad: the
-// host's own too.
-for (const file of ['lobby.html', 'lobby.js', 'lobby.css', 'pad.html', 'pad.js', 'pad.css']) cpSync('dist/web/' + file, web + '/' + file);
+// The lobby's page and files, which every player listener serves at / and beside it, the TV page's at /tv and the pad
+// page's at /pad: the host's own too.
+for (const file of ['lobby.html', 'lobby.js', 'lobby.css', 'tv.html', 'tv.js', 'tv.css', 'pad.html', 'pad.js', 'pad.css'])
+  cpSync('dist/web/' + file, web + '/' + file);
 for (const file of readdirSync('dist/web/chunks')) cpSync('dist/web/chunks/' + file, web + '/chunks/' + file);
 // The editor UI, served by the Go host on its loopback editor port.
 for (const file of ['index.html', 'workspace.js', 'workspace.css', 'favicon.svg']) cpSync('dist/web/' + file, web + '/' + file);

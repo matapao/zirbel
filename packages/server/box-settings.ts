@@ -1,7 +1,8 @@
 // The box's switches (box mode, --box), in the account folder (box/settings.json): whether harnesses run on the box,
 // whether agents elsewhere on the network may use its MCP server, whether its first-run choice was made, whether
-// someone asked for the Wi-Fi setup again, and whether the box makes its own Wi-Fi (box-network.ts), the last two of
-// which the box's setup service reads from /api/box/status. What is off does not run: the harnesses are built only
+// someone asked for the Wi-Fi setup again, whether the box makes its own Wi-Fi (box-network.ts), the last two of
+// which the box's setup service reads from /api/box/status, and whether a TV plugged into the box shows its lobby (tv),
+// which the box's console service reads there (docs/box-tv.md). What is off does not run: the harnesses are built only
 // while they are on (BoxHarnesses), and /mcp answers the network only while external MCP access is on.
 import { readFileSync } from 'node:fs';
 import { totalmem } from 'node:os';
@@ -16,19 +17,23 @@ const settings = z.strictObject({
   version: z.literal(1), harnesses: z.boolean(), externalMcp: z.boolean(), onboarded: z.boolean(), setupRequested: z.boolean(),
   // Settings written before the box could make its own Wi-Fi have none: it is off.
   ownNetwork: z.boolean().default(false),
+  // Nor, before its TV console, a tv switch: it is as on a new box.
+  tv: z.boolean().optional(),
 });
-export type BoxSwitches = z.infer<typeof settings>;
+export type BoxSwitches = Required<z.infer<typeof settings>>;
 /** What a paired device or the box itself may change. */
 export const settingsChange = z.strictObject({
   harnesses: z.boolean().optional(), externalMcp: z.boolean().optional(), onboarded: z.boolean().optional(),
-  ownNetwork: z.boolean().optional(),
+  ownNetwork: z.boolean().optional(), tv: z.boolean().optional(),
 });
 
 /** What the box is, as it starts: harnesses runs only where Claude Code and Codex are made for the system, 64-bit ARM
  *  or x86 (a 32-bit Pi has neither). */
 export type Capabilities = { arch: string; memoryMB: number; model?: string; harnesses: boolean };
-/** Under this much memory (a 2 GB board reports a little less), harnesses start off: a turn may run the box out of it. */
+/** Under this much memory (a 2 GB board reports a little less), harnesses start off: a turn may run the box out of it.
+ *  So does the TV, whose browser needs room beside the editor; and it starts on only on a 64-bit box (docs/box-tv.md). */
 const ROOMY_MB = 1536;
+const tvByDefault = (capabilities: Capabilities) => capabilities.arch === 'arm64' && capabilities.memoryMB >= ROOMY_MB;
 
 export function boxCapabilities(): Capabilities {
   let model: string | undefined;
@@ -53,7 +58,7 @@ export class BoxSettings {
     privateDirectory(folder);
     this.file = join(folder, 'settings.json');
     this.defaults = { version: 1, harnesses: capabilities.harnesses && capabilities.memoryMB >= ROOMY_MB,
-      externalMcp: false, onboarded: false, setupRequested: false, ownNetwork: false };
+      externalMcp: false, onboarded: false, setupRequested: false, ownNetwork: false, tv: tvByDefault(capabilities) };
   }
 
   read(): BoxSwitches {
@@ -63,15 +68,15 @@ export class BoxSettings {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return (this.cached = this.defaults);
       throw error;
     }
-    try { this.cached = settings.parse(JSON.parse(text)); } catch { throw new ZirbelError(500, 'The box settings could not be read.'); }
-    return this.cached;
+    let read;
+    try { read = settings.parse(JSON.parse(text)); } catch { throw new ZirbelError(500, 'The box settings could not be read.'); }
+    return (this.cached = { ...read, tv: read.tv ?? this.defaults.tv });
   }
 
   update(change: Partial<Omit<BoxSwitches, 'version'>>) {
     const next = settings.parse({ ...this.read(), ...change });
     atomicWrite(this.file, JSON.stringify(next));
-    this.cached = next;
-    return next;
+    return (this.cached = { ...next, tv: next.tv ?? this.defaults.tv });
   }
 }
 

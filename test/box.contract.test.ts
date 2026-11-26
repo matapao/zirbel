@@ -1,9 +1,9 @@
 // A box (--box) on both hosts: `node dist/server.mjs --box` and the Go host's --box. Each runs one scripted session,
 // from the box itself (loopback) and from this computer's own network address, and their normalized answers must
 // match: the door, the pairing page and its codes and claim, the paired devices, the switches, the setup flag, the
-// box's own Wi-Fi, external MCP access, the lobby a device that isn't paired is sent to, and its address for other
-// devices; and in a second session, the editors of one game: its edit code, the edit page, what an editor may and may
-// not do, and its session's end. What the hosts differ in by design is compared by its form only: harnesses
+// box's own Wi-Fi, its TV, external MCP access, the lobby a device that isn't paired is sent to, and its address for
+// other devices; and in a second session, the editors of one game: its edit code, the edit page, what an editor may
+// and may not do, and its session's end. What the hosts differ in by design is compared by its form only: harnesses
 // run in the Node editor alone, and only it draws a QR code, for a pairing link or for joining the box's own Wi-Fi.
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -25,13 +25,15 @@ async function startBox(t: TestContext, command: string[]) {
   const account = join(root, 'account');
   mkdirSync(account, { mode: 0o700 });
   mkdirSync(join(root, 'run'));
+  mkdirSync(join(root, 'tv'));
   const wake = join(root, 'run', 'request');
   const own = join(root, 'own-network.json');
+  const tv = join(root, 'tv', 'wake');
   // Its LAN player listener, which a box runs from start-up, on any free port.
   const { ready } = launch(t, command, ['--data', join(root, 'data'), '--port', '0', '--player-port', '0', '--box'],
     (line) => typeof line.editor === 'string' ? line.editor : undefined,
-    { ZIRBEL_ACCOUNT_DIR: account, ZIRBEL_SETUP_REQUEST: wake, ZIRBEL_OWN_NETWORK: own });
-  return { editor: await ready, wake, own, network: join(root, 'run', 'network'), account };
+    { ZIRBEL_ACCOUNT_DIR: account, ZIRBEL_SETUP_REQUEST: wake, ZIRBEL_OWN_NETWORK: own, ZIRBEL_TV_WAKE: tv });
+  return { editor: await ready, wake, own, network: join(root, 'run', 'network'), account, tv };
 }
 type Started = Awaited<ReturnType<typeof startBox>>;
 
@@ -95,7 +97,7 @@ function normalizer() {
     headers: step.headers ?? null, ...(step.status >= 300 ? {} : { body: walk(step.body) }) });
 }
 
-async function session({ editor: base, wake, own, network }: Started) {
+async function session({ editor: base, wake, own, network, tv }: Started) {
   const steps: Step[] = [];
   const box = client(base);
   const record = async (step: Promise<Step>) => { const result = await step; steps.push(result); return result; };
@@ -130,6 +132,14 @@ async function session({ editor: base, wake, own, network }: Started) {
   await record(box('PUT', '/api/box/settings', { json: { ownNetwork: true } }));
   assert.ok(!existsSync(network) && !existsSync(wake), 'a setting kept as it was wakes nothing');
   await record(box('PUT', '/api/box/settings', { json: { ownNetwork: 'on' } }));
+  // The TV: switching it wakes the box's console service, which follows it.
+  await record(box('PUT', '/api/box/settings', { json: { tv: false } }));
+  await record(box('PUT', '/api/box/settings', { json: { tv: true } }));
+  assert.ok(existsSync(tv), 'switching the TV wakes the console service');
+  rmSync(tv);
+  await record(box('PUT', '/api/box/settings', { json: { tv: true } }));
+  assert.ok(!existsSync(tv), 'a TV switch kept as it was wakes nothing');
+  await record(box('PUT', '/api/box/settings', { json: { tv: 1 } }));
   await record(box('GET', '/api/box/network'));
   await record(box('GET', '/api/box/status'));
   await record(box('POST', '/api/pairing', { json: {}, origin: true }));

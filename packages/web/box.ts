@@ -1,6 +1,6 @@
-// A Zirbel box in the workspace (box mode): the first-run choice of how to use it, and Box settings with its two
-// switches, agent access over MCP, its paired devices, pairing another device, the lobby players open, its own Wi-Fi
-// and its Wi-Fi setup.
+// A Zirbel box in the workspace (box mode): the first-run choice of how to use it, and Box settings with its
+// switches, agent access over MCP, the TV, its paired devices, pairing another device, the lobby players open, its
+// own Wi-Fi and its Wi-Fi setup.
 import { action, api, apiWith, attempt, dialog, el, inform, link, openDialog, option } from './editor-ui.ts';
 import { ws, type BoxHealth } from './state.ts';
 import { lobbyAddress, lobbyLink } from './lobby-address.ts';
@@ -12,7 +12,7 @@ export function setBoxHooks(given: typeof hooks) { Object.assign(hooks, given); 
 /** Under this much memory a harness turn may run the box out of it (a 2 GB board reports a little less). */
 const ROOMY_MB = 1536;
 
-type Settings = Pick<BoxHealth, 'harnesses' | 'externalMcp' | 'onboarded' | 'setupRequested' | 'ownNetwork'>;
+type Settings = Pick<BoxHealth, 'harnesses' | 'externalMcp' | 'onboarded' | 'setupRequested' | 'ownNetwork' | 'tv'>;
 type Device = { id: string; label: string; createdAt: string; lastSeen: string; current: boolean };
 export type Grant = { token: string; expires: number };
 /** The box's own Wi-Fi, for paired devices: none where the box can't make one. The native host draws no QR code. */
@@ -206,6 +206,10 @@ export async function openBoxSettings() {
     agentAccess(access);
     body.append(access);
   }
+  // The TV: the box's console shows the lobby on a TV or monitor plugged into it (docs/box-tv.md).
+  body.append(toggle('Show the lobby on a TV', settings.tv, !box.canShowTv && !settings.tv, (on) => change({ tv: on })).row,
+    el('p', box.canShowTv ? 'A TV plugged into the box shows its lobby, where games are chosen and played with gamepads and phones.'
+      : 'This box has no TV console.'));
   body.append(el('h3', 'Paired devices'));
   const { devices } = await api<{ devices: Device[] }>('pairing/devices');
   for (const device of devices) {

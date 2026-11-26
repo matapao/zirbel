@@ -8,14 +8,20 @@ import (
 	"zirbel/contracts"
 )
 
-// The lobby's routes, mirroring packages/server/lobby-routes.ts: its page and
-// API on every player listener, public on that listener's network, and the
-// owner's side in the editor API.
+// The lobby's routes, mirroring packages/server/lobby-routes.ts: its page,
+// the TV page at /tv and the API on every player listener, public on that
+// listener's network, and the owner's side in the editor API.
 
 // lobbyPolicy is the lobby page's: it runs its own script and style alone,
 // and talks only to its listener.
 const lobbyPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
 	"base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+
+// tvPolicy is the TV page's: the lobby's, and the pads socket on this host
+// for the screen it is.
+func tvPolicy(host string) string {
+	return strings.Replace(lobbyPolicy, "connect-src 'self'", "connect-src 'self' ws://"+host, 1)
+}
 
 // seatLink is the player page in a room, holding a seat's one-time ticket: it
 // goes straight in.
@@ -40,10 +46,12 @@ var padPage = regexp.MustCompile(`^/pad(?:/[A-Za-z0-9-]{1,16})?$`)
 func (l *Listener) serveLobby(w http.ResponseWriter, r *http.Request, pathname string) (bool, error) {
 	get, post := r.Method == http.MethodGet, r.Method == http.MethodPost
 	name := strings.TrimPrefix(pathname, "/")
-	page := pathname == "/" || padPage.MatchString(pathname)
+	page := pathname == "/" || pathname == "/tv" || padPage.MatchString(pathname)
 	switch {
 	case pathname == "/":
 		name = "lobby.html"
+	case pathname == "/tv":
+		name = "tv.html"
 	case padPage.MatchString(pathname):
 		name = "pad.html"
 	}
@@ -51,6 +59,8 @@ func (l *Listener) serveLobby(w http.ResponseWriter, r *http.Request, pathname s
 		switch name {
 		case "lobby.html":
 			w.Header().Set("content-security-policy", lobbyPolicy)
+		case "tv.html":
+			w.Header().Set("content-security-policy", tvPolicy(r.Host))
 		case "pad.html":
 			w.Header().Set("content-security-policy", padPolicy(r.Host))
 		}

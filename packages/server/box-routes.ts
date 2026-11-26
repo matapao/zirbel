@@ -1,12 +1,16 @@
 // The box's door and its own routes (box mode, --box). The editor listens on every interface, and a request from the
-// box itself behaves as without box mode. A request from elsewhere must come from the box's own network, and then
-// needs a paired device's session (an owner's) or the session of an editor of one game for everything but /pair, where
+// box itself behaves as without box mode: one from loopback whose other end is the editor's own user or root
+// (loopback-owner.ts); one from any other user on the box comes as from its network. A request from elsewhere must
+// come from the box's own network, and then needs a paired device's session (an owner's) or the session of an editor
+// of one game for everything but /pair, where
 // a device pairs with a one-time code (or claims a box no device has paired with yet), /edit, where a device redeems a
 // game's edit code (box-edit-routes.ts), and /mcp while external MCP access is on, which checks its own project grant.
 // A device that isn't paired and opens the box's / goes to the lobby on its LAN player listener: playing needs no pairing.
+import { existsSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BlockList } from 'node:net';
 import { hostname, networkInterfaces } from 'node:os';
+import { dirname } from 'node:path';
 import { z } from 'zod';
 import { ZirbelError } from '../core/projects.ts';
 import { body, checkOrigin, failure, reply } from './http.ts';
@@ -31,6 +35,11 @@ export type BoxContext = {
   setupRequest: string;
   /** The box's own Wi-Fi's name and password, as the setup service keeps them (box-network.ts). */
   ownNetwork: string;
+  /** The file that wakes the box's console service (docs/box-tv.md) when the tv switch changes; a box without the
+   *  console has no folder for it. */
+  tvWake: string;
+  /** Whether a loopback connection is the box's own: its other end is the editor's user or root (loopback-owner.ts). */
+  ownLoopback: (connection: IncomingMessage['socket']) => boolean;
 };
 /** Who sent a request: the box itself, a paired device (an owner) by its id, or an editor of one game by its id and
  *  its game's, with the name they go by (a device's label, an editor's own); none of them for a project grant's /mcp
@@ -75,7 +84,7 @@ const pairLink = (port: number, code: string) =>
 /** The door: the request's access, or nothing when it answered the request itself. */
 export async function boxDoor(box: BoxContext, request: IncomingMessage, response: ServerResponse, url: URL): Promise<Access | undefined> {
   const address = request.socket.remoteAddress ?? '';
-  const local = isLoopback(address);
+  const local = isLoopback(address) && box.ownLoopback(request.socket);
   if (!local && !onBoxNetwork(address)) throw new ZirbelError(403, 'This box answers only its own network.');
   if (url.pathname === '/pair') { await pairRoute(box, request, response, url, address); return; }
   if (url.pathname === '/edit') { await editRoute(box, request, response, url, address, local); return; }
@@ -149,15 +158,15 @@ ${error ? `<p class="error" role="alert">${escape(error)}</p>` : ''}${claim}<for
 const setupInput = z.strictObject({ requested: z.boolean() });
 
 function settingsView(box: BoxContext) {
-  const { harnesses, externalMcp, onboarded, setupRequested, ownNetwork } = box.settings.read();
-  return { harnesses, externalMcp, onboarded, setupRequested, ownNetwork };
+  const { harnesses, externalMcp, onboarded, setupRequested, ownNetwork, tv } = box.settings.read();
+  return { harnesses, externalMcp, onboarded, setupRequested, ownNetwork, tv };
 }
 
 /** What the workspace knows of the box, in /api/health. */
 export function boxHealth(box: BoxContext) {
   const { capabilities } = box;
   return { ...settingsView(box), canRunHarnesses: capabilities.harnesses, harnessesUnavailable: harnessesUnavailable(capabilities),
-    memoryMB: capabilities.memoryMB, name: boxName() };
+    memoryMB: capabilities.memoryMB, name: boxName(), canShowTv: existsSync(dirname(box.tvWake)) };
 }
 
 /** The box's own API: /api/pairing… and /api/box/…. Says whether it answered the request. */
@@ -200,8 +209,9 @@ export async function boxRequest(box: BoxContext, request: IncomingMessage, resp
       await box.harnesses.off();
     }
     box.settings.update(change);
-    // The setup service makes the Wi-Fi follow a switch of the box's own.
+    // The setup service makes the Wi-Fi follow a switch of the box's own, and the console service the TV.
     if (change.ownNetwork !== undefined && change.ownNetwork !== before.ownNetwork) wake(networkWake(box.setupRequest));
+    if (change.tv !== undefined && change.tv !== before.tv) wake(box.tvWake);
     reply(response, settingsView(box));
     return true;
   }

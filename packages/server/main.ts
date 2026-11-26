@@ -30,6 +30,7 @@ import { readGuides } from './mcp-guides.ts';
 import { Pairing } from './box-pairing.ts';
 import { boxDoor, boxHealth, boxHosts, boxRequest, onBoxNetwork, type Access, type BoxContext } from './box-routes.ts';
 import { boxCapabilities, BoxHarnesses, BoxSettings } from './box-settings.ts';
+import { ownLoopback } from './loopback-owner.ts';
 import { Editors } from './box-editors.ts';
 import { editorsRequest } from './box-edit-routes.ts';
 import { checkRole, whoIs } from './box-roles.ts';
@@ -150,7 +151,8 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
         capabilities, port: () => editorPort, lobbyPort: () => players.lanPort, sharedHost: (host) => players.sharedHost(host),
         turns: () => chat.count, qr: (link) => QRCode.toDataURL(link, { margin: 2, width: 240 }),
         setupRequest: process.env.ZIRBEL_SETUP_REQUEST || '/run/zirbel-setup/request',
-        ownNetwork: process.env.ZIRBEL_OWN_NETWORK || '/var/lib/zirbel-setup/own-network.json' };
+        ownNetwork: process.env.ZIRBEL_OWN_NETWORK || '/var/lib/zirbel-setup/own-network.json',
+        tvWake: process.env.ZIRBEL_TV_WAKE || '/run/zirbel-tv/wake', ownLoopback };
     } else harnesses = harnessesFor(root);
     closeHarnesses = async () => { await harnesses.close?.(); };
     closeTurns = () => chat.close();

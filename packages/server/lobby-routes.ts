@@ -1,5 +1,5 @@
-// The lobby on a player listener (core/lobby.ts): its page at /, the files beside it, and its API under /lobby/. Anyone
-// the listener answers may use it: it lists the offered games and the sessions without their codes, starts a session of
+// The lobby on a player listener (core/lobby.ts): its page at /, the TV page at /tv (packages/web/tv.ts), the files
+// beside them, and its API under /lobby/. Anyone the listener answers may use it: it lists the offered games and the sessions without their codes, starts a session of
 // an offered game, and seats someone in a session by its code, each with a one-time ticket in the link it hands back.
 // Beside it, the pad page at /pad and /pad/<code>, which makes a phone a controller of a screen.
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -19,10 +19,14 @@ const padPolicy = (host: string) => "default-src 'none'; script-src 'self'; styl
   "connect-src 'self' ws://" + host + "; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 /** /pad, or /pad/<code>: a phone as a controller of the screen whose code it has. */
 const PAD_PAGE = /^\/pad(?:\/[A-Za-z0-9-]{1,16})?$/;
+/** The TV page's: the lobby's, and the pads socket on this host for the screen it is. */
+const tvPolicy = (host: string) => PAGE_POLICY.replace("connect-src 'self'", "connect-src 'self' ws://" + host);
 
 /** pair and edit: on a box, the addresses of the pairing page and of the page that redeems a game's edit code, on the
- *  host name a device reached the lobby by. */
-export type LobbyContext = { lobby: Lobby; files: LobbyFiles; pair?: (host: string) => string; edit?: (host: string) => string };
+ *  host name a device reached the lobby by; link: the lobby's address for other devices on the network, as the owner's
+ *  side names it (hosting.ts lobbyLink), for the LAN listener's pages to show (the TV page's QR codes). */
+export type LobbyContext = { lobby: Lobby; files: LobbyFiles; pair?: (host: string) => string; edit?: (host: string) => string;
+  link?: (host: string) => string | null };
 
 /** The player page in a room, holding a seat's one-time ticket: it goes straight in. */
 const seatLink = (origin: string, room: { id: string }, ticket: string) => origin + '/join/' + room.id + '#seat=' + ticket;
@@ -32,11 +36,14 @@ export async function lobbyRequest(context: LobbyContext, access: 'local' | 'lan
   url: URL) {
   const { pathname } = url;
   const method = request.method;
-  const file = pathname === '/' ? 'lobby.html' : PAD_PAGE.test(pathname) ? 'pad.html'
-    : ['/lobby.js', '/lobby.css', '/pad.js', '/pad.css'].includes(pathname) ? pathname.slice(1) : undefined;
+  const file = pathname === '/' ? 'lobby.html' : pathname === '/tv' ? 'tv.html' : PAD_PAGE.test(pathname) ? 'pad.html'
+    : ['/lobby.js', '/lobby.css', '/tv.js', '/tv.css', '/pad.js', '/pad.css'].includes(pathname) ? pathname.slice(1) : undefined;
   const entry = file && context.files.get(file);
   if (file && entry && method === 'GET') {
     if (file === 'lobby.html') response.setHeader('content-security-policy', PAGE_POLICY);
+    // The LAN player is plain HTTP by design, so the screen's socket is ws: on this same host.
+    // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+    if (file === 'tv.html') response.setHeader('content-security-policy', tvPolicy(url.host));
     if (file === 'pad.html') response.setHeader('content-security-policy', padPolicy(url.host));
     sendImmutable(request, response, typeFor(file), entry, 'no-cache');
     return true;
@@ -45,7 +52,7 @@ export async function lobbyRequest(context: LobbyContext, access: 'local' | 'lan
   const address = request.socket.remoteAddress ?? '';
   if (pathname === '/lobby/state' && method === 'GET') {
     reply(response, { ...context.lobby.state(access), pair: context.pair?.(url.hostname) ?? null,
-      edit: context.edit?.(url.hostname) ?? null });
+      edit: context.edit?.(url.hostname) ?? null, link: access === 'lan' ? context.link?.(url.hostname) ?? null : null });
     return true;
   }
   if (pathname === '/lobby/sessions' && method === 'POST') {

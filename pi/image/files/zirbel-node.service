@@ -10,6 +10,8 @@ After=network-online.target
 User=zirbel
 Group=zirbel
 WorkingDirectory=/home/zirbel
+# The lobby's player listener on a port of its own, which the HDMI console opens (zirbel-tv.service).
+Environment=ZIRBEL_PLAYER_PORT=4174
 Environment=PATH=/home/zirbel/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=ZIRBEL_BROWSER=/usr/bin/chromium
 ExecStart=/usr/local/bin/node /opt/zirbel/server.mjs --box --port 80 --pads-socket /run/zirbel-pads/host.sock
