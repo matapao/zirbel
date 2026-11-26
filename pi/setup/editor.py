@@ -112,6 +112,15 @@ def clear_network_wake() -> None:
         pass
 
 
+def request_setup() -> None:
+    """Asks for setup as the editor's Change Wi-Fi does: the request file, which setup removes when it is over."""
+    try:
+        REQUEST.parent.mkdir(parents=True, exist_ok=True)
+        REQUEST.touch()
+    except OSError:
+        pass
+
+
 def clear_request() -> None:
     """Setup is over: the request goes, from the file and from the editor's settings."""
     try:

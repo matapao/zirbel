@@ -122,3 +122,21 @@ def detect(sys_root: Path = Path("/sys"), model_file: Path = Path("/proc/device-
 
 def model_name(model_file: Path = Path("/proc/device-tree/model")) -> str:
     return _model(model_file) or "Raspberry Pi"
+
+
+# A box that keeps joining a network nobody can reach it on (one that keeps its devices apart, say) is reset from its
+# card: an empty file named zirbel-reset-wifi on the boot partition, with or without an extension (a text editor adds
+# .txt). At the next boot the box forgets the networks it saved and its own Wi-Fi, and goes straight to setup.
+BOOT = Path("/boot/firmware")
+RESET_NAME = "zirbel-reset-wifi"
+
+
+def reset_marker(boot: Path = BOOT) -> Path | None:
+    """The reset file on the card's boot partition, if someone left one."""
+    try:
+        for entry in boot.iterdir():
+            if entry.is_file() and entry.name.lower().split(".")[0] == RESET_NAME:
+                return entry
+    except OSError:
+        pass
+    return None

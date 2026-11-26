@@ -92,5 +92,24 @@ class Radios(unittest.TestCase):
         self.assertEqual(policy.model_name(root / "none"), "Raspberry Pi")
 
 
+class CardReset(unittest.TestCase):
+    def test_an_empty_file_on_the_boot_partition_resets_the_wifi_with_or_without_an_extension(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as folder:
+            boot = Path(folder)
+            self.assertIsNone(policy.reset_marker(boot))
+            (boot / "zirbel-report.txt").write_text("report")
+            (boot / "zirbel-reset-wifi-later").mkdir()
+            self.assertIsNone(policy.reset_marker(boot))
+            for name in ("zirbel-reset-wifi", "Zirbel-Reset-WiFi.txt"):
+                marker = boot / name
+                marker.write_text("")
+                self.assertEqual(policy.reset_marker(boot), marker)
+                marker.unlink()
+        self.assertIsNone(policy.reset_marker(Path("/no/such/boot")))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -423,9 +423,17 @@ def main() -> int:
     nm = network.NetworkManager(bus)
     nm.enable_wifi()
     network.wildcard_dns(False)  # a hotspot that went without this service taking it down
+    reset = policy.reset_marker()
+    if reset:
+        # The box's own Wi-Fi goes too, its setting with it where the editor already answers, and setup starts at once.
+        log(f"Reset from the card: {nm.forget_wifi()} saved networks forgotten; setting up.")
+        reset.unlink(missing_ok=True)
+        editor.set_own_network(False, attempts=1)
+        editor.request_setup()
     own = own_credentials(bus, nm, radios)
     # Woken for the box's own Wi-Fi, or at boot: the Wi-Fi as the editor's setting has it, before anything else.
-    follow_setting(nm, own)
+    if not reset:
+        follow_setting(nm, own)
     online, requested = wait_for_network(nm, editor.requested())
     after_boot = online and not requested and radios.bluetooth and policy.after_boot(time.monotonic())
     if online and not requested and not after_boot:

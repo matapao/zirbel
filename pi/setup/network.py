@@ -230,6 +230,13 @@ class NetworkManager:
             return False
         return self._wait(str(active), timeout)
 
+    def forget_wifi(self) -> int:
+        """Forgets every Wi-Fi network the box joined, and its own Wi-Fi: how many there were."""
+        paths = [path for path, _values in self._saved()] + self._own()
+        for path in paths:
+            self._delete(path)
+        return len(paths)
+
     def own_network_down(self) -> bool:
         """Takes the box's own Wi-Fi away for good: NetworkManager goes back to the networks the box joined. Whether
         there was one."""
