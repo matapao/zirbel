@@ -24,8 +24,11 @@ export const GAME_FILE_TYPES: Readonly<Record<string, string>> = {
 };
 const segment = '[A-Za-z0-9_][A-Za-z0-9._-]*';
 // Relative, at most 8 deep, no segment starting with a dot, and an extension from the table.
-const pathWith = (extensions: string[]) => z.string().max(240)
-  .regex(new RegExp('^(?:' + segment + '/){0,7}' + segment + '\\.(?:' + extensions.join('|') + ')$'));
+const pathWith = (extensions: string[]) => {
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- the table's own extensions
+  const pattern = new RegExp('^(?:' + segment + '/){0,7}' + segment + '\\.(?:' + extensions.join('|') + ')$');
+  return z.string().max(240).regex(pattern);
+};
 export const gameFilePath = pathWith(Object.keys(GAME_FILE_TYPES));
 // A game with net may name its adapter, the module that connects it to the net module: one of its own scripts, which the
 // game page loads after the game's document, so the game itself carries nothing of Zirbel's.

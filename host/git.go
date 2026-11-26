@@ -145,6 +145,7 @@ func requireGit() error {
 
 // blobID is a blob's id as git names it: SHA-1 of its header and bytes.
 func blobID(data []byte) string {
+	// nosemgrep: go.lang.security.audit.crypto.use_of_weak_crypto.use-of-sha1 -- git's object ids are SHA-1
 	hash := sha1.New() // #nosec G401 -- git's object id
 	hash.Write([]byte("blob " + strconv.Itoa(len(data)) + "\x00"))
 	hash.Write(data)

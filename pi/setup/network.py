@@ -431,6 +431,7 @@ def reaches_out(attempts: int = 3) -> bool:
         if gateway and subprocess.run(ping, capture_output=True).returncode == 0:  # noqa: S603  # an address, as above
             return True
         try:
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- a fixed https address  # noqa: E501
             urllib.request.urlopen(urllib.request.Request("https://downloads.raspberrypi.com/", method="HEAD"), timeout=6)
             return True
         except OSError:
