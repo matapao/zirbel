@@ -35,8 +35,11 @@ export function prepareRuntime(runtime: ReadonlyMap<string, Buffer>) {
   return entries;
 }
 
-export function sendImmutable(request: IncomingMessage, response: ServerResponse, type: string, entry: RuntimeEntry) {
-  const headers = { 'content-type': type, 'cache-control': IMMUTABLE, etag: entry.etag, vary: 'accept-encoding' };
+// A file at a release's own address never changes there; one at a fixed address (zirbel-net's client) is checked
+// against its etag on each use, so a box that is updated hands every game the new one.
+export function sendImmutable(request: IncomingMessage, response: ServerResponse, type: string, entry: RuntimeEntry,
+  cache = IMMUTABLE) {
+  const headers = { 'content-type': type, 'cache-control': cache, etag: entry.etag, vary: 'accept-encoding' };
   if (request.headers['if-none-match'] === entry.etag) {
     response.writeHead(304, headers);
     response.end();

@@ -408,7 +408,7 @@ for (const host of hosts) {
     }
     assert.deepEqual(Object.fromEntries(['content-type', 'cache-control', 'etag', 'vary', 'content-encoding', 'access-control-allow-origin',
       'x-content-type-options', 'referrer-policy', 'content-security-policy'].map((name) => [name, client.headers.get(name)])), {
-      'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'private, max-age=31536000, immutable', etag, vary: 'accept-encoding',
+      'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache', etag, vary: 'accept-encoding',
       'content-encoding': 'gzip', 'access-control-allow-origin': '*', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
       'content-security-policy': null });
     assert.deepEqual(Buffer.from(await client.arrayBuffer()), bytes);

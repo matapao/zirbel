@@ -120,7 +120,7 @@ test('every player listener serves zirbel-net\'s client to games, cached like th
   assert.equal(client.status, 200);
   assert.deepEqual(Object.fromEntries(['content-type', 'cache-control', 'etag', 'vary', 'access-control-allow-origin',
     'x-content-type-options', 'referrer-policy'].map((name) => [name, client.headers.get(name)])), {
-    'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'private, max-age=31536000, immutable', etag,
+    'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache', etag,
     vary: 'accept-encoding', 'access-control-allow-origin': '*', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' });
   assert.deepEqual(Buffer.from(await client.arrayBuffer()), bytes);
   assert.equal((await fetch(base + '/zirbel-net.js', { headers: { 'if-none-match': etag } })).status, 304);

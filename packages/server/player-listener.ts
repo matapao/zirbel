@@ -88,7 +88,7 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
       if (request.method === 'GET' && url.pathname === '/zirbel-net.js') {
         // Games import it as a module from their opaque origin: a CORS request.
         response.setHeader('access-control-allow-origin', '*');
-        sendImmutable(request, response, 'text/javascript; charset=utf-8', client);
+        sendImmutable(request, response, 'text/javascript; charset=utf-8', client, 'no-cache');
         return;
       }
       if (!roomId) throw new ZirbelError(404, 'Open the invitation link from the host.');
