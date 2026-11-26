@@ -12,6 +12,8 @@ type Context = {
   /** Goes into a game's player page by the link the lobby handed back. */
   go: (link: string) => void;
   focus: (key: string) => void; say: (text: string) => void;
+  /** Reads the lobby again, as the page comes back to it. */
+  refresh: () => void;
   /** Whether this browser can play games (tv.ts checks), and the lobby's address for other devices. */
   canPlay: boolean; base: () => string;
 };
@@ -99,6 +101,7 @@ export class TvLobby {
   private show(view: View, focus?: string) {
     this.view = view;
     for (const id of ['home', 'code', 'started', 'elsewhere'] as const) byId(id).hidden = id !== view;
+    if (view === 'home') this.context.refresh();
     this.context.focus(focus ?? (view === 'home' ? '' : view === 'code' ? 'letter:2' : view === 'started' ? 'go-in' : 'elsewhere-back'));
   }
 

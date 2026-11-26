@@ -3,8 +3,10 @@
 // code, or a place by its own; "Press A to take P3" gives a place to the next controller whose A goes down; two places
 // swap, and a place's controller is let go. The host keeps the places of the screen's controllers, and this page those
 // of the device's own gamepads, which it tells the host so it gives them to no one else.
+import type { openScreen, PadInfo } from './pads-client.ts';
 import { qrPicture } from './qr.ts';
-import type { Pad, Screen } from './tv-screen.ts';
+
+type Screen = ReturnType<typeof openScreen>;
 
 const PLACES = 8;
 /** Each place's colour where what it drives names none, the same everywhere a place is shown. */
@@ -31,18 +33,23 @@ const colour = (place: number, holder?: Holder) => holder?.label?.color && /^#[0
   ? holder.label.color : PLACE_COLORS[place % PLACES]!;
 
 export class Places {
-  private pads: Pad[] = [];
+  private pads: PadInfo[] = [];
   /** The device's own gamepads' places, by gamepad index. */
   private readonly native = new Map<number, { place: number; name: string }>();
   private claim?: { place: number; until: number; timer: ReturnType<typeof setInterval> };
+  /** The controller that took the last place waiting for A, and when: that A chooses nothing here either. */
+  private took?: { source: string; at: number };
   private chosen?: number;
   private swapping?: number;
   private readonly codes = new Map<string, Promise<HTMLImageElement>>();
 
   constructor(private readonly root: HTMLElement, private readonly context: Context) {}
 
-  /** Whether a place waits for a controller's A: then A takes it, rather than choosing on the page. */
-  get claiming() { return this.claim !== undefined; }
+  /** Whether a controller's A now takes a place rather than choosing on the page: while a place waits for one, and
+   *  for the controller that just took it (its frame may come after the host's word that it did). */
+  taking(source: string) {
+    return this.claim !== undefined || (this.took?.source === source && performance.now() - this.took.at < 1000);
+  }
 
   /** The address that adds a phone at a place, or at the next free one. */
   padLink(place?: number) {
@@ -61,10 +68,13 @@ export class Places {
     return holders;
   }
 
-  setPads(pads: Pad[]) {
+  setPads(pads: PadInfo[]) {
     this.pads = pads;
     // A place the host filled while it waited for a controller's A is taken.
-    if (this.claim && this.holders()[this.claim.place]) this.endClaim();
+    if (this.claim && this.holders()[this.claim.place]) {
+      this.took = { source: 'pad:' + this.claim.place, at: performance.now() };
+      this.endClaim();
+    }
     this.render();
   }
 
@@ -77,7 +87,10 @@ export class Places {
       : own ? undefined : holders.findIndex((holder) => !holder);
     if (place === undefined || place < 0) return;
     this.native.set(index, { place, name: name.replace(/\s*\(.*$/, '').slice(0, 40) || 'Gamepad' });
-    if (this.claim?.place === place) this.endClaim();
+    if (this.claim?.place === place) {
+      this.took = { source: 'device:' + index, at: performance.now() };
+      this.endClaim();
+    }
     this.tellLocal();
     this.render();
   }

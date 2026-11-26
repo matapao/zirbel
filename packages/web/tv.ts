@@ -1,17 +1,17 @@
 // The TV page (public/tv.html), which every player listener serves at /tv: the lobby ten feet away, for a TV's own
 // browser, a console's, a laptop cast to a TV, and the box's HDMI console (docs/box-tv.md). It is a screen from the moment
-// it opens (tv-screen.ts): phones join it by its code and play on it, and so do the gamepads of the box and of this
-// device. Arrows, Enter and Back (a remote's or a keyboard's), any gamepad's d-pad or stick, A and B move around it
+// it opens (pads-client.ts, which keeps its resume token in this tab for the player page it goes to): phones join it by
+// its code and play on it, and so do the gamepads of the box and of this device. Arrows, Enter and Back (a remote's or a keyboard's), any gamepad's d-pad or stick, A and B move around it
 // (tv-input.ts, tv-focus.ts); starting or joining a session goes into the game's player page with the same screen, and
 // leaving the game comes back (tv-return.ts). Another page's Show on TV (open) comes here too. Its script runs in
 // browsers as old as a TV's (Chromium 80): the build targets them, and nothing here needs more.
 import { playerLink } from './lobby-link.ts';
 import { nextFocus } from './tv-focus.ts';
-import { gamepadInput, keyCommand, PadNavigator, type Command } from './tv-input.ts';
+import { openScreen, type ScreenInfo } from './pads-client.ts';
+import { gamepadInput, keyCommand, PadNavigator, padInput, type Command } from './tv-input.ts';
 import { TvLobby, type LobbyState } from './tv-lobby.ts';
 import { Places } from './tv-places.ts';
 import { tvLink } from './tv-return.ts';
-import { openScreen, saveResume, savedResume, type Screen, type ScreenInfo } from './tv-screen.ts';
 
 const REFRESH_MS = 5000;
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -31,7 +31,7 @@ function canPlayGames() {
 const canPlay = canPlayGames();
 byId('cannot').hidden = canPlay;
 
-let screen: Screen | undefined;
+let screen: ReturnType<typeof openScreen> | undefined;
 let info: ScreenInfo | undefined;
 let base = location.origin + '/';
 
@@ -57,10 +57,11 @@ function focus(key: string) {
     shown[0])?.focus();
 }
 
-const lobby = new TvLobby({ call, go, focus, say, canPlay, base: () => base });
+const lobby = new TvLobby({ call, go, focus, say, canPlay, base: () => base, refresh: () => void refresh() });
 const places = new Places(byId('places'), { screen: () => screen, base: () => base, code: () => info?.code, focus, say });
 
-function command(what: Command, fromPad: boolean) {
+/** A command from a key (no source) or a gamepad (its source). */
+function command(what: Command, source?: string) {
   const shown = tiles();
   const active = document.activeElement as HTMLElement | null;
   const at = active ? shown.indexOf(active) : -1;
@@ -70,7 +71,7 @@ function command(what: Command, fromPad: boolean) {
   }
   if (what === 'choose') {
     // While a place waits for a controller's A, A takes the place: it chooses nothing here.
-    if (fromPad && places.claiming) return;
+    if (source && places.taking(source)) return;
     if (at < 0) focus('');
     else active?.click();
     return;
@@ -80,7 +81,7 @@ function command(what: Command, fromPad: boolean) {
   else if (at < 0) focus('');
 }
 
-const pads = new PadNavigator((what) => command(what, true));
+const pads = new PadNavigator(command);
 
 document.addEventListener('keydown', (event) => {
   if (event.altKey || event.ctrlKey || event.metaKey) return;
@@ -90,11 +91,13 @@ document.addEventListener('keydown', (event) => {
   // A focused button takes Enter as a click of its own, which counts as the person's gesture (full screen needs one).
   if (what === 'choose' && document.activeElement instanceof HTMLButtonElement) return;
   event.preventDefault();
-  command(what, false);
+  command(what);
 });
 
 // Full screen, on a remote's OK, a click or a tap: a gamepad's press is no gesture a browser counts.
 const full = byId<HTMLButtonElement>('full');
+// A browser already full screen (a kiosk, as the box's console is) needs no button for it.
+full.hidden = !document.fullscreenEnabled || matchMedia('(display-mode: fullscreen)').matches;
 full.addEventListener('click', () => {
   if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
   else void document.documentElement.requestFullscreen().catch(() => say('Press OK on the remote, or click, for full screen.'));
@@ -123,23 +126,31 @@ function frame(now: number) {
 }
 requestAnimationFrame(frame);
 
-screen = openScreen({
-  resume: savedResume(),
-  onScreen: (next) => {
-    info = next;
-    saveResume(next.resume);
-    full.hidden = next.box || !document.fullscreenEnabled;
-    places.render();
-  },
-  onPads: (list) => {
-    const slots = new Set(list.map((pad) => pad.slot));
-    for (let slot = 0; slot < 8; slot++) if (!slots.has(slot)) pads.update('pad:' + slot, undefined, performance.now());
-    places.setPads(list);
-  },
-  onFrame: (state) => pads.update('pad:' + state.slot, state, performance.now()),
-  // Show on TV, from another page: its game comes here.
-  onOpen: go,
-});
+/** The screen, resumed from this tab's last (the page this one came back from); one that ended for good is opened anew,
+ *  with a new code. */
+function connect(resume?: string) {
+  screen = openScreen({
+    resume,
+    onScreen: (next) => {
+      info = next;
+      places.render();
+    },
+    onPads: (list) => {
+      const slots = new Set(list.map((pad) => pad.slot));
+      for (let slot = 0; slot < 8; slot++) if (!slots.has(slot)) pads.update('pad:' + slot, undefined, performance.now());
+      places.setPads(list);
+    },
+    onFrame: (pad) => pads.update('pad:' + pad.slot, padInput(pad), performance.now()),
+    // Show on TV, from another page: its game comes here.
+    onOpen: go,
+    onClosed: () => {
+      info = undefined;
+      places.setPads([]);
+      setTimeout(() => connect(''), 1000);
+    },
+  });
+}
+connect();
 
 async function refresh() {
   try {

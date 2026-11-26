@@ -72,9 +72,12 @@ export function keyCommand(event: { key: string; keyCode?: number }): Command | 
   return event.keyCode === 461 || event.keyCode === 10009 ? 'back' : undefined;
 }
 
-/** A device gamepad (the Gamepad API) as the navigator reads it. */
-export function gamepadInput(gamepad: Pick<Gamepad, 'mapping' | 'buttons' | 'axes'>): PadInput {
+/** A gamepad as the navigator reads it: a device's own (the Gamepad API, standard by its mapping) or a screen's
+ *  controller's state from its pad frame (sdk/pads.ts). */
+export function padInput(pad: { standard: boolean; buttons: readonly { pressed: boolean }[]; axes: readonly number[] }): PadInput {
   let pressed = 0;
-  for (let i = 0; i < gamepad.buttons.length && i < 32; i++) if (gamepad.buttons[i]?.pressed) pressed |= 1 << i;
-  return { standard: gamepad.mapping === 'standard', pressed: pressed >>> 0, axes: gamepad.axes };
+  for (let i = 0; i < pad.buttons.length && i < 32; i++) if (pad.buttons[i]?.pressed) pressed |= 1 << i;
+  return { standard: pad.standard, pressed: pressed >>> 0, axes: pad.axes };
 }
+export const gamepadInput = (gamepad: Pick<Gamepad, 'mapping' | 'buttons' | 'axes'>) =>
+  padInput({ standard: gamepad.mapping === 'standard', buttons: gamepad.buttons, axes: gamepad.axes });

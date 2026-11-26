@@ -20,8 +20,8 @@ socket.
   chooses, B or Select goes back, and a held direction repeats. Gamepads are the device's own (the Gamepad API) and the
   screen's controllers (phones, gamepads on the box) alike. Focus moves to the nearest tile in a direction, tiles in
   line before tiles beside it (`tv-focus.ts`).
-- **A screen.** It opens the pads socket's screen side as it opens (`tv-screen.ts`) and keeps its resume token in
-  sessionStorage. Its corner shows the places: each with its controller (a phone, a gamepad on the box or on this
+- **A screen.** It opens the pads socket's screen side as it opens (`openScreen` in `pads-client.ts`), which keeps its
+  resume token in this tab's sessionStorage, so the player page it goes to keeps the same screen. Its corner shows the places: each with its controller (a phone, a gamepad on the box or on this
   device), what it drives there, and its colour; a QR code for each free place (`/pad/<code>?place=k`) and a big one for
   the next free place, with the screen's code. Choosing a place offers "Press A to take P3" (the next controller whose
   A goes down takes it, for 30 s; while it waits A chooses nothing on the page), swapping it with another place, and
