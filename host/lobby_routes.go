@@ -23,11 +23,18 @@ func tvPolicy(host string) string {
 	return strings.Replace(lobbyPolicy, "connect-src 'self'", "connect-src 'self' ws://"+host, 1)
 }
 
-// seatLink is the player page in a room, holding a seat's one-time ticket: it
-// goes straight in.
+// seatLink is the player page in a room, holding a seat's one-time ticket (a
+// net game's, its space's and a ticket into it): it goes straight in.
 func seatLink(base string, room *Room, ticket string) string {
+	if space := room.spaceOf(); space != nil {
+		return base + "/join/" + room.ID + "#skalet.space=" + space.ID + "&skalet.ticket=" + ticket
+	}
 	return base + "/join/" + room.ID + "#seat=" + ticket
 }
+
+// spaceRoute is /lobby/spaces/<id>: the room of a space, for a link the kernel
+// formed (/join#skalet.space=…), which the lobby page at /join goes on from.
+var spaceRoute = regexp.MustCompile(`^/lobby/spaces/([0-9a-f]{12})$`)
 
 // padPolicy mirrors the pad page's in lobby-routes.ts: it also reaches the
 // pads socket on its own host, over plain ws: as the player page does.
@@ -46,9 +53,10 @@ var padPage = regexp.MustCompile(`^/pad(?:/[A-Za-z0-9-]{1,16})?$`)
 func (l *Listener) serveLobby(w http.ResponseWriter, r *http.Request, pathname string) (bool, error) {
 	get, post := r.Method == http.MethodGet, r.Method == http.MethodPost
 	name := strings.TrimPrefix(pathname, "/")
-	page := pathname == "/" || pathname == "/tv" || padPage.MatchString(pathname)
+	// /join, without a room, is for a link the kernel formed: the lobby page goes on from it.
+	page := pathname == "/" || pathname == "/join" || pathname == "/tv" || padPage.MatchString(pathname)
 	switch {
-	case pathname == "/":
+	case pathname == "/" || pathname == "/join":
 		name = "lobby.html"
 	case pathname == "/tv":
 		name = "tv.html"
@@ -78,6 +86,9 @@ func (l *Listener) serveLobby(w http.ResponseWriter, r *http.Request, pathname s
 		return true, l.startSession(w, r)
 	case post && pathname == "/lobby/join":
 		return true, l.joinSession(w, r)
+	case get && spaceRoute.MatchString(pathname):
+		room, err := l.rooms.SpaceRoom(spaceRoute.FindStringSubmatch(pathname)[1], l.access())
+		return true, send(w, http.StatusOK, map[string]string{"room": room}, err)
 	}
 	return true, fail(http.StatusNotFound, "Lobby route does not exist.")
 }

@@ -231,6 +231,12 @@ func (c *limitedConn) Close() error {
 	c.release()
 	return err
 }
+
+// roomLink is a room's invitation: the player page with the room's
+// invitation, or a room's with a space with its space's.
 func roomLink(base string, room *Room) string {
+	if space := room.spaceOf(); space != nil {
+		return base + "/join/" + room.ID + "#skalet.space=" + space.ID + "&skalet.invite=" + space.Invite
+	}
 	return base + "/join/" + room.ID + "#" + room.Invite
 }

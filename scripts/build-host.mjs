@@ -13,10 +13,8 @@ rmSync(web, { recursive: true, force: true });
 mkdirSync(web + '/chunks', { recursive: true });
 writeFileSync(web + '/.gitkeep', '');
 for (const file of runtime) cpSync('dist/web/' + file, web + '/' + file);
-// zirbel-net's client, which every player listener serves as /zirbel-net.js: the host's own, not a release's runtime.
-cpSync('dist/web/zirbel-net.js', web + '/zirbel-net.js');
-// And the skill that teaches agents to make a game multiplayer with it, served as /zirbel-net/SKILL.md.
-cpSync('dist/web/zirbel-net/SKILL.md', web + '/zirbel-net/SKILL.md');
+// Zirbel's manifest for the spaces kernel it runs (spaces.go), written out for the kernel as the host starts.
+cpSync('dist/web/skalet.json', web + '/skalet.json');
 // The guides the editor's MCP server gives agents, served as resources (mcp.go).
 cpSync('dist/web/mcp-guides', web + '/mcp-guides', { recursive: true });
 // The lobby's page and files, which every player listener serves at / and beside it, the TV page's at /tv and the pad

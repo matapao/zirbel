@@ -84,7 +84,7 @@ func main() {
 
 type options struct {
 	root, lanHost       string
-	padsSocket          string
+	padsSocket, spaces  string // the spaces kernel's binary (spaces.go)
 	hostOnly, lan, open bool
 	enableMCP, box      bool
 	port, playerPort    int
@@ -104,6 +104,7 @@ func parseOptions() (*options, error) {
 	playerPort := flags.String("player-port", "", "player port (default 4174 or ZIRBEL_PLAYER_PORT)")
 	playerHost := flags.String("player-host", "", "host name for LAN links (or ZIRBEL_LAN_HOST)")
 	padsSocket := flags.String("pads-socket", "", "local socket for the box's controller service (or ZIRBEL_PADS_SOCKET)")
+	flags.StringVar(&o.spaces, "spaces-binary", os.Getenv("ZIRBEL_SPACES_BINARY"), "the spaces kernel's binary (or ZIRBEL_SPACES_BINARY)")
 	flags.Var(&o.imports, "import", "import a release file (repeatable)")
 	flags.Var(&o.releaseIDs, "release", "open a room for a release ID (repeatable)")
 	if err := flags.Parse(os.Args[1:]); err != nil {
@@ -228,6 +229,7 @@ func run() error {
 	}
 	ctx := context.Background()
 	rooms := NewRooms()
+	spaces := startSpaces(rooms, o.spaces)
 	var players *Players
 	var editorServer *http.Server
 	// Shutdown order matches the Node host: stop the editor, end rooms (players
@@ -241,6 +243,7 @@ func run() error {
 			cancel()
 		}
 		rooms.Dispose()
+		spaces.Stop()
 		if players != nil {
 			players.Close()
 		}
@@ -306,7 +309,7 @@ func run() error {
 	}
 	pads := NewPads(time.Now)
 	go pads.Run(ctx)
-	localPort, config := o.playerPort, listenerConfig{lobby: lobby, pads: pads}
+	localPort, config := o.playerPort, listenerConfig{lobby: lobby, pads: pads, spaces: spaces}
 	if o.lan || !o.hostOnly {
 		localPort = 0
 	}
@@ -326,7 +329,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	players = &Players{rooms: rooms, runtime: runtimeFiles, local: local, lanHost: o.lanHost, lanPort: o.playerPort, lobby: lobby, pads: pads}
+	players = &Players{rooms: rooms, runtime: runtimeFiles, local: local, lanHost: o.lanHost, lanPort: o.playerPort, lobby: lobby, pads: pads,
+		spaces: spaces}
 	lobby.link = players.LobbyLink
 	if box != nil {
 		// A box's lobby is on its LAN player port from the start: its door

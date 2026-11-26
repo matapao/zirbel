@@ -67,6 +67,8 @@ type Rooms struct {
 	order []string
 	stop  chan struct{}
 	done  sync.WaitGroup
+	// kernel is the spaces kernel a net game's room plays over (rooms_spaces.go).
+	kernel *Spaces
 }
 
 func NewRooms() *Rooms {
@@ -119,17 +121,22 @@ type opening struct {
 
 // Open mirrors Rooms.create in packages/core/rooms.ts, including solo
 // playtests and development rooms.
+// A net game's shared room gets its space as it opens (WithSpace).
 func (rs *Rooms) Open(release *Release, solo bool, access string, development bool) (*Room, error) {
 	if solo && access == "lan" {
 		return nil, fail(http.StatusBadRequest, "Solo playtests use the local player service.")
 	}
-	return rs.open(release, opening{solo: solo, development: development, access: access})
+	room, err := rs.open(release, opening{solo: solo, development: development, access: access})
+	if err != nil {
+		return nil, err
+	}
+	return rs.WithSpace(room)
 }
 
 // OpenSession starts a lobby session of an offered release for the guest at
-// starter: a shared room with a code, or for a one-player release a solo room.
-func (rs *Rooms) OpenSession(release *Release, access, starter string) (*Room, error) {
-	return rs.open(release, opening{solo: !multiplayer(release), access: access, starter: starter})
+// starter: a shared room with a code, or a solo room for one played alone.
+func (rs *Rooms) OpenSession(release *Release, solo bool, access, starter string) (*Room, error) {
+	return rs.open(release, opening{solo: solo, access: access, starter: starter})
 }
 
 func (rs *Rooms) open(release *Release, how opening) (*Room, error) {
@@ -170,8 +177,8 @@ func (rs *Rooms) add(release *Release, how opening) (room, evicted *Room, err er
 	room = newRoom(&playable, how.solo, how.access, how.development)
 	room.starter = how.starter
 	// A session has a code: a multiplayer room started from the lobby, or one
-	// the owner opened on the LAN.
-	if !how.solo && multiplayer(release) && (how.starter != "" || how.access == "lan") {
+	// the owner opened on the LAN. A net game's is its space's (WithSpace).
+	if !how.solo && multiplayer(release) && !isNet(release.Manifest.Simulation) && (how.starter != "" || how.access == "lan") {
 		room.Code = rs.freeCode()
 	}
 	rs.rooms[room.ID] = room
@@ -206,6 +213,9 @@ func (rs *Rooms) Close(id string) {
 	rs.mu.Unlock()
 	if room != nil {
 		room.close()
+		if space := room.spaceOf(); space != nil && rs.kernel != nil {
+			rs.kernel.Close(space.ID)
+		}
 	}
 }
 
@@ -236,13 +246,25 @@ func (rs *Rooms) Session(code, access string) *Room {
 // newest first.
 func (rs *Rooms) Sessions(access string) []*Room {
 	list := []*Room{}
-	rooms := rs.list()
-	for i := len(rooms) - 1; i >= 0; i-- {
-		if room := rooms[i]; room.Code != "" && room.Access == access {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	for i := len(rs.order) - 1; i >= 0; i-- {
+		if room := rs.rooms[rs.order[i]]; room != nil && room.Code != "" && room.Access == access {
 			list = append(list, room)
 		}
 	}
 	return list
+}
+
+// SpaceRoom is the room a space is of, on the listener for access: for a link
+// the kernel formed, which names the space alone.
+func (rs *Rooms) SpaceRoom(space, access string) (string, error) {
+	for _, room := range rs.list() {
+		if s := room.spaceOf(); s != nil && s.ID == space && room.Access == access {
+			return room.ID, nil
+		}
+	}
+	return "", fail(http.StatusNotFound, "This session has ended.")
 }
 
 // CloseProject ends every room playing a release of the project.

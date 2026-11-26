@@ -28,14 +28,8 @@ type gamePageEntry struct {
 }
 
 // gamePath mirrors gamePath in packages/server/player-listener.ts: the game
-// document's own address, a built game's files beside it. A game with its own
-// netcode is at /game/@<room>/<key>/, in the shape zirbel-net gives a game's
-// folder on its host, /<game>/@<version>/, which such games look for before
-// they turn their netcode on.
+// document's own address, a built game's files beside it.
 func gamePath(room *Room) string {
-	if isNet(room.Release.Manifest.Simulation) {
-		return "/game/@" + room.ID + "/" + room.DocumentKey + "/"
-	}
 	return "/game/" + room.ID + "/" + room.DocumentKey + "/"
 }
 
@@ -57,11 +51,12 @@ func gamePage(release *Release, runtime, ancestors, base string) (policy, html s
 	// Loaders turn embedded data into blob: and data: URLs and read them back, and fetch the decoders
 	// the addons ship with (Draco, Basis); none of it reaches the network.
 	connects := "connect-src " + base + " " + addons + " data: blob:"
-	// A game with its own netcode also loads zirbel-net and reaches the relay, both on this listener.
+	// A game with its own netcode also imports the spaces kernel's modules from this listener, and may reach its
+	// socket, though it joins the space its player page shares with it and holds no credential of its own.
 	if isNet(release.Manifest.Simulation) {
-		origin, relay := netOrigins(base)
-		scripts += " " + origin + "/zirbel-net.js"
-		connects += " " + relay + "/mp"
+		origin, socket := netOrigins(base)
+		scripts += " " + origin + "/.skalet/net.js " + origin + "/.skalet/spaces.js"
+		connects += " " + socket + "/.skalet/spaces"
 	}
 	policy = strings.Join([]string{
 		"sandbox allow-scripts allow-pointer-lock", "default-src 'none'", scripts,
@@ -95,16 +90,16 @@ func gamePage(release *Release, runtime, ancestors, base string) (policy, html s
 
 // netOrigins are the origin of the game page's base and that origin's
 // WebSocket twin (http: to ws:, https: to wss:).
-func netOrigins(base string) (origin, relay string) {
+func netOrigins(base string) (origin, socket string) {
 	parsed, err := url.Parse(base)
 	if err != nil {
 		return "", ""
 	}
 	origin = parsed.Scheme + "://" + parsed.Host
 	if rest, ok := strings.CutPrefix(origin, "http"); ok {
-		relay = "ws" + rest
+		socket = "ws" + rest
 	}
-	return origin, relay
+	return origin, socket
 }
 
 // serveGame serves the game document, or the built game's file at file.

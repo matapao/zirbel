@@ -6,8 +6,10 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -298,4 +300,29 @@ func (c *padConn) watch(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// sameHost is a socket's origin check, as upgradeOrigin in
+// packages/server/http.ts: a page on this listener's own host, or a page in an
+// opaque-origin sandbox ("null"), or a program, which sends none.
+func sameHost(r *http.Request) bool {
+	values, present := r.Header["Origin"]
+	if !present {
+		return true
+	}
+	origin := strings.Join(values, ",")
+	if origin == "null" {
+		return true
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	host := strings.ToLower(parsed.Host)
+	// As a URL's host has it: without the scheme's default port.
+	if port := parsed.Port(); (port == "80" && (parsed.Scheme == "http" || parsed.Scheme == "ws")) ||
+		(port == "443" && (parsed.Scheme == "https" || parsed.Scheme == "wss")) {
+		host = strings.TrimSuffix(host, ":"+port)
+	}
+	return host == strings.ToLower(r.Host)
 }

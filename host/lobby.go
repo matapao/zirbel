@@ -49,6 +49,7 @@ type lobbyGame struct {
 	Players     playerRange `json:"players"`
 	Multiplayer bool        `json:"multiplayer"`
 	game        string      // its gameId: one release per game is offered
+	net         bool        // it brings its own netcode: played together while the spaces kernel runs
 }
 
 // lobbySession is a session as the lobby lists it: never its code or seats.
@@ -69,6 +70,9 @@ type lobbyState struct {
 	// owner's side names it (Players.LobbyLink), on the LAN listener; null
 	// elsewhere. The TV page's QR codes hold it.
 	Link *string `json:"link"`
+	// Spaces says games with their own netcode are played together here now:
+	// while the spaces kernel runs.
+	Spaces bool `json:"spaces"`
 }
 
 // The sentence the host stops with, word for word as the Node host says it.
@@ -113,7 +117,8 @@ func (l *Lobby) game(id string) (lobbyGame, error) {
 // remember keeps what the lobby shows of a release. The caller holds l.mu.
 func (l *Lobby) remember(release *Release) lobbyGame {
 	m := release.Manifest
-	known := lobbyGame{Release: m.ReleaseID, Title: m.Title, Players: m.Players, Multiplayer: multiplayer(release), game: m.GameID}
+	known := lobbyGame{Release: m.ReleaseID, Title: m.Title, Players: m.Players, Multiplayer: multiplayer(release), game: m.GameID,
+		net: isNet(m.Simulation)}
 	l.known[m.ReleaseID] = known
 	return known
 }
@@ -160,11 +165,13 @@ func (l *Lobby) Offer(id string, offered bool) ([]string, error) {
 // State is the lobby on the listener for access, reached by the host name
 // host: the offered games by title, and its sessions, newest first.
 func (l *Lobby) State(access, host string) lobbyState {
+	spaces := l.spaces()
 	l.mu.Lock()
 	games := make([]lobbyGame, 0, len(l.offered))
 	for _, id := range l.offered {
 		// A release this host cannot read is left out rather than failing the lobby.
 		if game, err := l.game(id); err == nil {
+			game.Multiplayer = game.Multiplayer && (!game.net || spaces)
 			games = append(games, game)
 		}
 	}
@@ -184,7 +191,16 @@ func (l *Lobby) State(access, host string) lobbyState {
 	if access == "lan" && l.link != nil {
 		link = l.link(host)
 	}
-	return lobbyState{games, sessions, pair, edit, link}
+	return lobbyState{games, sessions, pair, edit, link, spaces}
+}
+
+// spaces: games with their own netcode are played together here now.
+func (l *Lobby) spaces() bool { return l.rooms.kernel != nil && l.rooms.kernel.Available() }
+
+// together: a release played together, one with a simulation, and one with its
+// own netcode while the kernel runs.
+func (l *Lobby) together(release *Release) bool {
+	return multiplayer(release) && (!isNet(release.Manifest.Simulation) || l.spaces())
 }
 
 // byTitle orders titles as a reader does: case aside, then by case.
@@ -212,11 +228,20 @@ func (l *Lobby) Start(id, name, access, address string) (*Room, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	room, err := l.rooms.OpenSession(release, access, address)
+	room, err := l.rooms.OpenSession(release, !l.together(release), access, address)
+	if err == nil {
+		room, err = l.rooms.WithSpace(room)
+	}
 	if err != nil {
 		return nil, "", err
 	}
-	ticket, err := room.Seat(name, "player")
+	// A net game's starter has a ticket into its space.
+	var ticket string
+	if room.spaceOf() != nil {
+		ticket, err = l.rooms.SpaceTicket(room, name, "participant")
+	} else {
+		ticket, err = room.Seat(name, "player")
+	}
 	if err != nil {
 		l.rooms.Close(room.ID)
 	}
@@ -240,6 +265,10 @@ func (l *Lobby) Join(input, name, access, address string) (*Room, string, error)
 	l.mu.Unlock()
 	if room == nil {
 		return nil, "", fail(http.StatusNotFound, "No session has that code.")
+	}
+	if room.spaceOf() != nil {
+		ticket, err := l.rooms.SpaceTicket(room, name, "")
+		return room, ticket, err
 	}
 	ticket, err := room.Seat(name, "")
 	return room, ticket, err

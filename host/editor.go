@@ -54,6 +54,16 @@ func (s *EditorServer) serve(w http.ResponseWriter, r *http.Request) error {
 	if err := checkHost(r, s.port, hosts); err != nil {
 		return err
 	}
+	// The editor's one socket is the spaces kernel's, for this device's own
+	// pages alone, as the Node host's is.
+	if strings.EqualFold(r.Header.Get("upgrade"), "websocket") {
+		local := s.box == nil || (isLoopbackAddress(remoteAddress(r)) && s.box.loopbackOwned(r))
+		if r.URL.EscapedPath() != "/.skalet/spaces" || !local || s.players == nil {
+			return fail(http.StatusForbidden, "This socket is for this device's own pages.")
+		}
+		proxySpaces(s.players.spaces, "editor", w, r)
+		return nil
+	}
 	access := boxAccess{local: true}
 	if s.box != nil {
 		opened, handled, err := s.box.door(w, r)
@@ -63,6 +73,15 @@ func (s *EditorServer) serve(w http.ResponseWriter, r *http.Request) error {
 		access = opened
 	}
 	pathname := r.URL.EscapedPath()
+	// The spaces kernel's paths, for the owner's pages (never an editor's of one
+	// game): the editor listener of skalet.json, whose audience is the owner.
+	if isSpacesPath(pathname) && s.players != nil {
+		if access.editor != "" {
+			return fail(http.StatusForbidden, "This is for the box's owners.")
+		}
+		proxySpaces(s.players.spaces, "editor", w, r)
+		return nil
+	}
 	mcpRequest := s.mcpOn() && pathname == "/mcp"
 	// MCP authenticates each request by grant. Browsers supplying Origin must
 	// still match; like Node, an empty Origin header counts as supplied.

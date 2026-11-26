@@ -187,15 +187,9 @@ var Lobby = sync.OnceValue(func() map[string]*File {
 	return files
 })
 
-// Net is zirbel-net.js, the client a game with its own netcode imports to
-// reach the relay, or nil when the build has none. The host provides it to
-// every game like game-sdk.js, but it is not part of a release's runtime.
-var Net = sync.OnceValue(func() *File { return hostFile("zirbel-net.js") })
-
-// Skill is the skill that teaches an agent to make a game multiplayer with
-// zirbel-net (skills/zirbel-multiplayer), served as /zirbel-net/SKILL.md, or
-// nil when the build has none.
-var Skill = sync.OnceValue(func() *File { return hostFile("zirbel-net/SKILL.md") })
+// Manifest is Zirbel's skalet.json, the listeners and spaces block of the
+// spaces kernel the host runs (spaces.go), or nil when the build has none.
+var Manifest = sync.OnceValue(func() *File { return hostFile("skalet.json") })
 
 // Guide is one of the guides the editor's MCP server gives agents as
 // resources (mcp-guides/<name>.md, put together by scripts/build.mjs), or nil

@@ -31,9 +31,17 @@ type Room struct {
 	tick      int64
 	activity  time.Time
 	closed    bool
-	gamePages sync.Map  // origin -> *gamePageEntry
-	relay     relayRoom // a net-v2 game's seats on the relay (relay.go)
+	gamePages sync.Map // origin -> *gamePageEntry
+	// space is a net game's space in the spaces kernel, which its players are
+	// members of and its own netcode plays over (none alone, or without the
+	// kernel), and members its participants and whether any is connected, as
+	// the kernel last listed them (rooms_spaces.go).
+	space   *roomSpace
+	members spaceMembers
 }
+
+// roomSpace is a room's space: its id, and the invitation in its link.
+type roomSpace struct{ ID, Invite string }
 
 func newRoom(release *Release, solo bool, access string, development bool) *Room {
 	now := time.Now()
@@ -41,15 +49,7 @@ func newRoom(release *Release, solo bool, access string, development bool) *Room
 		ID: hex.EncodeToString(randomBytes(6)), Session: hex.EncodeToString(randomBytes(6)), Invite: secret(), DocumentKey: secret(),
 		InviteExpires: now.Add(inviteLifetime), Release: release, Solo: solo, Access: access, Development: development, Started: now,
 		sim: newSimulation(release, solo), seats: map[string]*seat{}, pending: map[string]ticket{}, activity: now,
-		relay: relayRoom{seats: map[byte]*relaySeat{}},
 	}
-}
-
-// touch counts relay traffic as the room's activity.
-func (r *Room) touch() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.activity = time.Now()
 }
 func encode(value any) []byte {
 	data, err := json.Marshal(value)
@@ -102,11 +102,14 @@ func (r *Room) Summary() summary {
 	status := "waiting"
 	if r.closed {
 		status = "closed"
-	} else if r.connectedLocked() {
+	} else if r.connectedLocked() || r.members.connected {
 		status = "active"
 	}
 	return summary{r.ID, r.Release.ManifestRaw, r.Solo, r.Development, r.Access, seats, status, r.Code}
 }
+
+// MayView: an invitation, a held seat or a seat's own, or for a room with a
+// space that space's id, which is in every link.
 func (r *Room) MayView(credential string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -115,6 +118,9 @@ func (r *Room) MayView(credential string) bool {
 		return false
 	}
 	if same(credential, r.Invite) && time.Now().Before(r.InviteExpires) {
+		return true
+	}
+	if r.space != nil && same(credential, r.space.ID) {
 		return true
 	}
 	if _, ok := r.pending[credential]; ok {
@@ -209,6 +215,9 @@ func (r *Room) hold(name, role string, lifetime time.Duration) (string, error) {
 func (r *Room) players() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.space != nil {
+		return r.members.participants
+	}
 	return r.used("player")
 }
 
@@ -410,6 +419,11 @@ func (r *Room) step() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.prune()
+	// A room with a space lives as long as its space: the kernel ends one
+	// nobody plays in (the rooms' sweep).
+	if r.space != nil {
+		return !r.closed
+	}
 	now := time.Now()
 	// A shared room stays open as long as its invitation is valid; a lobby
 	// session, whose invitation nobody holds, only while it is played.
@@ -422,7 +436,6 @@ func (r *Room) step() bool {
 	return !r.closed
 }
 func (r *Room) close() {
-	r.relay.close()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.closed = true

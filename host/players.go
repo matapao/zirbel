@@ -24,6 +24,7 @@ type Players struct {
 	lanPort int
 	lobby   *Lobby
 	pads    *Pads
+	spaces  *Spaces // the spaces kernel both listeners pass /.skalet/* to
 	// box, on a box: the LAN listener answers the box's network by its names,
 	// IPv6 too, for the guests its door sends to the lobby.
 	box *playerReach
@@ -41,7 +42,7 @@ func (p *Players) StartLAN(ctx context.Context) (*Listener, error) {
 		if p.lanHost != "" {
 			extra = append(extra, p.lanHost)
 		}
-		config, bind := listenerConfig{lan: true, extraHosts: extra, lobby: p.lobby, pads: p.pads}, "0.0.0.0"
+		config, bind := listenerConfig{lan: true, extraHosts: extra, lobby: p.lobby, pads: p.pads, spaces: p.spaces}, "0.0.0.0"
 		if box := p.box; box != nil {
 			config.box = &playerReach{hosts: func() []string { return append(box.hosts(), extra...) }, network: box.network,
 				editorOrigins: func(string) []string { return nil }}

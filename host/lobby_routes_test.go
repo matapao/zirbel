@@ -111,7 +111,7 @@ func TestTheLobbyIsServedOnPlayerListeners(t *testing.T) {
 	if state.status != http.StatusOK || state.header.Get("cache-control") != "no-store" || room.Session == room.ID ||
 		!strings.Contains(state.body, `"sessions":[{"id":"`+room.Session+`","title":"Garden","players":0,"max":2,"started":"`) ||
 		!strings.HasPrefix(state.body, `{"games":[{"release":"shared","title":"Garden","players":{"min":1,"max":2},"multiplayer":true},`+
-			`{"release":"alone","title":"Walk","players":{"min":1,"max":1},"multiplayer":false}],`) || !strings.HasSuffix(state.body, `,"pair":null,"edit":null,"link":null}`+"\n") {
+			`{"release":"alone","title":"Walk","players":{"min":1,"max":1},"multiplayer":false}],`) || !strings.HasSuffix(state.body, `,"pair":null,"edit":null,"link":null,"spaces":false}`+"\n") {
 		t.Fatalf("the state: %+v", state)
 	}
 	for _, secret := range []string{*session.Code, room.ID, ticket, "Ada"} {
@@ -272,7 +272,7 @@ func TestABoxSendsDevicesThatArentPairedToTheLobby(t *testing.T) {
 		lobby.editorAt = func(host string) string { return "http://" + host + portSuffix(port) }
 		l := &Listener{rooms: rooms, port: 4174, config: listenerConfig{lan: true, lobby: lobby,
 			box: &playerReach{hosts: func() []string { return []string{"zirbel.local", "[fd00::2]"} }, network: onBoxNetwork}}}
-		if got := call(t, l, http.MethodGet, "[fd00::2]:4174", "/lobby/state", "[fd00::5]:5000", "", nil); got.body != `{"games":[],"sessions":[],"pair":"`+want+`/pair","edit":"`+want+`/edit","link":"http://[fd00::2]:4174/"}`+"\n" {
+		if got := call(t, l, http.MethodGet, "[fd00::2]:4174", "/lobby/state", "[fd00::5]:5000", "", nil); got.body != `{"games":[],"sessions":[],"pair":"`+want+`/pair","edit":"`+want+`/edit","link":"http://[fd00::2]:4174/","spaces":false}`+"\n" {
 			t.Errorf("the pairing link with the editor on %d: %+v", port, got)
 		}
 	}

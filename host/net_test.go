@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -133,13 +134,35 @@ func TestAReleaseForMoreThanFourPlayersNeedsNet(t *testing.T) {
 	}
 }
 
-// A net-v2 release's page may load zirbel-net and reach the relay on its own
-// listener; every other page keeps its policy byte for byte.
-func TestANetGameMayLoadZirbelNetAndReachTheRelay(t *testing.T) {
+// netRelease is a net game's release for this many players.
+func netRelease(t *testing.T, players int) *Release {
+	t.Helper()
+	game := `{"html":"<canvas></canvas>","maxPlayers":` + strconv.Itoa(players) + `,"net":true}`
+	document := map[string]any{
+		"manifest": map[string]any{
+			"format": 1, "releaseId": "n1", "gameId": "g1", "sourceRevision": "s1", "title": "Net", "sdk": "1.0.0",
+			"protocol": 1, "client": "player.html", "simulation": "net-v2", "players": map[string]int{"min": 1, "max": players},
+			"capabilities": []string{"multiplayer"}, "permissions": map[string]bool{"play": true, "download": true, "remix": true},
+			"assets": []any{}, "credits": []any{}, "files": map[string]string{"player.js": digest([]byte("ok"))},
+		},
+		"game": json.RawMessage(game), "sceneHash": digest([]byte(game)),
+		"files": map[string]string{"player.js": base64.StdEncoding.EncodeToString([]byte("ok"))}, "assets": map[string]string{},
+	}
+	data, _ := jsJSON(document)
+	release, err := ParseRelease(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return release
+}
+
+// A net-v2 release's page may import the spaces kernel's modules and reach its
+// socket on its own listener; every other page keeps its policy byte for byte.
+func TestANetGameMayImportTheKernelsModulesAndReachItsSocket(t *testing.T) {
 	plain, _ := gamePage(&Release{Game: &Game{HTML: "<canvas></canvas>", MaxPlayers: 2}}, "http://h:8/runtime/r/", "'self'", "http://h:8/game/r/key/")
 	for base, want := range map[string][2]string{
-		"http://h:8/game/r/key/":      {"http://h:8/zirbel-net.js", "ws://h:8/mp"},
-		"https://box.local/game/r/k/": {"https://box.local/zirbel-net.js", "wss://box.local/mp"},
+		"http://h:8/game/r/key/":      {"http://h:8/.skalet/net.js http://h:8/.skalet/spaces.js", "ws://h:8/.skalet/spaces"},
+		"https://box.local/game/r/k/": {"https://box.local/.skalet/net.js https://box.local/.skalet/spaces.js", "wss://box.local/.skalet/spaces"},
 	} {
 		release := netRelease(t, 3)
 		policy, _ := gamePage(release, "http://h:8/runtime/r/", "'self'", base)
@@ -149,60 +172,33 @@ func TestANetGameMayLoadZirbelNetAndReachTheRelay(t *testing.T) {
 		}
 		if base == "http://h:8/game/r/key/" {
 			if stripped := strings.Replace(strings.Replace(policy, " "+want[0], "", 1), " "+want[1], "", 1); stripped != plain {
-				t.Errorf("the net policy differs beyond its two entries:\n%s\n%s", stripped, plain)
+				t.Errorf("the net policy differs beyond its entries:\n%s\n%s", stripped, plain)
 			}
 		}
 	}
 }
 
-// A net game's document is at /game/@<room>/<key>/, in the shape zirbel-net
-// gives a game's folder on its host (/<game>/@<version>/); every other game's
-// stays at /game/<room>/<key>/. The key is the fourth part of both.
-func TestANetGameIsAtTheAddressZirbelNetGivesAGame(t *testing.T) {
+// A net game's document is at /game/<room>/<key>/, as every other game's.
+func TestANetGameIsWhereEveryGameIs(t *testing.T) {
 	net := newRoom(netRelease(t, 3), false, "local", false)
-	plain := newRoom(&Release{Game: &Game{HTML: "<canvas></canvas>", MaxPlayers: 2}}, false, "local", false)
-	if got := gamePath(net); got != "/game/@"+net.ID+"/"+net.DocumentKey+"/" || strings.Split(got, "/")[3] != net.DocumentKey {
+	if got := gamePath(net); got != "/game/"+net.ID+"/"+net.DocumentKey+"/" {
 		t.Errorf("net game: %s", got)
-	}
-	if got := gamePath(plain); got != "/game/"+plain.ID+"/"+plain.DocumentKey+"/" {
-		t.Errorf("other game: %s", got)
 	}
 }
 
-// /zirbel-net.js on every player listener: the bundle, as game-sdk.js is
-// served, and open to the game's opaque origin.
-func TestZirbelNetIsServedToGames(t *testing.T) {
-	listener := &Listener{rooms: NewRooms(), port: 80, net: &webfiles.File{Bytes: []byte("export const VERSION = 2;"), ETag: `"e"`}}
+// Without a spaces kernel, /.skalet/* answers that multiplayer isn't
+// available, and nothing serves the relay or the earlier client any more.
+func TestWithoutAKernelSpacesAreUnavailableAndTheRelayIsGone(t *testing.T) {
+	listener := &Listener{rooms: NewRooms(), port: 80, config: listenerConfig{spaces: &Spaces{}}}
 	t.Cleanup(listener.rooms.Dispose)
-	send := func(method, header string) *httptest.ResponseRecorder {
-		request := httptest.NewRequestWithContext(t.Context(), method, "/zirbel-net.js", nil)
+	for path, status := range map[string]int{"/.skalet/net.js": http.StatusServiceUnavailable, "/.skalet/spaces": http.StatusServiceUnavailable,
+		"/zirbel-net.js": http.StatusNotFound, "/zirbel-net/SKILL.md": http.StatusNotFound, "/mp": http.StatusNotFound} {
+		request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
 		request.Host, request.RemoteAddr = "localhost", "127.0.0.1:5000"
-		if header != "" {
-			request.Header.Set("if-none-match", header)
-		}
 		response := httptest.NewRecorder()
 		listener.ServeHTTP(response, request)
-		return response
-	}
-	get := func(header string) *httptest.ResponseRecorder { return send(http.MethodGet, header) }
-	response := get("")
-	header := response.Header()
-	// Its address is the same from one build to the next, so it is checked each time rather than kept.
-	if response.Code != http.StatusOK || response.Body.String() != "export const VERSION = 2;" ||
-		header.Get("content-type") != "text/javascript; charset=utf-8" || header.Get("cache-control") != "no-cache" ||
-		header.Get("access-control-allow-origin") != "*" || header.Get("etag") != `"e"` ||
-		header.Get("x-content-type-options") != "nosniff" || header.Get("referrer-policy") != "no-referrer" ||
-		header.Get("vary") != "accept-encoding" || header.Get("content-security-policy") != "" {
-		t.Fatalf("%d %v", response.Code, header)
-	}
-	if response := get(`"e"`); response.Code != http.StatusNotModified {
-		t.Fatalf("a cached copy: %d", response.Code)
-	}
-	if response := send(http.MethodPost, ""); response.Code != http.StatusNotFound {
-		t.Fatalf("a POST: %d", response.Code)
-	}
-	listener.net = nil
-	if response := get(""); response.Code != http.StatusNotFound {
-		t.Fatalf("a build without it: %d", response.Code)
+		if response.Code != status {
+			t.Errorf("%s: %d %s", path, response.Code, response.Body.String())
+		}
 	}
 }
