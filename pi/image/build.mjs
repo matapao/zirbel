@@ -7,7 +7,9 @@
 // It runs on an arm64 computer with Docker, where an arm64 image's programs run natively in a container and an armhf
 // image's through Docker's emulation. Build the repository first (pnpm build).
 //   node pi/image/build.mjs --out DIR --country XX --ssh-key FILE [--target arm64|armhf] [--base IMAGE]
-//                           [--rebuild-base] [--base-only]
+//                           [--game FOLDER]... [--rebuild-base] [--base-only]
+// Each --game is a built game folder (index.html at its top) the box starts with, in its library as the editor's
+// folder import would put it: hidden files are left out, and the folder's name is the game's title.
 // DIR keeps the downloaded OS, zirbel-base-TARGET.img (the slow stage, reused), and zirbel-TARGET.img, the image to
 // write to a card, with zirbel-TARGET.img.xz beside it and each one's SHA-256.
 import { execFileSync } from 'node:child_process';
@@ -30,7 +32,7 @@ const REPO = path.resolve(HERE, '../..');
 const { values } = parseArgs({ options: {
   out: { type: 'string' }, country: { type: 'string' }, 'ssh-key': { type: 'string' }, base: { type: 'string' },
   'rebuild-base': { type: 'boolean', default: false }, 'base-only': { type: 'boolean', default: false },
-  target: { type: 'string', default: 'arm64' },
+  target: { type: 'string', default: 'arm64' }, game: { type: 'string', multiple: true, default: [] },
 } });
 const target = TARGETS[values.target];
 if (!values.out || !/^[A-Z]{2}$/.test(values.country ?? '') || !values['ssh-key'] || !target)
@@ -115,6 +117,21 @@ if (values.target === 'arm64') {
   execFileSync(process.execPath, ['scripts/build-host.mjs', 'linux/arm/7'], { cwd: REPO, stdio: 'inherit' });
   app[path.join(REPO, 'host', 'bin', 'zirbel-host-linux-armv7')] = '/zirbel-host';
 }
+// The games, each as the body of POST /api/projects/import-game, which chroot-app.sh sends to the installed program.
+const games = path.join(out, 'games');
+fs.rmSync(games, { recursive: true, force: true });
+values.game.forEach((folder, n) => {
+  const root = path.resolve(folder);
+  if (!fs.existsSync(path.join(root, 'index.html'))) throw new Error(`--game ${folder}: no index.html at its top.`);
+  const files = Object.fromEntries(fs.readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.relative(root, path.join(entry.parentPath, entry.name)).split(path.sep))
+    .filter((parts) => !parts.some((part) => part.startsWith('.')))
+    .map((parts) => [parts.join('/'), fs.readFileSync(path.join(root, ...parts)).toString('base64')]));
+  fs.mkdirSync(games, { recursive: true });
+  fs.writeFileSync(path.join(games, `${n}.json`), JSON.stringify({ title: path.basename(root).slice(0, 80), files }));
+});
+if (values.game.length) app[games] = '/games';
 const setup = path.join(REPO, 'pi', 'setup');
 if (fs.existsSync(setup)) app[setup] = '/setup';
 const image = path.join(out, `zirbel-${values.target}.img`);
