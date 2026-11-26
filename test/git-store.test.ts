@@ -1,7 +1,7 @@
 // The git store (docs/git-store.md): every save a commit, the game's folder at the top of its tree, the host's own
 // files under .zirbel/, proposals on refs of their own, history from git, and the version-1 projects migrated.
 import assert from 'node:assert/strict';
-import { copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { importGameFolder } from '../packages/core/game-files.ts';
@@ -214,4 +214,30 @@ test('a bundle imports as commits and exports back, every revision in full', (t)
   assert.equal(Object.hasOwn(exported.project, 'source'), false);
   const blobs = readObjects(projects.repository(copy.id), [head(copy, 'main').id + ':.zirbel/scene.json']);
   assert.deepEqual(JSON.parse([...blobs.values()][0]!.toString('utf8')), revision.scene);
+});
+
+// Two histories a version-1 file can hold: a branch forked from an early revision after a restore (the import ref then
+// moves to a commit that isn't a descendant), and a restore of a revision the file doesn't have (a damaged file).
+test('a migration writes a fork after a restore, and a restore of a missing revision without its trailer', (t) => {
+  const { root } = install(t);
+  const id = '00000000-0000-4000-8000-0000000000aa';
+  const r = (n: number) => '00000000-0000-4000-8000-00000000000' + n;
+  const revision = (n: number, parent: number | null, label: string, extra: object = {}) =>
+    ({ id: r(n), parent: parent === null ? null : r(parent), label, date: '2026-01-01T1' + n + ':00:00.000Z', assets: [], ...extra });
+  writeFileSync(join(root, 'projects', id + '.json'), JSON.stringify({ version: 1, id, title: 'Old game',
+    branches: { main: r(3), variant: r(4), damaged: r(5) }, notes: [], attachments: [], revisions: [
+      revision(1, null, 'Created project'),
+      revision(2, 1, 'Write the game', { game: { html: '<p>1</p>', maxPlayers: 3 } }),
+      revision(3, 2, 'Restore Created project', { restoredFrom: r(1) }),
+      revision(4, 1, 'Try a variant', { game: { html: '<p>variant</p>' } }),
+      revision(5, 4, 'Restore a lost one', { restoredFrom: '00000000-0000-4000-8000-0000000000ff', game: { html: '<p>5</p>' } }),
+    ] }));
+  const projects = new Projects(root);
+  assert.equal(projects.migrate(), 1);
+  const migrated = projects.read(id);
+  assert.deepEqual(Object.keys(migrated.branches).sort(), ['damaged', 'main', 'variant']);
+  const repo = projects.repository(id);
+  assert.match(git(repo, ['log', '-1', '--format=%B', 'main']).stdout.toString('utf8'), /Zirbel-Restored-From: [0-9a-f]{40}/);
+  assert.doesNotMatch(git(repo, ['log', '-1', '--format=%B', 'damaged']).stdout.toString('utf8'), /Zirbel-Restored-From/);
+  assert.equal(head(migrated, 'variant').game?.html, '<p>variant</p>');
 });

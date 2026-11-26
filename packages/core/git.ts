@@ -237,7 +237,9 @@ export class FastImport {
   run(repo: string) {
     const marks = join(repo, 'zirbel-marks-' + process.pid + '-' + Date.now());
     try {
-      git(repo, ['fast-import', '--quiet', '--export-marks=' + marks], { input: Buffer.concat([...this.chunks, Buffer.from('done\n')]) });
+      // --force: a stretch of a migration may move the import ref to a commit that isn't a descendant (a branch forked
+      // from an earlier revision), which is the point of the ref there.
+      git(repo, ['fast-import', '--quiet', '--force', '--export-marks=' + marks], { input: Buffer.concat([...this.chunks, Buffer.from('done\n')]) });
       const ids = new Map<string, string>();
       for (const line of readFileSync(marks, 'utf8').split('\n')) {
         const [mark, oid] = line.split(' ');

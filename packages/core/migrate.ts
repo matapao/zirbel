@@ -25,13 +25,16 @@ export function writeRevisions(repo: string, revisions: FullRevision[], read: (h
     const marks = new Map<string, string>();
     for (; index < revisions.length; index++) {
       const revision = revisions[index]!;
-      if (revision.restoredFrom && !commits.has(revision.restoredFrom)) break;
+      // A restore of a revision written in this stretch waits for the next, which can name its commit; one of a
+      // revision the project doesn't have (a damaged file) is written without the trailer instead of never.
+      if (revision.restoredFrom && !commits.has(revision.restoredFrom) && marks.has(revision.restoredFrom)) break;
       const from = revision.parent ? marks.get(revision.parent) ?? commits.get(revision.parent) : undefined;
       if (!from) stream.reset(IMPORTING);
       const written = treeChanges([], () => undefined, revision, read, stream);
       hashes.push(...written.hashes);
       const trailers: [string, string][] = [
-        ...(revision.restoredFrom ? [['Zirbel-Restored-From', commits.get(revision.restoredFrom)!] as [string, string]] : []),
+        ...(revision.restoredFrom && commits.has(revision.restoredFrom)
+          ? [['Zirbel-Restored-From', commits.get(revision.restoredFrom)!] as [string, string]] : []),
         ...(trailer ? [['Zirbel-Revision', revision.id] as [string, string]] : [])];
       const by = author ?? (revision.author ? ident(revision.author, COMMITTER.email) : COMMITTER);
       marks.set(revision.id, stream.commit(IMPORTING, { author: by, time: secondsOf(revision.date),
