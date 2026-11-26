@@ -26,14 +26,15 @@ systemctl enable zirbel.service >/dev/null 2>&1
 [ ! -d "$B/setup" ] || bash "$B/setup-install.sh" "$B/setup" "$1"
 # The installed program starts in box mode, as `zirbel`, with a throwaway account folder, and answers its health check on
 # loopback. Its data folder is throwaway too, unless the box starts with games: then it is the box's own (~/.zirbel,
-# both hosts' default), and each game goes into its library as the editor's folder import puts it.
+# both hosts' default), and each game goes into its library as the editor's folder import puts it, then into its lobby.
+# It takes any free port for its LAN player listener, which a box runs from start-up.
 dir=$(runuser -u zirbel -- mktemp -d)
 data="$dir/data"
 games=("$B"/games/*.json)
 [ -e "${games[0]}" ] || games=()
 [ ${#games[@]} -eq "${2:-0}" ] || { echo "Expected ${2:-0} games for the box's library, found ${#games[@]}." >&2; exit 1; }
 [ ${#games[@]} -eq 0 ] || data=/home/zirbel/.zirbel
-runuser -u zirbel -- env ZIRBEL_ACCOUNT_DIR="$dir/account" "${program[@]}" --box --data "$data" --port 48173 \
+runuser -u zirbel -- env ZIRBEL_ACCOUNT_DIR="$dir/account" "${program[@]}" --box --data "$data" --port 48173 --player-port 0 \
   >"$dir/log" 2>&1 &
 pid=$!
 health=
@@ -41,9 +42,19 @@ for _ in $(seq 1 100); do health=$(curl -fsS http://127.0.0.1:48173/api/health 2
 stop() { kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true; }
 fail() { stop; cat "$dir/log" >&2; rm -rf "$dir"; echo "$1" >&2; exit 1; }
 [ -n "$health" ] || fail "The installed program did not answer its health check."
+# Each game is published, to be played but neither downloaded nor remixed, and offered in the box's lobby.
+api=http://127.0.0.1:48173/api
+field() { python3 -I -c 'import json, sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1" 2>/dev/null; }
+id='^[a-z0-9][a-z0-9_-]{0,79}$'
 for game in "${games[@]}"; do
-  curl -fsS -o /dev/null -H 'content-type: application/json' --data-binary "@$game" \
-    http://127.0.0.1:48173/api/projects/import-game || fail "The box could not take the game in $game."
+  project=$(curl -fsS -H 'content-type: application/json' --data-binary "@$game" "$api/projects/import-game") ||
+    fail "The box could not take the game in $game."
+  project=$(field id <<<"$project") && [[ $project =~ $id ]] || fail "The box named no project for the game in $game."
+  release=$(curl -fsS -H 'content-type: application/json' --data '{"permissions":{"play":true,"download":false,"remix":false}}' \
+    "$api/projects/$project/release") || fail "The box could not publish the game in $game."
+  release=$(field releaseId <<<"$release") && [[ $release =~ $id ]] || fail "The box named no release for the game in $game."
+  curl -fsS -o /dev/null -H 'content-type: application/json' --data "{\"release\":\"$release\",\"offered\":true}" \
+    "$api/lobby/offer" || fail "The box could not offer the game in $game in its lobby."
 done
 stop
 [ ${#games[@]} -eq 0 ] || echo "Games in the box's library: ${#games[@]}."

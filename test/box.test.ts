@@ -147,23 +147,34 @@ function outgoing() {
   };
   return { response: response as unknown as ServerResponse, sent };
 }
-function boxFor(t: Parameters<typeof tempDir>[0], capabilities = roomy, turns = 0): BoxContext {
+/** lobby: the LAN player listener's port, while it runs. */
+function boxFor(t: Parameters<typeof tempDir>[0], capabilities = roomy, turns = 0, lobby: () => number | undefined = () => 4174): BoxContext {
   const folder = tempDir(t, 'zirbel-box-');
   const settings = new BoxSettings(folder, capabilities);
   mkdirSync(join(folder, 'run'));
-  return { pairing: new Pairing(folder), settings, capabilities, port: () => 80, turns: () => turns,
+  return { pairing: new Pairing(folder), settings, capabilities, port: () => 80, turns: () => turns, lobbyPort: lobby,
     qr: async (text) => 'data:qr,' + encodeURIComponent(text),
     setupRequest: join(folder, 'run', 'request'), ownNetwork: join(folder, 'own-network.json'),
     harnesses: new BoxHarnesses(() => { throw new Error('No harness in this test'); }, () => settings.read().harnesses) };
 }
 const at = (path: string) => new URL(path, 'http://zirbel.local');
 
-test('the door lets the box itself in, sends an unpaired device to pairing, and lets a paired one in', async (t) => {
+test('the door lets the box itself in, sends an unpaired device to the lobby or pairing, and lets a paired one in', async (t) => {
   const box = boxFor(t);
   assert.deepEqual(await boxDoor(box, incoming('127.0.0.1', 'GET', '/'), outgoing().response, at('/')), { local: true });
+  // Its / goes to the lobby on the LAN player listener, by the name the device asked for; the editor's pages to pairing.
   const page = outgoing();
   assert.equal(await boxDoor(box, incoming('192.168.1.20', 'GET', '/'), page.response, at('/')), undefined);
-  assert.deepEqual([page.sent.status, page.sent.headers.location], [303, '/pair']);
+  assert.deepEqual([page.sent.status, page.sent.headers.location], [303, 'http://zirbel.local:4174/']);
+  const byAddress = outgoing();
+  await boxDoor(box, incoming('fd00::20', 'GET', '/', { host: '[fd00::1]' }), byAddress.response, new URL('http://[fd00::1]/'));
+  assert.equal(byAddress.sent.headers.location, 'http://[fd00::1]:4174/');
+  const editorPage = outgoing();
+  await boxDoor(box, incoming('192.168.1.20', 'GET', '/workspace.js'), editorPage.response, at('/workspace.js'));
+  assert.deepEqual([editorPage.sent.status, editorPage.sent.headers.location], [303, '/pair']);
+  const noLobby = outgoing();
+  await boxDoor(boxFor(t, roomy, 0, () => undefined), incoming('192.168.1.20', 'GET', '/'), noLobby.response, at('/'));
+  assert.equal(noLobby.sent.headers.location, '/pair');
   await assert.rejects(boxDoor(box, incoming('192.168.1.20', 'GET', '/api/projects'), outgoing().response, at('/api/projects')), /Pair this device/);
   await assert.rejects(boxDoor(box, incoming('8.8.8.8', 'GET', '/pair'), outgoing().response, at('/pair')), /only its own network/);
   await assert.rejects(boxDoor(box, incoming('192.168.1.20', 'POST', '/turn-mcp'), outgoing().response, at('/turn-mcp')), /does not exist/);
@@ -302,7 +313,7 @@ function send(port: number, host: string, method: string, path: string, payload?
 test('the built editor in box mode answers its .local name, pairs, and puts its player on the host it was reached by', async (t) => {
   const data = tempDir(t, 'zirbel-box-data-');
   const account = tempDir(t, 'zirbel-box-account-');
-  const { ready } = launch(t, [process.execPath, 'dist/server.mjs'], ['--box', '--data', data, '--port', '0'],
+  const { ready } = launch(t, [process.execPath, 'dist/server.mjs'], ['--box', '--data', data, '--port', '0', '--player-port', '0'],
     (line) => typeof line.editor === 'string' ? line : undefined, { ZIRBEL_ACCOUNT_DIR: account });
   const started = await ready;
   assert.equal(started.box, true);

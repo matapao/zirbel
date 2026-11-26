@@ -1,0 +1,22 @@
+{
+  "$id": "https://zirbel.app/contracts/lobby-join.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "maxLength": 16
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 24,
+      "x-zirbel-prepare": "trim"
+    }
+  },
+  "required": [
+    "code",
+    "name"
+  ],
+  "additionalProperties": false
+}

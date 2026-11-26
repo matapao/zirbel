@@ -158,6 +158,21 @@ test('chat creates and edits an original executable game with a live inspector',
   assert.equal(runtime.status(), 200);
   assert.deepEqual(await runtime.body(), await readFile('dist/web/player.js'));
 
+  // The release goes into the lobby from the Library's switch, and Share says so for its game.
+  await ui.choose('Library…');
+  const inLobby = page.getByRole('checkbox', { name: 'In the lobby' });
+  assert.equal(await inLobby.isChecked(), false);
+  await Promise.all([page.waitForResponse((response) => response.url().endsWith('/api/lobby/offer')), inLobby.check()]);
+  assert.deepEqual((await (await page.request.get(editor + '/api/lobby')).json()).offered, [releaseId]);
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  const share = page.getByRole('dialog', { name: /^Share / });
+  await share.getByText(/^In the lobby now: revision/).waitFor();
+  const offer = share.getByRole('checkbox', { name: 'Offer in the lobby' });
+  assert.equal(await offer.isChecked(), true);
+  await share.getByRole('checkbox', { name: 'Allow play' }).uncheck();
+  assert.equal(await offer.isDisabled(), true);
+  await page.keyboard.press('Escape');
   await ui.choose('Library…');
   await page.locator('.library-project').filter({ hasText: 'Prism counter' }).getByRole('button', { name: 'Remove…' }).click();
   await page.getByRole('button', { name: 'Remove project', exact: true }).click();

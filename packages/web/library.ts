@@ -7,7 +7,12 @@ import type { ProjectCard } from './state.ts';
 export type Room = {
   id: string; manifest: Manifest; development: boolean; link: string; localLink: string;
   qr: string | null; lan: boolean; status: string;
+  /** A session's code, which players join it by in the lobby. */
+  code?: string;
 };
+
+/** The releases the lobby offers, by id. */
+export const lobbyOffers = async () => (await api<{ offered: string[] }>('lobby')).offered;
 
 type LibraryProjects = {
   active(): string | undefined;
@@ -38,11 +43,28 @@ export function createLibrary(projects: LibraryProjects) {
       item.append(details, controls);
       body.append(item);
     }
-    const releases = await api<Manifest[]>('releases');
+    const [releases, offered] = await Promise.all([api<Manifest[]>('releases'), lobbyOffers()]);
     if (releases.length) body.append(el('h3', 'Releases'));
+    // Offering a release in the lobby takes its game's other release out, so every switch follows the answer.
+    const switches = new Map<string, HTMLInputElement>();
+    const follow = (list: string[]) => { for (const [id, input] of switches) input.checked = list.includes(id); };
     for (const release of releases) {
       const item = el('div', undefined, 'item');
       const controls = el('div', undefined, 'row');
+      if (release.permissions.play) {
+        const label = el('label', undefined, 'lobby-switch');
+        const input = el('input');
+        input.type = 'checkbox'; input.checked = offered.includes(release.releaseId);
+        switches.set(release.releaseId, input);
+        input.addEventListener('change', () => {
+          input.disabled = true;
+          void api<{ offered: string[] }>('lobby/offer', { release: release.releaseId, offered: input.checked })
+            .then(({ offered: list }) => follow(list), (error: Error) => { input.checked = !input.checked; inform(error.message, true); })
+            .finally(() => { input.disabled = false; });
+        });
+        label.append(input, 'In the lobby');
+        controls.append(label);
+      }
       if (release.permissions.play) controls.append(action('Play', () => openGame('releases/' + release.releaseId + '/play', {})));
       if (release.permissions.play && release.simulation) controls.append(action('Host on LAN', async () => {
         const room = await api<Room>('rooms', { releaseId: release.releaseId, lan: true });
@@ -157,7 +179,13 @@ export function roomCard(room: Room, refresh: () => Promise<void>) {
   const invite = el('input', undefined, 'invite'); invite.value = room.link; invite.readOnly = true;
   invite.setAttribute('aria-label','Guest invitation');
   card.append(el('strong', (room.development ? 'Development room' : 'Release room') + ' · ' + room.status),
-    el('small','Revision ' + room.manifest.sourceRevision.slice(0, 8)), invite);
+    el('small','Revision ' + room.manifest.sourceRevision.slice(0, 8)));
+  if (room.code) {
+    const code = el('p', undefined, 'room-code');
+    code.append(el('span', 'Code in the lobby'), el('strong', room.code));
+    card.append(code);
+  }
+  card.append(invite);
   const controls = el('div', undefined, 'row');
   controls.append(action('Copy link', async () => {
     try { await navigator.clipboard.writeText(room.link); inform('Invitation copied.'); }

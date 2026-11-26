@@ -1,0 +1,19 @@
+{
+  "$id": "https://zirbel.app/contracts/lobby-offer.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "release": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "offered": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "release",
+    "offered"
+  ],
+  "additionalProperties": false
+}

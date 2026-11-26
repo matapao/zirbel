@@ -87,3 +87,19 @@ export function netClient(webRoot: string): RuntimeEntry {
   }
   return runtimeEntry('zirbel-net.js', body);
 }
+
+/** The lobby's page and the files it loads (public/lobby.html, packages/web/lobby.ts), served on every player listener
+ *  at / and beside it. Like zirbel-net's client they are the host's own, not a release's. */
+const LOBBY_FILES = ['lobby.html', 'lobby.js', 'lobby.css'] as const;
+export type LobbyFiles = ReadonlyMap<string, RuntimeEntry>;
+export function lobbyFiles(webRoot: string): LobbyFiles {
+  return new Map(LOBBY_FILES.map((name) => {
+    let body;
+    try {
+      body = readFileSync(join(webRoot, name));
+    } catch {
+      throw new Error('The player runtime is missing ' + name + '; run `pnpm build`.');
+    }
+    return [name, runtimeEntry(name, body)];
+  }));
+}

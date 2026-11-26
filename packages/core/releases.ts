@@ -27,6 +27,9 @@ export class Releases {
     this.files = Object.freeze(Object.fromEntries([...this.runtime].map(([name, bytes]) => [name, bytes.toString('base64')])));
   }
 
+  /** The data folder the releases are kept in. */
+  get root() { return this.projects.root; }
+
   private path(releaseId: string) { return join(this.projects.root, 'releases', safeId(releaseId) + '.json'); }
 
   private save(release: Release) {

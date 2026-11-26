@@ -1,7 +1,7 @@
 // A box (--box) on both hosts: `node dist/server.mjs --box` and the Go host's --box. Each runs one scripted session,
 // from the box itself (loopback) and from this computer's own network address, and their normalized answers must
 // match: the door, the pairing page and its codes and claim, the paired devices, the switches, the setup flag, the
-// box's own Wi-Fi and external MCP access. What the hosts differ in by design is compared by its form only: harnesses
+// box's own Wi-Fi, external MCP access, and the lobby a device that isn't paired is sent to. What the hosts differ in by design is compared by its form only: harnesses
 // run in the Node editor alone, and only it draws a QR code, for a pairing link or for joining the box's own Wi-Fi.
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -25,7 +25,8 @@ async function startBox(t: TestContext, command: string[]) {
   mkdirSync(join(root, 'run'));
   const wake = join(root, 'run', 'request');
   const own = join(root, 'own-network.json');
-  const { ready } = launch(t, command, ['--data', join(root, 'data'), '--port', '0', '--box'],
+  // Its LAN player listener, which a box runs from start-up, on any free port.
+  const { ready } = launch(t, command, ['--data', join(root, 'data'), '--port', '0', '--player-port', '0', '--box'],
     (line) => typeof line.editor === 'string' ? line.editor : undefined,
     { ZIRBEL_ACCOUNT_DIR: account, ZIRBEL_SETUP_REQUEST: wake, ZIRBEL_OWN_NETWORK: own });
   return { editor: await ready, wake, own, network: join(root, 'run', 'network') };
@@ -83,7 +84,7 @@ function normalizer() {
         .sort().map((field) => [field, walk((value as Record<string, unknown>)[field], field)]));
     return value;
   };
-  return (step: Step) => ({ status: step.status, location: step.location ?? null, cookie: step.cookie ? text(step.cookie) : null,
+  return (step: Step) => ({ status: step.status, location: step.location ? text(step.location) : null, cookie: step.cookie ? text(step.cookie) : null,
     headers: step.headers ?? null, ...(step.status >= 300 ? {} : { body: walk(step.body) }) });
 }
 
@@ -134,7 +135,14 @@ async function session({ editor: base, wake, own, network }: Started) {
   // From a device on the box's network.
   const device = client(base.replace('127.0.0.1', lan));
   await record(device('GET', '/api/projects'));
-  await record(device('GET', '/'));
+  // Playing needs no pairing: the box's / sends a device to the lobby on its LAN player listener, by the name it asked
+  // for, and the lobby there links to pairing for those who own the box.
+  const door = await record(device('GET', '/'));
+  assert.match(door.location ?? '', new RegExp('^http://' + lan.replaceAll('.', '\\.') + ':\\d+/$'));
+  const lobby = client(door.location!.slice(0, -1));
+  await record(lobby('GET', '/'));
+  await record(lobby('GET', '/lobby/state'));
+  await record(device('GET', '/workspace.js'));
   await record(device('GET', '/api/box/status'));
   await record(device('POST', '/pair', { form: { claim: '1' } }));
   await record(device('POST', '/pair', { form: { claim: '1' }, origin: true }));

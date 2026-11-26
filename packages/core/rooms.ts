@@ -3,6 +3,7 @@ import { legacyScene, PROTOCOL_VERSION, type ClientMessage, type Release, type S
 import { mosslight, tessellate, type Simulation } from '../games/simulations.ts';
 import { boundedJson } from '../sdk/game.ts';
 import type { z } from 'zod';
+import { newCode } from './lobby.ts';
 import { newId, ZirbelError } from './projects.ts';
 import { Relay } from './relay.ts';
 
@@ -12,6 +13,8 @@ const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(
 const GRACE = 90_000;
 const INVITE = 4 * 60 * 60 * 1000;
 const IDLE = 20 * 60 * 1000;
+/** How long a seat the lobby holds for someone waits for them: they may read out the code before they go in. */
+const LOBBY_TICKET = 5 * 60 * 1000;
 
 export type Peer = {
   send(message: ServerMessage): void;
@@ -49,6 +52,9 @@ export class Room {
   readonly invite = secret();
   readonly documentKey = secret();
   readonly inviteExpires = Date.now() + INVITE;
+  readonly started = Date.now();
+  /** The lobby's name for this room: for its list alone, never enough to join. */
+  readonly session = randomBytes(6).toString('hex');
   readonly simulation: Simulation | null;
   /** A net-v2 room's relay, at /mp: the game's own netcode carries its play. */
   readonly relay: Relay | null;
@@ -58,9 +64,10 @@ export class Room {
   private activity = Date.now();
   private closed = false;
 
+  /** code: the short code a session is joined by, from the lobby; startedBy: the address that started it there. */
   constructor(
     readonly release: Release, readonly solo: boolean, readonly access: 'local' | 'lan',
-    readonly development = false,
+    readonly development = false, readonly code: string | null = null, readonly startedBy?: string,
   ) {
     const kind = release.manifest.simulation;
     this.simulation = kind === 'mosslight-v1' ? mosslight(legacyScene(release)) :
@@ -73,8 +80,12 @@ export class Room {
     return {
       id: this.id, manifest: this.release.manifest, solo: this.solo, development: this.development, access: this.access, seats,
       status: this.closed ? 'closed' : seats.some((seat) => seat.connected) ? 'active' : 'waiting',
+      ...(this.code ? { code: this.code } : {}),
     };
   }
+
+  /** The player seats taken now, by players connected or still within their grace. */
+  get players() { return this.used('player'); }
 
   mayView(credential: string) {
     this.prune();
@@ -86,13 +97,28 @@ export class Room {
     if (this.closed) throw new ZirbelError(404, 'This room has closed.');
     if (!same(invite, this.invite) || Date.now() >= this.inviteExpires) throw new ZirbelError(403, 'This invitation is invalid or expired.');
     if (this.solo && role !== 'player') throw new ZirbelError(403, 'This is a local playtest.');
+    return this.hold(name, role, 30_000);
+  }
+
+  /** A seat held for someone the lobby lets in, without the invitation (which may have expired): the role asked for,
+   *  or a player's while one is free and else a spectator's. Its ticket is a one-time credential. */
+  seat(name: string, role?: SeatInfo['role']) {
+    if (this.closed) throw new ZirbelError(404, 'This room has closed.');
+    this.prune();
+    return this.hold(name, role ?? (this.solo || this.free('player') ? 'player' : 'spectator'), LOBBY_TICKET);
+  }
+
+  private hold(name: string, role: SeatInfo['role'], lasts: number) {
     const ticket = secret();
     this.prune();
-    if (this.used(role) + [...this.pending.values()].filter((item) => item.role === role).length >= this.capacity(role))
-      throw new ZirbelError(409, role === 'player' ? 'All player seats are reserved.' : 'The spectator seats are full.');
-    this.pending.set(ticket, { name, role, expires: Date.now() + 30_000 });
+    if (!this.free(role)) throw new ZirbelError(409, role === 'player' ? 'All player seats are reserved.' : 'The spectator seats are full.');
+    this.pending.set(ticket, { name, role, expires: Date.now() + lasts });
     this.activity = Date.now();
     return ticket;
+  }
+
+  private free(role: SeatInfo['role']) {
+    return this.used(role) + [...this.pending.values()].filter((item) => item.role === role).length < this.capacity(role);
   }
 
   private capacity(role: SeatInfo['role']) { return role === 'spectator' ? 4 : this.solo ? 1 : this.release.manifest.players.max; }
@@ -200,9 +226,10 @@ export class Room {
   step() {
     this.prune();
     // A shared room stays open as long as its invitation is valid, so a link
-    // printed by a headless host still works after a quiet spell.
+    // printed by a headless host still works after a quiet spell. One from the lobby is joined by its code instead.
     const now = Date.now();
-    if (!this.connected && now - this.activity > IDLE && (this.solo || now >= this.inviteExpires)) return false;
+    if (!this.connected && now - this.activity > IDLE && (this.solo || this.startedBy !== undefined || now >= this.inviteExpires))
+      return false;
     if (this.simulation?.tick(0.05)) this.broadcast();
     return !this.closed;
   }
@@ -225,8 +252,11 @@ export class Rooms {
     for (const room of this.rooms.values()) if (!room.step()) this.close(room.id);
   }, 50).unref();
 
-  create(release: Release, solo: boolean, access: 'local' | 'lan' = 'local', development = false) {
-    if (!solo && !release.manifest.permissions.play)
+  /** startedBy: the address that started the room from the lobby. A multiplayer room the owner shares on the LAN, or
+   *  anyone starts from the lobby, gets a code. */
+  create(release: Release, solo: boolean, access: 'local' | 'lan' = 'local', development = false, startedBy?: string) {
+    const lobby = startedBy !== undefined;
+    if ((!solo || lobby) && !release.manifest.permissions.play)
       throw new ZirbelError(422, 'The creator has disabled play for this release.');
     if (this.rooms.size >= 24) {
       // Solo playtests are not listed in Share, so make way by closing the oldest one nobody is playing.
@@ -234,10 +264,12 @@ export class Rooms {
       if (!idle) throw new ZirbelError(429, 'Close an existing room before starting another.');
       this.close(idle.id);
     }
-    if (solo && access === 'lan') throw new ZirbelError(400, 'Solo playtests use the local player service.');
+    if (solo && access === 'lan' && !lobby) throw new ZirbelError(400, 'Solo playtests use the local player service.');
+    const code = !solo && release.manifest.simulation !== null && (lobby || access === 'lan')
+      ? newCode((taken) => [...this.rooms.values()].some((room) => room.code === taken)) : null;
     // The player serves runtime files from the host's own verified build, so a room
     // does not keep the release's embedded copy (about 3 MB per room).
-    const room = new Room({ ...release, files: {} }, solo, access, development);
+    const room = new Room({ ...release, files: {} }, solo, access, development, code, startedBy);
     this.rooms.set(room.id, room);
     return room;
   }
@@ -252,6 +284,9 @@ export class Rooms {
   find(id: string) { return this.rooms.get(id); }
 
   list() { return [...this.rooms.values()].filter((room) => !room.solo).map((room) => room.summary()); }
+
+  /** Every open room, oldest first. */
+  open() { return [...this.rooms.values()]; }
 
   close(id: string) {
     this.rooms.get(id)?.close();

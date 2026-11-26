@@ -261,6 +261,10 @@ dialog::backdrop{background:#090c0cc9;backdrop-filter:blur(3px)}
 .library-project-title{display:grid;gap:.2rem;overflow-wrap:anywhere}
 .library-project-title small{color:var(--quiet)}
 .invite{width:100%;font-family:ui-monospace,monospace;font-size:.8rem}
+.room-code{display:flex;align-items:baseline;gap:.7rem;margin:.2rem 0}
+.room-code strong{font-size:2rem;letter-spacing:.16em;font-family:ui-monospace,monospace;color:var(--accent)}
+.lobby-switch{display:inline-flex;align-items:center;gap:.35rem}
+.lobby-status{color:var(--quiet)}
 .qr{display:block;width:min(45vw,9rem);background:#fff;border-radius:.45rem}
 .toast{position:fixed;right:1rem;bottom:1rem;max-width:min(29rem,90vw);z-index:30;border:1px solid var(--line);border-radius:.65rem;padding:.6rem .8rem;background:var(--surface);box-shadow:0 10px 50px #0009}
 .toast.failed{color:#ffc7b8;border-color:#9f6257}

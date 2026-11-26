@@ -3,7 +3,7 @@
 // sandboxed frame and WebSocket. Run with `pnpm test:browser`.
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -57,6 +57,53 @@ for (const host of hosts) {
     }
     assert.deepEqual(failures, []);
     assert.deepEqual(await accessibility(pages[0]!), []);
+  });
+}
+
+// The lobby on a phone-sized page: one person starts a session of the game the owner offers (lobby.json, as the editor
+// keeps it) and reads its code out; another types it in, in lower case with a dash, and both play in one room.
+for (const host of hosts) {
+  test(host.name + ' host: one browser starts a session in the lobby and another joins it with its code', async (t) => {
+    const root = tempDir(t, 'zirbel-host-lobby-');
+    const projects = new Projects(join(root, 'source'));
+    const release = new Releases(projects, 'dist/web').package(projects.createGame('Lobby game', { html: game, maxPlayers: 2 }).id,
+      'main', rights, false);
+    const file = join(root, 'release.json');
+    writeFileSync(file, JSON.stringify(release));
+    mkdirSync(join(root, 'data'));
+    writeFileSync(join(root, 'data', 'lobby.json'), JSON.stringify({ version: 1, offered: [release.manifest.releaseId] }));
+    const player = await launch(t, host.command, ['--host-only', '--player-port', '0', '--data', join(root, 'data'), '--import', file],
+      (line) => typeof line.player === 'string' ? line.player : undefined).ready;
+
+    const browser = await chromium.launch();
+    t.after(() => browser.close());
+    const [first, second] = await Promise.all([1, 2].map(async () =>
+      (await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true })).newPage())) as [Page, Page];
+    const failures: string[] = [];
+    for (const page of [first, second]) {
+      page.on('pageerror', (error) => failures.push(error.message));
+      page.on('console', (message) => { if (/Content Security Policy|Refused to/.test(message.text())) failures.push(message.text()); });
+    }
+    await first.goto(player + '/');
+    await first.getByLabel('Your name').fill('Ada');
+    await first.getByRole('button', { name: 'Start session of Lobby game' }).click();
+    await first.getByRole('heading', { name: 'Your session is ready' }).waitFor();
+    const code = await first.locator('#code').textContent() ?? '';
+    assert.match(code, /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/);
+    assert.deepEqual(await accessibility(first), []);
+    await first.getByRole('link', { name: 'Go in' }).click();
+
+    await second.goto(player + '/');
+    await second.locator('#sessions li').filter({ hasText: 'Lobby game' }).waitFor();
+    assert.equal(await second.locator('main').textContent().then((text) => text?.includes(code)), false);
+    assert.deepEqual(await accessibility(second), []);
+    await second.getByLabel('Your name').fill('Bo');
+    await second.getByLabel('Session code').fill(code.toLowerCase().slice(0, 2) + '-' + code.toLowerCase().slice(2));
+    await second.getByRole('button', { name: 'Join', exact: true }).click();
+    for (const page of [first, second])
+      await page.frameLocator('iframe').locator('#out').filter({ hasText: '2 players' }).waitFor({ timeout: 15_000 });
+    assert.equal(await second.locator('#badge').textContent(), 'Code ' + code);
+    assert.deepEqual(failures, []);
   });
 }
 

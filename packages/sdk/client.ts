@@ -2,6 +2,8 @@ import { PROTOCOL_VERSION, ServerMessage, type Manifest, type Scene, type SeatIn
 
 export type RoomInfo = {
   id: string; manifest: Manifest; solo: boolean; development: boolean; gameUrl?: string; registerObjects?: boolean; scene?: Scene; seats: SeatInfo[];
+  /** A session's code, which others join it by from the lobby. */
+  code?: string;
 };
 
 export class RoomClient {
