@@ -73,7 +73,7 @@ test('a box no device has paired with may be claimed once, and stays claimed aft
   pairing.revoke(pairing.session('zirbel_session=' + first)!.id);
   assert.equal(pairing.count, 0);
   assert.equal(new Pairing(folder).claimable, false);
-  // A box paired first through a code (its Bluetooth or hotspot setup) is claimed too.
+  // A box paired first through a code (from its setup page) is claimed too.
   const other = new Pairing(tempDir(t, 'zirbel-box-'));
   other.redeem(other.createCode().code, '127.0.0.1');
   assert.equal(other.claimable, false);

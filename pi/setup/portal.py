@@ -1,11 +1,11 @@
-"""The setup hotspot's page, for a phone without Bluetooth setup: the networks the box sees, a password, and the pairing
+"""The setup hotspot's page, which is how a box comes online: the networks the box sees, a password, and the pairing
 code to open once the phone is back on that network; or, beside them, the box's own Wi-Fi (own_network.py), with its
 name and password to join it by.
 
-A phone that joins the open "Zirbel setup" network finds this page by its captive-portal check: every name resolves to
-the box, and every request to port 80 reaches this server, so any address shows the page. It is plain HTML with no
-outside resources. Network names come from whoever is near, so every one is escaped; the form names a network by its
-SSID's bytes in hex, so any SSID comes back exactly.
+A phone or computer that joins the open "Zirbel setup XXXX" network (XXXX the end of the box's Wi-Fi address) finds
+this page by its captive-portal check: every name resolves to the box, and every request to port 80 reaches this
+server, so any address shows the page. It is plain HTML with no outside resources. Network names come from whoever is
+near, so every one is escaped; the form names a network by its SSID's bytes in hex, so any SSID comes back exactly.
 """
 
 from __future__ import annotations
@@ -19,10 +19,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 from urllib.parse import parse_qs
 
-from improv import PASSWORD_BYTES, SSID_BYTES, Network
 from own_network import Credentials
 
 FORM_BYTES = 4096
+SSID_BYTES = 32
+PASSWORD_BYTES = 64
 PORT = 8081
 # The box's address on its own Wi-Fi (network.py), which every device there can open.
 OWN_ADDRESS = "10.42.0.1"
@@ -35,6 +36,20 @@ STYLE = (
     "border:0;background:#7bc8a4;color:#102018;margin-top:1em}.error{color:#ffb4a8}.code{font-size:1.6em;"
     "letter-spacing:.08em;font-weight:600}small{color:#b8bdb9}a{color:#9fd8bd}"
 )
+
+
+@dataclass
+class Network:
+    """A Wi-Fi network the box sees (network.py): its SSID's bytes, its signal in dBm, and its security: WPA3, WPA2,
+    WPA, WPA2 EAP, WEP or NO, joined by / when several."""
+
+    ssid: bytes
+    rssi: int
+    auth: str
+
+    @property
+    def name(self) -> str:
+        return self.ssid.decode("utf-8", errors="replace")
 
 
 class FormError(ValueError):
@@ -86,10 +101,8 @@ def _hex_key(password: bytes) -> bool:
     return len(password) == PASSWORD_BYTES and all(chr(byte) in "0123456789abcdefABCDEF" for byte in password)
 
 
-def at(url: str, address: str | None) -> str:
-    """The link at the box's own address on the network, which every device can open, where the box knows it."""
-    if not address:
-        return url
+def at(url: str, address: str) -> str:
+    """The link at the box's own address on the network, which every device can open."""
     parts = urllib.parse.urlsplit(url)
     host = f"[{address}]" if ":" in address else address
     return urllib.parse.urlunsplit(parts._replace(netloc=host + (f":{parts.port}" if parts.port else "")))
@@ -129,7 +142,8 @@ def choose_page(box: str, networks: list[Network], error: str = "", own: bool = 
     )
     return _page(
         "Set up " + box,
-        f"<h1>Set up {html.escape(box)}</h1>{failed}<p>Choose the Wi-Fi network the box should join.</p>"
+        f"<h1>Set up {html.escape(box)}</h1>{failed}<p>Choose the Wi-Fi network the box should join"
+        f"{', or keep the box on its own Wi-Fi (below)' if own else ''}.</p>"
         f"<form method=post action=/join>{''.join(rows)}<label>Password"
         "<input type=password name=password autocomplete=off></label>"
         f"<button type=submit>Join</button></form>{offer}",

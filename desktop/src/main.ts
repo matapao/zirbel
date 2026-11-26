@@ -2,9 +2,9 @@
 // window of its own, or opens the editor that already owns the data folder and leaves that one running. The editor's
 // window stays on the editor's origin; playtests and games open in child windows on loopback player origins; any other
 // web address opens in the system browser, and other schemes are refused (routes.ts). Every window is sandboxed, with
-// context isolation, no Node integration and no preload, and pages get no permission but fullscreen; only the editor's
-// own window may choose a Zirbel box over Bluetooth to set up, and nothing pairs (bluetooth.ts). Quitting stops the
-// editor this app started, after asking when a harness turn is running; an editor never outlives the app (editor.ts).
+// context isolation, no Node integration, no preload and no Web Bluetooth, and pages get no permission but fullscreen.
+// Quitting stops the editor this app started, after asking when a harness turn is running; an editor never outlives the
+// app (editor.ts).
 import path from 'node:path';
 import {
   app,
@@ -15,7 +15,6 @@ import {
   type BrowserWindowConstructorOptions,
   type WebContents,
 } from 'electron';
-import { chooseBluetooth } from './bluetooth.js';
 import { mayQuit, startEditor, type Editor } from './editor.js';
 import { mayNavigate, mayOpen, place } from './routes.js';
 import { answerView } from './view-game.js';
@@ -35,7 +34,13 @@ const windowOptions: BrowserWindowConstructorOptions = {
   height: 900,
   backgroundColor: '#141717',
   autoHideMenuBar: true,
-  webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false },
+  webPreferences: {
+    sandbox: true,
+    contextIsolation: true,
+    nodeIntegration: false,
+    webviewTag: false,
+    disableBlinkFeatures: 'WebBluetooth',
+  },
 };
 
 let starting: Promise<Editor> | undefined;
@@ -93,20 +98,6 @@ function guard(contents: WebContents) {
   contents.on('will-attach-webview', (event) => event.preventDefault());
 }
 
-/** The chooser for a Zirbel box to set up, over the window that asked. */
-async function chooseBox(contents: WebContents, buttons: string[], cancelId: number) {
-  const window = BrowserWindow.fromWebContents(contents);
-  const options = {
-    type: 'question' as const,
-    buttons,
-    cancelId,
-    defaultId: 0,
-    message: 'Choose the Zirbel box to set up',
-    detail: 'These boxes nearby are waiting for Wi-Fi.',
-  };
-  return (window ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options)).response;
-}
-
 /** Asks before quitting while a turn runs: the turn is interrupted, and the thread offers to continue it. */
 async function confirmQuit() {
   const options = {
@@ -126,8 +117,6 @@ async function start() {
   );
   session.defaultSession.setPermissionCheckHandler((_contents, permission) => PERMITTED.has(permission));
   session.defaultSession.setDevicePermissionHandler(() => false);
-  // Setting up a box over Bluetooth needs no pairing, so a request to pair is refused rather than asked about.
-  session.defaultSession.setBluetoothPairingHandler((_details, answer) => answer({ confirmed: false }));
   starting = startEditor({
     runtime: process.execPath,
     server: SERVER,
@@ -149,10 +138,7 @@ async function start() {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('web-contents-created', (_event, contents) => {
-    guard(contents);
-    chooseBluetooth(contents, (page) => editorPages.has(page), chooseBox);
-  });
+  app.on('web-contents-created', (_event, contents) => guard(contents));
   app.on('second-instance', showEditor);
   app.on('activate', showEditor);
   app.on('window-all-closed', () => {

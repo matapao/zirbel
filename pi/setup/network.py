@@ -15,7 +15,7 @@ from pathlib import Path
 
 import dbus
 
-from improv import Network
+from portal import Network
 
 NM = "org.freedesktop.NetworkManager"
 NM_PATH = "/org/freedesktop/NetworkManager"
@@ -111,7 +111,7 @@ def wildcard_dns(on: bool) -> None:
 
 
 def auth_of(flags: int, wpa: int, rsn: int) -> str:
-    """An access point's security as Improv names it: WPA3, WPA2, WPA, WPA2 EAP, WEP or NO, joined by / when several."""
+    """An access point's security as the setup page names it: WPA3, WPA2, WPA, WPA2 EAP, WEP or NO, joined by /."""
     kinds = []
     if rsn & KEY_8021X or wpa & KEY_8021X:
         return "WPA2 EAP"
@@ -264,7 +264,7 @@ class NetworkManager:
                 auth = auth_of(*(int(self._get(path, ACCESS_POINT, name)) for name in ("Flags", "WpaFlags", "RsnFlags")))
             except dbus.DBusException:
                 continue
-            # NetworkManager gives a percentage; Improv wants dBm, which this approximates.
+            # NetworkManager gives a percentage; the setup page shows dBm, which this approximates.
             network = Network(ssid=ssid, rssi=strength // 2 - 100, auth=auth)
             if ssid and (ssid not in found or found[ssid].rssi < network.rssi):
                 found[ssid] = network
@@ -434,18 +434,6 @@ def reaches_out(attempts: int = 3) -> bool:
         except OSError:
             time.sleep(2)
     return False
-
-
-def local_address() -> str | None:
-    """The box's IPv4 address on the network it reaches the rest of the world by (no packet goes out to learn it)."""
-    import socket
-
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-        try:
-            probe.connect(("192.0.2.1", 9))  # TEST-NET-1: only a route is looked up
-            return probe.getsockname()[0]
-        except OSError:
-            return None
 
 
 def firewall(iface: str | None, port: int = 8081) -> None:

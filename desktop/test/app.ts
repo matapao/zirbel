@@ -47,7 +47,7 @@ test('the window opens the editor, which the app started from the built dist/ on
   assert.equal(command, `${ELECTRON} ${SERVER} --port 0`, 'on its own program, as Node');
 });
 
-test("the editor's page has no Node (require and process are undefined), no <webview>, and a sandboxed renderer", async () => {
+test("the editor's page has no Node (require and process are undefined), no Web Bluetooth, no <webview>, and a sandboxed renderer", async () => {
   await checkHardening(app, page);
 });
 
