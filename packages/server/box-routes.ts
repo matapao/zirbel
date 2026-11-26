@@ -1,7 +1,8 @@
 // The box's door and its own routes (box mode, --box). The editor listens on every interface, and a request from the
 // box itself behaves as without box mode. A request from elsewhere must come from the box's own network, and then
-// needs a paired device's session for everything but /pair, where a device pairs with a one-time code (or claims a
-// box no device has paired with yet), and /mcp while external MCP access is on, which checks its own project grant.
+// needs a paired device's session (an owner's) or the session of an editor of one game for everything but /pair, where
+// a device pairs with a one-time code (or claims a box no device has paired with yet), /edit, where a device redeems a
+// game's edit code (box-edit-routes.ts), and /mcp while external MCP access is on, which checks its own project grant.
 // A device that isn't paired and opens the box's / goes to the lobby on its LAN player listener: playing needs no pairing.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BlockList } from 'node:net';
@@ -11,22 +12,29 @@ import { ZirbelError } from '../core/projects.ts';
 import { body, checkOrigin, failure, reply } from './http.ts';
 import { NO_OWN_NETWORK, networkWake, ownNetworkView, readOwnNetwork, wake } from './box-network.ts';
 import { normalizeCode, SESSION_COOKIE, type Pairing } from './box-pairing.ts';
+import { editRoute } from './box-edit-routes.ts';
+import { END_EDITOR, ENDED, editorToken, type Editors } from './box-editors.ts';
+import { escape, formBody, redirect, sendPage } from './box-page.ts';
 import { harnessesUnavailable, settingsChange, type BoxHarnesses, type BoxSettings, type Capabilities } from './box-settings.ts';
 
 export type BoxContext = {
-  pairing: Pairing; settings: BoxSettings; harnesses: BoxHarnesses; capabilities: Capabilities;
+  pairing: Pairing; editors: Editors; settings: BoxSettings; harnesses: BoxHarnesses; capabilities: Capabilities;
   /** The editor's port, the turns running now, and a link (or a Wi-Fi network to join) as a QR code. */
   port: () => number; turns: () => number; qr: (text: string) => Promise<string>;
   /** The LAN player listener's port, where the lobby is, while it runs. */
   lobbyPort: () => number | undefined;
+  /** The address other devices on the network reach the box by, chosen as the lobby's link is: host, the name a
+   *  device reached it by, where others can use it, else the player host or the box's first LAN address. */
+  sharedHost: (host: string) => string | undefined;
   /** The file that wakes the box's setup service (pi/setup) for its Wi-Fi setup: a systemd path unit starts the service
    *  when it appears. Beside it, the one for the box's own Wi-Fi (networkWake). */
   setupRequest: string;
   /** The box's own Wi-Fi's name and password, as the setup service keeps them (box-network.ts). */
   ownNetwork: string;
 };
-/** Who sent a request: the box itself, or a paired device by its id (none for a project grant's /mcp request). */
-export type Access = { local: boolean; device?: string };
+/** Who sent a request: the box itself, a paired device (an owner) by its id, or an editor of one game by its id and
+ *  its game's; none of them for a project grant's /mcp request. */
+export type Access = { local: boolean; device?: string; editor?: { id: string; game: string } };
 
 /** The box's name on its network: its host name, in mDNS's .local. */
 export function boxName() {
@@ -69,6 +77,7 @@ export async function boxDoor(box: BoxContext, request: IncomingMessage, respons
   const local = isLoopback(address);
   if (!local && !onBoxNetwork(address)) throw new ZirbelError(403, 'This box answers only its own network.');
   if (url.pathname === '/pair') { await pairRoute(box, request, response, url, address); return; }
+  if (url.pathname === '/edit') { await editRoute(box, request, response, url, address, local); return; }
   if (local) return { local: true };
   // A turn's own MCP server is for the harness on the box alone.
   if (url.pathname === '/turn-mcp') throw new ZirbelError(404, 'Route does not exist.');
@@ -78,11 +87,15 @@ export async function boxDoor(box: BoxContext, request: IncomingMessage, respons
   }
   const device = box.pairing.session(request.headers.cookie);
   if (device) return { local: false, device: device.id };
+  const editor = box.editors.session(request.headers.cookie);
+  if (editor) return { local: false, editor: { id: editor.id, game: editor.project } };
   if (request.method === 'GET' && !url.pathname.startsWith('/api/')) {
     const lobby = box.lobbyPort();
     redirect(response, url.pathname === '/' && lobby ? 'http://' + url.hostname + ':' + lobby + '/' : '/pair');
     return;
   }
+  // An editor whose session the owner ended, or whose game was removed.
+  if (editorToken(request.headers.cookie)) throw new ZirbelError(401, ENDED);
   throw new ZirbelError(401, 'Pair this device with the box first.');
 }
 
@@ -99,35 +112,21 @@ async function pairRoute(box: BoxContext, request: IncomingMessage, response: Se
   checkOrigin(request, true);
   let typed = '';
   try {
-    const form = pairForm.parse(await formBody(request));
+    const form = pairForm.parse(await formBody(request, 'pairing'));
     typed = form.code ?? '';
     const agent = request.headers['user-agent'];
     const token = form.claim ? box.pairing.claim(agent) : box.pairing.redeem(typed, address, agent);
-    response.setHeader('set-cookie', SESSION_COOKIE + '=' + token + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000');
+    const owner = SESSION_COOKIE + '=' + token + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000';
+    // A device is an owner or an editor, not both: an editor that pairs is an owner from now on.
+    const editing = editorToken(request.headers.cookie) !== undefined;
+    if (editing) box.editors.end(request.headers.cookie);
+    response.setHeader('set-cookie', editing ? [owner, END_EDITOR] : owner);
     redirect(response, '/');
   } catch (error) {
     const { status, message } = failure(error);
     page(response, status, box.pairing.claimable, normalizeCode(typed) ?? '', message);
   }
 }
-
-function redirect(response: ServerResponse, location: string) {
-  response.writeHead(303, { location, 'cache-control': 'no-store' });
-  response.end();
-}
-
-async function formBody(request: IncomingMessage) {
-  if (request.headers['content-type']?.split(';')[0] !== 'application/x-www-form-urlencoded')
-    throw new ZirbelError(415, 'Send the pairing form.');
-  let text = '';
-  for await (const chunk of request) {
-    text += (chunk as Buffer).toString('utf8');
-    if (text.length > 1024) throw new ZirbelError(413, 'The pairing form is too long.');
-  }
-  return Object.fromEntries(new URLSearchParams(text));
-}
-
-const escape = (text: string) => text.replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';');
 
 function page(response: ServerResponse, status: number, claimable: boolean, code: string, error?: string) {
   const claim = claimable ? `<form method="post"><input type="hidden" name="claim" value="1">
@@ -142,13 +141,7 @@ ${error ? `<p class="error" role="alert">${escape(error)}</p>` : ''}${claim}<for
 <label for="code">Pairing code, from a device already paired or the box's setup</label>
 <input id="code" name="code" autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX" value="${escape(code)}" required>
 <button>Pair this device</button></form></body></html>`;
-  response.writeHead(status, {
-    'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
-    // A form posted under no-referrer carries the origin "null": this page's own forms carry its origin.
-    'referrer-policy': 'same-origin',
-    'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-  });
-  response.end(html);
+  sendPage(response, status, html);
 }
 
 const setupInput = z.strictObject({ requested: z.boolean() });

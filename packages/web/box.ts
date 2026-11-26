@@ -14,7 +14,7 @@ const ROOMY_MB = 1536;
 
 type Settings = Pick<BoxHealth, 'harnesses' | 'externalMcp' | 'onboarded' | 'setupRequested' | 'ownNetwork'>;
 type Device = { id: string; label: string; createdAt: string; lastSeen: string; current: boolean };
-type Grant = { token: string; expires: number };
+export type Grant = { token: string; expires: number };
 /** The box's own Wi-Fi, for paired devices: none where the box can't make one. The native host draws no QR code. */
 type OwnWifi = { ownNetwork: boolean; network: { name: string; password: string; qr: string | null } | null };
 /** The box's address on its own Wi-Fi (pi/setup/network.py). */
@@ -85,14 +85,19 @@ function agentAccess(body: HTMLElement) {
     event.preventDefault();
     attempt(async () => {
       const grant = await api<Grant>('projects/' + game.value + '/grants', { write: write.checked, hours: 168 });
-      result.replaceChildren(el('h3', 'Claude Code'),
-        copyable('claude mcp add --transport http zirbel ' + endpoint + ' --header "Authorization: Bearer ' + grant.token + '"', 'Claude Code setup'),
-        el('h3', 'Codex'), copyable('export ZIRBEL_MCP_TOKEN=' + grant.token, 'Codex token'),
-        copyable('codex mcp add zirbel --url ' + endpoint + ' --bearer-token-env-var ZIRBEL_MCP_TOKEN', 'Codex setup'),
-        el('p', 'This access ends ' + new Date(grant.expires).toLocaleString() + '.'));
+      result.replaceChildren(...grantSetup(endpoint, grant));
     }, create);
   });
   body.append(form, result);
+}
+
+/** The lines that add a game's grant to Claude Code and to Codex, and when it ends. */
+export function grantSetup(endpoint: string, grant: Grant) {
+  return [el('h3', 'Claude Code'),
+    copyable('claude mcp add --transport http zirbel ' + endpoint + ' --header "Authorization: Bearer ' + grant.token + '"', 'Claude Code setup'),
+    el('h3', 'Codex'), copyable('export ZIRBEL_MCP_TOKEN=' + grant.token, 'Codex token'),
+    copyable('codex mcp add zirbel --url ' + endpoint + ' --bearer-token-env-var ZIRBEL_MCP_TOKEN', 'Codex setup'),
+    el('p', 'This access ends ' + new Date(grant.expires).toLocaleString() + '.')];
 }
 
 function copyable(text: string, label: string) {

@@ -1,7 +1,7 @@
 // Split from workspace.ts; shares state through ws in state.ts.
 import { action, api, attempt, dialog, el, formValue, inform, openDialog, option } from './editor-ui.ts';
 import { current, library, loadProject, openProject, refreshProject, route, scope } from './workspace.ts';
-import { Preview, ws } from './state.ts';
+import { editorOf, Preview, ws } from './state.ts';
 import { type Manifest, type Project } from '../sdk/contracts.ts';
 import { templates } from '../games/templates.ts';
 import { lobbyOffers, roomCard, type Room } from './library.ts';
@@ -90,6 +90,8 @@ export async function sharingDialog() {
   });
   body.append(dev);
   for (const room of active) body.append(roomCard(room, sharingDialog));
+  // An editor of one game on a box shares its development rooms; its releases are the box's owners' to publish.
+  if (editorOf()) return;
 
   const form = el('form');
   const options = el('fieldset'); options.append(el('legend','Publish a release'));

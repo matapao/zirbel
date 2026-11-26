@@ -6,7 +6,8 @@ import { qrPicture } from './qr.ts';
 
 type Game = { release: string; title: string; players: { min: number; max: number }; multiplayer: boolean };
 type Session = { id: string; title: string; players: number; max: number; started: string };
-type State = { games: Game[]; sessions: Session[]; pair: string | null };
+/** pair and edit: on a box, its pages for those who own it and for those with a game's edit code. */
+type State = { games: Game[]; sessions: Session[]; pair: string | null; edit: string | null };
 
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const nameField = byId<HTMLInputElement>('name');
@@ -102,9 +103,11 @@ function render(state: State) {
     return item;
   }));
   byId('no-sessions').hidden = state.sessions.length > 0;
-  const pair = byId<HTMLAnchorElement>('pair');
-  pair.hidden = !state.pair;
-  if (state.pair) pair.href = state.pair;
+  for (const [id, address] of [['pair', state.pair], ['edit', state.edit]] as const) {
+    const anchor = byId<HTMLAnchorElement>(id);
+    anchor.hidden = !address;
+    if (address) anchor.href = address;
+  }
 }
 
 async function refresh() {

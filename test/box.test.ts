@@ -1,20 +1,19 @@
 // A Zirbel box (box mode): pairing with one-time codes, claiming a box no device has paired with, the paired devices'
 // sessions, the box's switches and what is off not running, its own Wi-Fi, the network it answers, and its door.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { request, type IncomingMessage, type ServerResponse } from 'node:http';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { request } from 'node:http';
 import { dirname, join } from 'node:path';
-import { Readable } from 'node:stream';
 import { test } from 'node:test';
 import { networkWake, readOwnNetwork, wifiJoinText } from '../packages/server/box-network.ts';
 import { CODE_MS, deviceLabel, normalizeCode, Pairing, sessionToken, WRONG_CODES } from '../packages/server/box-pairing.ts';
-import { boxDoor, boxHosts, boxName, boxRequest, isLoopback, onBoxNetwork, type BoxContext } from '../packages/server/box-routes.ts';
+import { boxDoor, boxHosts, boxName, boxRequest, isLoopback, onBoxNetwork } from '../packages/server/box-routes.ts';
 import { BoxHarnesses, BoxSettings, harnessesUnavailable, type Capabilities } from '../packages/server/box-settings.ts';
 import type { Processors } from '../packages/server/processors.ts';
+import { at, boxFor, incoming, outgoing, roomy } from './box-fixtures.ts';
 import { launch, tempDir } from './helpers.ts';
 
 const CODE = /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
-const roomy: Capabilities = { arch: 'arm64', memoryMB: 8064, model: 'Raspberry Pi 5 Model B Rev 1.0', harnesses: true };
 
 test('a pairing code is eight unambiguous characters, typed in any case, and pairs one device once', (t) => {
   const pairing = new Pairing(tempDir(t, 'zirbel-box-'));
@@ -127,37 +126,6 @@ test('the box answers loopback, private, link-local and unique-local addresses, 
   // Its plain name too, for devices that resolve it through the home router rather than .local.
   assert.ok(boxHosts().includes(boxName().replace(/\.local$/, '')));
 });
-
-/** A request as the box's door sees it, from an address, with a body when one is given. */
-function incoming(address: string, method: string, path: string, headers: Record<string, string> = {}, text = '') {
-  return Object.assign(Readable.from(text ? [Buffer.from(text)] : []), {
-    method, url: path, socket: { remoteAddress: address }, headers: { host: 'zirbel.local', ...headers },
-  }) as unknown as IncomingMessage;
-}
-function outgoing() {
-  const sent = { status: 0, headers: {} as Record<string, unknown>, body: '' };
-  const response = {
-    setHeader(name: string, value: unknown) { sent.headers[name.toLowerCase()] = value; },
-    writeHead(status: number, headers: Record<string, unknown> = {}) {
-      sent.status = status;
-      for (const [name, value] of Object.entries(headers)) sent.headers[name.toLowerCase()] = value;
-      return response;
-    },
-    end(body?: string | Buffer) { sent.body = body ? body.toString() : ''; },
-  };
-  return { response: response as unknown as ServerResponse, sent };
-}
-/** lobby: the LAN player listener's port, while it runs. */
-function boxFor(t: Parameters<typeof tempDir>[0], capabilities = roomy, turns = 0, lobby: () => number | undefined = () => 4174): BoxContext {
-  const folder = tempDir(t, 'zirbel-box-');
-  const settings = new BoxSettings(folder, capabilities);
-  mkdirSync(join(folder, 'run'));
-  return { pairing: new Pairing(folder), settings, capabilities, port: () => 80, turns: () => turns, lobbyPort: lobby,
-    qr: async (text) => 'data:qr,' + encodeURIComponent(text),
-    setupRequest: join(folder, 'run', 'request'), ownNetwork: join(folder, 'own-network.json'),
-    harnesses: new BoxHarnesses(() => { throw new Error('No harness in this test'); }, () => settings.read().harnesses) };
-}
-const at = (path: string) => new URL(path, 'http://zirbel.local');
 
 test('the door lets the box itself in, sends an unpaired device to the lobby or pairing, and lets a paired one in', async (t) => {
   const box = boxFor(t);

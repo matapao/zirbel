@@ -2,7 +2,7 @@
 // The composer and the status line of a turn: sending, the live status line with the current step and elapsed time,
 // and Stop while a turn runs. The turns themselves are turn-runner.ts's.
 import { $, action, api, attempt, option } from './editor-ui.ts';
-import { ActivityTurn, chatBusy, markedObjects, visibleTurn, ws } from './state.ts';
+import { ActivityTurn, chatBusy, editorOf, markedObjects, visibleTurn, ws } from './state.ts';
 import { authored, hasContent, library, loadProject, recentCards, render } from './workspace.ts';
 import { references, renderObjects } from './inspector.ts';
 import { scheduleDraw } from './viewport.ts';
@@ -10,6 +10,7 @@ import { type Processor } from '../server/processors.ts';
 import { modelPicker } from './model-picker.ts';
 import { showHarnessAccounts } from './harness-accounts.ts';
 import { openBoxSettings } from './box.ts';
+import { ownAgentDialog } from './editors.ts';
 import { renderSuggestions } from './chat-settings.ts';
 import { renderMessages, setupThread } from './thread.ts';
 import { setThreadOpen } from './desk.ts';
@@ -102,10 +103,18 @@ function renderStart() {
   recent.append(heading, list);
 }
 
-/** Why chat cannot start: no harness signed in, or an editor without harness chat. */
+/** Why chat cannot start: no harness signed in, an editor without harness chat, or on a box, an editor of one game,
+ *  who brings its own agent while the box's owner lets agents in. */
 function renderNotice(ready: boolean) {
   const notice = $('chat-notice');
   notice.hidden = ready || processorNotice === 'Checking harnesses…';
+  const project = ws.project;
+  if (editorOf()) {
+    notice.replaceChildren('The AI on this box is its owner’s.', ' ', ws.health.mcp && project
+      ? action('Use your own Claude Code or Codex', () => ownAgentDialog(project.id, project.title), 'link')
+      : 'Its owner can turn on agent access, so you can use your own Claude Code or Codex.');
+    return;
+  }
   notice.replaceChildren(ws.health.chat ? processorNotice : 'This editor has no harness chat. Import a game folder, or open a game from the Library.');
   if (notice.hidden || !ws.health.chat) return;
   if (ws.health.box && !ws.health.box.harnesses) {
@@ -125,6 +134,8 @@ export function renderProcessors() {
   select.replaceChildren(...(available.length ? available.map(({ id, name }) => option(id, name)) : [option('', empty)]));
   select.value = available.some(({ id }) => id === preferredProcessor) ? preferredProcessor : available[0]?.id ?? '';
   select.disabled = chatBusy() || !available.length;
+  // An editor of one game on a box has no harness here to write to, nor a game folder to import.
+  $('prompt-form').hidden = $('import-folder').hidden = Boolean(editorOf());
   renderNotice(available.length > 0);
   updateModelControls();
   renderChatStatus();
@@ -147,7 +158,8 @@ export async function refreshProcessors() {
   if (refreshingProcessors) return refreshingProcessors;
   refreshingProcessors = (async () => {
     try {
-      const access = await api<{ processors: Processor[] }>('processors');
+      // The box's harnesses are its owners' alone.
+      const access = editorOf() ? { processors: [] } : await api<{ processors: Processor[] }>('processors');
       providers = access.processors;
       processorNotice = providers.some(({ signIn }) => signIn) ? 'Open Harnesses to sign in.' : 'No harness is available.';
     } catch {

@@ -69,9 +69,9 @@ const loopbackName = (host: string) => host === 'localhost' || host === '[::1]' 
 // one a phone or an office network can't.
 const sharedAddress = (host: string) => !loopbackName(host) && isIP(host.replace(/^\[(.*)\]$/, '$1')) !== 0;
 
-/** A box's player side: the LAN listener on every interface for the box's own network (reach), and the address of the
- *  pairing page the lobby links to, on the host name a device reached it by. */
-type BoxPlayers = { reach: PlayerReach; pair: (host: string) => string };
+/** A box's player side: the LAN listener on every interface for the box's own network (reach), and the addresses of
+ *  the pairing page and the edit page the lobby links to, on the host name a device reached it by. */
+type BoxPlayers = { reach: PlayerReach; pair: (host: string) => string; edit: (host: string) => string };
 
 // Owns the loopback and LAN player listeners, the rooms they serve and the lobby on each.
 export class Players {
@@ -91,7 +91,7 @@ export class Players {
     this.addons = threeAddons(releases.webRoot);
     this.net = netFiles(releases.webRoot);
     this.lobby = new Lobby(rooms, releases);
-    this.lobbyContext = { lobby: this.lobby, files: lobbyFiles(releases.webRoot), pair: options.box?.pair };
+    this.lobbyContext = { lobby: this.lobby, files: lobbyFiles(releases.webRoot), pair: options.box?.pair, edit: options.box?.edit };
   }
 
   get lanHost() { return this.options.lanHost; }
@@ -137,8 +137,14 @@ export class Players {
    *  runs, or while it has no address. */
   lobbyLink(host?: string) {
     if (!this.lan) return null;
-    const address = host && sharedAddress(host) ? host : this.options.lanHost ?? lanAddresses()[0];
+    const address = this.sharedHost(host);
     return address ? 'http://' + address + ':' + this.lan.port + '/' : null;
+  }
+
+  /** The address other devices on the network reach this host by: host, the name a box was reached by, where others
+   *  can use it, and otherwise the player host or the first LAN address. None while it has none. */
+  sharedHost(host?: string) {
+    return host && sharedAddress(host) ? host : this.options.lanHost ?? lanAddresses()[0];
   }
 
   solo(release: Release, host = '127.0.0.1') {

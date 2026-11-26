@@ -29,6 +29,9 @@ import { Mcp, stdioMcp } from './mcp.ts';
 import { Pairing } from './box-pairing.ts';
 import { boxDoor, boxHealth, boxHosts, boxRequest, onBoxNetwork, type Access, type BoxContext } from './box-routes.ts';
 import { boxCapabilities, BoxHarnesses, BoxSettings } from './box-settings.ts';
+import { Editors } from './box-editors.ts';
+import { editorsRequest } from './box-edit-routes.ts';
+import { checkRole, whoIs } from './box-roles.ts';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -73,11 +76,13 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
   const releases = new Releases(projects, webRoot);
   const rooms = new Rooms();
   let editorPort = port;
-  // On a box, the lobby's players come from its own network, and those who own it pair at the editor's /pair.
+  // On a box, the lobby's players come from its own network, those who own it pair at the editor's /pair, and those
+  // with a game's edit code redeem it at its /edit.
+  const editorAt = (host: string) => 'http://' + host + (editorPort === 80 ? '' : ':' + editorPort);
   const players = new Players(rooms, releases, { playerPort, lanHost,
     qr: (link) => QRCode.toDataURL(link, { margin: 2, width: 240 }),
     box: boxMode ? { reach: { hosts: boxHosts, network: onBoxNetwork },
-      pair: (host) => 'http://' + host + (editorPort === 80 ? '' : ':' + editorPort) + '/pair' } : undefined });
+      pair: (host) => editorAt(host) + '/pair', edit: (host) => editorAt(host) + '/edit' } : undefined });
   const claim = claimDirectory(root, { pid: process.pid, port, boot, editor: true });
   if (!claim.owner) {
     if (claim.editor && claim.port) {
@@ -126,8 +131,8 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
       const settings = new BoxSettings(join(account, 'box'), capabilities);
       const switched = new BoxHarnesses(() => harnessesFor(root), () => capabilities.harnesses && settings.read().harnesses);
       harnesses = switched;
-      box = { pairing: new Pairing(join(account, 'box')), settings, harnesses: switched, capabilities, port: () => editorPort,
-        lobbyPort: () => players.lanPort,
+      box = { pairing: new Pairing(join(account, 'box')), editors: new Editors(join(account, 'box')), settings, harnesses: switched,
+        capabilities, port: () => editorPort, lobbyPort: () => players.lanPort, sharedHost: (host) => players.sharedHost(host),
         turns: () => chat.count, qr: (link) => QRCode.toDataURL(link, { margin: 2, width: 240 }),
         setupRequest: process.env.ZIRBEL_SETUP_REQUEST || '/run/zirbel-setup/request',
         ownNetwork: process.env.ZIRBEL_OWN_NETWORK || '/var/lib/zirbel-setup/own-network.json' };
@@ -149,8 +154,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
     const editorOrigin = () => 'http://127.0.0.1:' + editorPort;
     const mcpOn = () => enableMcp || Boolean(box?.settings.read().externalMcp);
     /** The editor's origin on the host name a device reached the box by, and on loopback. */
-    const boxEditorOrigins = (host: string) => ['http://' + host + (editorPort === 80 ? '' : ':' + editorPort), editorOrigin(),
-      'http://localhost:' + editorPort];
+    const boxEditorOrigins = (host: string) => [editorAt(host), editorOrigin(), 'http://localhost:' + editorPort];
     async function editorRequest(request: IncomingMessage, response: ServerResponse) {
       secure(response);
       try {
@@ -197,6 +201,10 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
           return;
         }
         if (extra.length) throw new ZirbelError(404, 'Route does not exist.');
+        // On a box, an editor of one game uses that game's routes alone (box-roles.ts).
+        checkRole(access, { method, resource, pathID, action, tail }, (room) => rooms.find(room)?.release.manifest.gameId);
+        const only = access.editor?.game;
+        if (resource === 'me' && !pathID && method === 'GET') { reply(response, whoIs(access)); return; }
         if (resource === 'health' && method === 'GET') {
           // chat: this editor runs harness chat and keeps each turn's activity; turns: how many are running.
           reply(response, { status: 'ok', pid: process.pid, boot, editor: editorOrigin(), mcp: mcpOn(), chat: true,
@@ -232,8 +240,11 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
         if (box && (resource === 'pairing' || resource === 'box') &&
           await boxRequest(box, request, response, access, { resource, pathID, action, tail })) return;
         if (resource === 'chat' && await chatRequest(chatContext, request, response, pathID, action, tail)) return;
+        if (box && resource === 'projects' && await editorsRequest(box, projects, request, response, access, url, { pathID, action, tail })) return;
         if (resource === 'projects') {
-          if (!pathID && method === 'GET') { reply(response, projects.summaries()); return; }
+          if (!pathID && method === 'GET') {
+            reply(response, projects.summaries().filter((game) => !only || game.id === only)); return;
+          }
           if (!pathID && method === 'POST') {
             const input = z.strictObject({ title: z.string().optional() }).parse(await body(request));
             reply(response, projects.createGame(input.title), 201); return;
@@ -251,6 +262,8 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
             // Its threads go with it: their turns stop, and their folders and sessions are removed.
             await chat.stopThreads((thread) => thread.startsWith(projectId + '.'));
             projects.remove(projectId);
+            // On a box, its edit code and its editors go too.
+            box?.editors.removeProject(projectId);
             rooms.closeProject(projectId);
             await threads.removeProject(projectId, (harness, session) => harnesses.removeSession?.(harness, session) ?? Promise.resolve());
             reply(response, {});
@@ -366,7 +379,9 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
           }
         }
         if (resource === 'rooms') {
-          if (method === 'GET' && !pathID) { reply(response, rooms.list()); return; }
+          if (method === 'GET' && !pathID) {
+            reply(response, rooms.list().filter((room) => !only || room.manifest.gameId === only)); return;
+          }
           if (method === 'POST' && !pathID) {
             const input = z.strictObject({ releaseId: id, lan: z.boolean() }).parse(await body(request));
             reply(response, await players.start(input.releaseId, input.lan, playerHost), 201); return;

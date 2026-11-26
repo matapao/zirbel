@@ -255,6 +255,7 @@ dialog::backdrop{background:#090c0cc9;backdrop-filter:blur(3px)}
 #dialog-body label select,#dialog-body label input:not([type=checkbox]){flex:1}
 .item .row{flex-wrap:wrap}
 .sign-in-code{font:700 1.35rem ui-monospace,monospace;letter-spacing:.12em;color:var(--ink)}
+.sign-in-code.edit-code{font-size:2.2rem;letter-spacing:.16em}
 .history-branch{display:flex;align-items:center;justify-content:space-between}
 .history-branch span{color:var(--quiet);font-size:.85rem}
 .library-project{display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap}

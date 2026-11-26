@@ -2,10 +2,11 @@
 // from the box itself (loopback) and from this computer's own network address, and their normalized answers must
 // match: the door, the pairing page and its codes and claim, the paired devices, the switches, the setup flag, the
 // box's own Wi-Fi, external MCP access, the lobby a device that isn't paired is sent to, and its address for other
-// devices. What the hosts differ in by design is compared by its form only: harnesses
+// devices; and in a second session, the editors of one game: its edit code, the edit page, what an editor may and may
+// not do, and its session's end. What the hosts differ in by design is compared by its form only: harnesses
 // run in the Node editor alone, and only it draws a QR code, for a pairing link or for joining the box's own Wi-Fi.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -30,34 +31,37 @@ async function startBox(t: TestContext, command: string[]) {
   const { ready } = launch(t, command, ['--data', join(root, 'data'), '--port', '0', '--player-port', '0', '--box'],
     (line) => typeof line.editor === 'string' ? line.editor : undefined,
     { ZIRBEL_ACCOUNT_DIR: account, ZIRBEL_SETUP_REQUEST: wake, ZIRBEL_OWN_NETWORK: own });
-  return { editor: await ready, wake, own, network: join(root, 'run', 'network') };
+  return { editor: await ready, wake, own, network: join(root, 'run', 'network'), account };
 }
 type Started = Awaited<ReturnType<typeof startBox>>;
 
 type Step = { status: number; body: unknown; location?: string | null; cookie?: string; headers?: Record<string, string | null> };
-/** The pairing page's headers, which a browser's form and its Origin depend on. */
+/** The pairing and edit pages' headers, which a browser's form and its Origin depend on. */
 const PAGE_HEADERS = ['content-type', 'cache-control', 'referrer-policy', 'content-security-policy', 'x-content-type-options'];
-type Call = { json?: unknown; form?: Record<string, string>; origin?: boolean; session?: string; raw?: string };
+/** session: an owner's, as its cookie carries it; editor: an editor's of one game. */
+type Call = { json?: unknown; form?: Record<string, string>; origin?: boolean; session?: string; editor?: string; raw?: string };
 
 function client(base: string) {
-  return async (method: string, path: string, { json, form, origin, session, raw }: Call = {}): Promise<Step> => {
+  return async (method: string, path: string, { json, form, origin, session, editor, raw }: Call = {}): Promise<Step> => {
     const headers: Record<string, string> = {};
     if (origin) headers.origin = base;
-    if (session) headers.cookie = 'zirbel_session=' + session;
+    const cookies = [...(session ? ['zirbel_session=' + session] : []), ...(editor ? ['zirbel_editor=' + editor] : [])];
+    if (cookies.length) headers.cookie = cookies.join('; ');
     if (json !== undefined || raw !== undefined) headers['content-type'] = 'application/json';
     const body = raw ?? (json !== undefined ? JSON.stringify(json) : form ? new URLSearchParams(form) : undefined);
     const response = await fetch(base + path, { method, headers, body, redirect: 'manual' });
     const text = await response.text();
     let parsed: unknown = text;
-    try { parsed = JSON.parse(text); } catch { /* the pairing page */ }
-    const page = path.startsWith('/pair') && response.status < 300
+    try { parsed = JSON.parse(text); } catch { /* the pairing or edit page */ }
+    const page = /^\/(?:pair|edit)(?:\?|$)/.test(path) && response.status < 300
       ? Object.fromEntries(PAGE_HEADERS.map((name) => [name, response.headers.get(name)])) : undefined;
-    return { status: response.status, body: parsed, location: response.headers.get('location'), cookie: response.headers.getSetCookie()[0],
-      headers: page };
+    return { status: response.status, body: parsed, location: response.headers.get('location'),
+      cookie: response.headers.getSetCookie().join('\n') || undefined, headers: page };
   };
 }
 
 const token = (step: Step) => /zirbel_session=([\w-]{43})/.exec(step.cookie ?? '')?.[1] ?? '';
+const editorToken = (step: Step) => /zirbel_editor=([\w-]{43})/.exec(step.cookie ?? '')?.[1] ?? '';
 /** What only one host has, compared by its presence or form. */
 const HOST_SPECIFIC = new Set(['harnesses', 'canRunHarnesses', 'harnessesUnavailable', 'qr']);
 
@@ -72,7 +76,9 @@ function normalizer() {
     .replace(/\b\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\b/g, '<date>')
     .replace(/((?:127\.0\.0\.1|localhost|<lan>|\.local)):\d+/g, '$1:<port>')
     .replace(/\b[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}\b/g, '<code>')
-    .replace(/zirbel_session=[\w-]{43}/g, 'zirbel_session=<token>');
+    .replace(/\b[2-9A-HJ-NP-Z]{3}-[2-9A-HJ-NP-Z]{3}\b/g, '<edit-code>')
+    .replace(/\bcode=[2-9A-HJ-NP-Z]{6}\b/g, 'code=<edit-code>')
+    .replace(/zirbel_(session|editor)=[\w-]{43}/g, 'zirbel_$1=<token>');
   const walk = (value: unknown, key = ''): unknown => {
     if (HOST_SPECIFIC.has(key)) return '<host-specific>';
     // A project grant: when it expires, and its secret.
@@ -197,24 +203,193 @@ async function session({ editor: base, wake, own, network }: Started) {
   return steps;
 }
 
+const ONE_GAME = 'This device edits one game only.';
+const ENDED = 'This device’s edit access has ended. Ask the box’s owner for a new edit code.';
+const SHOWN_CODE = /^[2-9A-HJ-NP-Z]{3}-[2-9A-HJ-NP-Z]{3}$/;
+const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+type Game = { id: string; title: string; branches: { main: string }; revisions: { game?: { html: string } }[] };
+
+/** The editors of one game: the owner makes its code, other devices redeem it and edit that game alone, and their
+ *  sessions end when the owner removes them, the code stops or expires, or the game goes. */
+async function editorsSession({ editor: base, account }: Started) {
+  const steps: Step[] = [];
+  const box = client(base);
+  const record = async (step: Promise<Step>) => { const result = await step; steps.push(result); return result; };
+  /** Its status alone: a page or a body the hosts build apart (the editor's page, a playtest's link). */
+  const status = async (step: Promise<Step>) => { const result = await step; steps.push({ status: result.status, body: null }); return result; };
+  const refused = async (step: Promise<Step>, error = ONE_GAME) => {
+    const result = await record(step);
+    assert.deepEqual([result.status, (result.body as { error: string }).error], [error === ENDED ? 401 : 403, error]);
+  };
+  await record(box('GET', '/api/me'));
+  const meadow = (await box('POST', '/api/projects', { json: { title: 'Meadow' }, origin: true })).body as Game;
+  const other = (await box('POST', '/api/projects', { json: { title: 'Other' }, origin: true })).body as Game;
+  await record(box('GET', '/edit'));
+  await record(box('GET', '/edit?code=nope'));
+  // The box itself owns it: it makes codes, and redeems none.
+  const local = await record(box('POST', '/api/projects/' + meadow.id + '/edit-code', { origin: true }));
+  await record(box('POST', '/edit', { form: { code: (local.body as { code: string }).code, name: 'Box' }, origin: true }));
+  if (!lan) return steps;
+
+  const device = client(base.replace('127.0.0.1', lan));
+  const at = base.replace('127.0.0.1', lan);
+  const owner = token(await device('POST', '/pair', { form: { claim: '1' }, origin: true }));
+  await record(device('GET', '/api/me', { session: owner }));
+  const made = await record(device('POST', '/api/projects/' + meadow.id + '/edit-code', { session: owner, origin: true }));
+  const { code, link, expiresAt } = made.body as { code: string; link: string; expiresAt: string };
+  assert.match(code, SHOWN_CODE);
+  assert.equal(link, at + '/edit?code=' + code.replace('-', ''));
+  assert.ok(Math.abs(Date.parse(expiresAt) - Date.now() - 7 * 86_400_000) < 60_000, 'a code opens its game for a week');
+  await record(device('POST', '/api/projects/' + meadow.id + '/edit-code', { session: owner }));
+  await record(device('POST', '/api/projects/missing/edit-code', { session: owner, origin: true }));
+  await record(device('POST', '/api/projects/' + meadow.id + '/edit-code', { origin: true }));
+  await record(device('GET', '/api/projects/' + meadow.id + '/editors', { session: owner }));
+  await record(device('GET', '/api/projects/' + meadow.id + '/edit-code', { session: owner }));
+
+  // The edit page, opened by the code's link, and the lobby's link to it for those who have a code.
+  await record(device('GET', '/edit?code=' + code.replace('-', '').toLowerCase()));
+  const door = await device('GET', '/');
+  const lobby = await record(client(door.location!.slice(0, -1))('GET', '/lobby/state'));
+  assert.equal((lobby.body as { edit: string }).edit, at + '/edit');
+  await record(device('POST', '/edit', { form: { code, name: 'Ada' } }));
+  await record(device('POST', '/edit', { form: { code, name: 'Ada' }, origin: true, session: owner }));
+  await record(device('POST', '/edit', { form: { code: 'ZZZ-ZZZ', name: 'Ada' }, origin: true }));
+  for (const form of [{ code, name: ' ' }, { code, name: 'x'.repeat(25) }, { code }, { code, name: 'Ada', more: '1' }] as Record<string, string>[])
+    await record(device('POST', '/edit', { form, origin: true }));
+  await record(device('PUT', '/edit', { origin: true }));
+  const ada = editorToken(await record(device('POST', '/edit', { form: { code: code.toLowerCase().replace('-', ' '), name: ' Ada ' }, origin: true })));
+  // A code lets several people in.
+  const bo = editorToken(await record(device('POST', '/edit', { form: { code, name: 'Bo' }, origin: true })));
+
+  // An editor sees its game alone, and saves a change to it, which becomes a revision.
+  await record(device('GET', '/api/me', { editor: ada }));
+  await status(device('GET', '/', { editor: ada }));
+  await status(device('GET', '/api/health', { editor: ada }));
+  await record(device('GET', '/api/projects', { editor: ada }));
+  const opened = await device('GET', '/api/projects/' + meadow.id, { editor: ada });
+  const read = opened.body as Game;
+  steps.push({ status: opened.status, body: { title: read.title, revisions: read.revisions.length } });
+  await record(device('GET', '/api/lobby', { editor: ada }));
+  await record(device('GET', '/api/rooms', { editor: ada }));
+  const change = (html: string, baseRevision: string) => ({ json: { baseRevision, branch: 'main', label: 'Ada’s change',
+    operations: [{ op: 'writeGame', game: { html } }] }, editor: ada, origin: true });
+  const staged = await status(device('POST', '/api/projects/' + meadow.id + '/proposals', change('<p>Ada</p>', read.branches.main)));
+  await status(device('POST', '/api/projects/' + meadow.id + '/apply/' + (staged.body as { proposal: { id: string } }).proposal.id,
+    { json: {}, editor: ada, origin: true }));
+  const reread = await device('GET', '/api/projects/' + meadow.id, { editor: ada });
+  const saved = reread.body as Game;
+  steps.push({ status: reread.status, body: { revisions: saved.revisions.length, html: saved.revisions.at(-1)?.game?.html } });
+  // One made on the revision it had is refused: it refreshes first.
+  await status(device('POST', '/api/projects/' + meadow.id + '/proposals', change('<p>Stale</p>', read.branches.main)));
+  const asset = await status(device('POST', '/api/projects/' + meadow.id + '/asset', { json: { branch: 'main', baseRevision: saved.branches.main,
+    name: 'Dot', author: 'Ada', source: 'https://example.com/dot.png', license: 'CC0-1.0', credit: '', media: 'image/png', data: png },
+  editor: ada, origin: true }));
+  await status(device('POST', '/api/projects/' + meadow.id + '/apply/' + (asset.body as { proposal: { id: string } }).proposal.id,
+    { json: {}, editor: ada, origin: true }));
+  const playtest = await status(device('POST', '/api/projects/' + meadow.id + '/playtest', { json: { branch: 'main' }, editor: ada, origin: true }));
+  await record(device('POST', '/api/rooms/' + (playtest.body as { id: string }).id + '/close', { json: {}, editor: ada, origin: true }));
+  await record(device('POST', '/api/rooms/' + (playtest.body as { id: string }).id + '/close', { json: {}, editor: ada, origin: true }));
+
+  // Nothing else: another game, games, imports, releases, the lobby's offers, the box's settings, pairing, harnesses
+  // (the Go host has none: refused alike), and the game's code and editors.
+  const any = (method: string) => method === 'GET' ? { editor: ada } : { json: {}, editor: ada, origin: true };
+  for (const [method, path] of [['GET', '/api/projects/' + other.id], ['POST', '/api/projects/' + other.id + '/proposals'],
+    ['POST', '/api/projects'], ['POST', '/api/projects/import'], ['POST', '/api/projects/import-game'],
+    ['POST', '/api/projects/' + meadow.id + '/remove'], ['POST', '/api/projects/' + meadow.id + '/release'],
+    ['POST', '/api/projects/' + meadow.id + '/edit-code'], ['GET', '/api/projects/' + meadow.id + '/editors'],
+    ['GET', '/api/box/settings'], ['PUT', '/api/box/settings'], ['GET', '/api/box/network'], ['POST', '/api/box/setup'],
+    ['GET', '/api/pairing/devices'], ['POST', '/api/pairing'], ['GET', '/api/processors'], ['POST', '/api/chat'],
+    ['POST', '/api/projects/' + meadow.id + '/prompt'], ['GET', '/api/projects/' + meadow.id + '/thread'],
+    ['GET', '/api/releases'], ['POST', '/api/releases/import'], ['POST', '/api/lobby/offer'], ['POST', '/api/rooms']] as const)
+    await refused(device(method, path, any(method)));
+
+  // Its own agent, for this game, while the box's owner lets agents in over MCP.
+  const grant = { json: { write: true, hours: 168 }, editor: ada, origin: true };
+  await record(device('POST', '/api/projects/' + meadow.id + '/grants', grant));
+  await box('PUT', '/api/box/settings', { json: { externalMcp: true } });
+  const given = await record(device('POST', '/api/projects/' + meadow.id + '/grants', grant));
+  const mcp = await fetch(at + '/mcp', { method: 'POST', headers: { 'content-type': 'application/json',
+    authorization: 'Bearer ' + (given.body as { token: string }).token }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }) });
+  await record(Promise.resolve({ status: mcp.status, body: await mcp.json() as unknown }));
+  await box('PUT', '/api/box/settings', { json: { externalMcp: false } });
+
+  // The owner sees who edits, and removes one: its next request is refused at once.
+  const listed = await record(device('GET', '/api/projects/' + meadow.id + '/editors', { session: owner }));
+  const removed = (listed.body as { editors: { id: string; name: string }[] }).editors.find((item) => item.name === 'Bo')!.id;
+  await refused(device('DELETE', '/api/projects/' + meadow.id + '/editors/' + removed, { editor: ada, origin: true }));
+  await record(device('DELETE', '/api/projects/' + meadow.id + '/editors/' + removed, { session: owner, origin: true }));
+  await refused(device('GET', '/api/projects', { editor: bo }), ENDED);
+  await record(device('GET', '/', { editor: bo }));
+  await record(device('DELETE', '/api/projects/' + meadow.id + '/editors/' + removed, { session: owner, origin: true }));
+  await record(device('DELETE', '/api/projects/' + meadow.id + '/editors/NOT_AN_ID', { session: owner, origin: true }));
+
+  // A stopped code lets nobody new in, and those editing stay; a new code replaces the last.
+  await record(device('POST', '/api/projects/' + meadow.id + '/edit-code/stop', { session: owner, origin: true }));
+  await record(device('GET', '/api/projects/' + meadow.id + '/editors', { session: owner }));
+  await record(device('POST', '/edit', { form: { code, name: 'Cy' }, origin: true }));
+  await record(device('GET', '/api/me', { editor: ada }));
+  const replaced = ((await record(device('POST', '/api/projects/' + meadow.id + '/edit-code', { session: owner, origin: true }))).body as { code: string }).code;
+  const current = ((await record(device('POST', '/api/projects/' + meadow.id + '/edit-code', { session: owner, origin: true }))).body as { code: string }).code;
+  if (replaced !== current) await record(device('POST', '/edit', { form: { code: replaced, name: 'Cy' }, origin: true }));
+  // An expired code, as the account folder keeps it in both hosts.
+  const file = join(account, 'box', 'editors.json');
+  const kept = JSON.parse(readFileSync(file, 'utf8')) as { codes: { expiresAt: string }[]; editors: object[] };
+  assert.deepEqual(Object.keys(kept), ['version', 'codes', 'editors']);
+  assert.deepEqual(kept.codes.map((item) => Object.keys(item)), [['project', 'code', 'createdAt', 'expiresAt']]);
+  assert.deepEqual(Object.keys(kept.editors[0]!), ['id', 'project', 'name', 'tokenHash', 'since', 'lastSeen']);
+  kept.codes[0]!.expiresAt = new Date(Date.now() - 1000).toISOString();
+  writeFileSync(file, JSON.stringify(kept));
+  await record(device('POST', '/edit', { form: { code: current, name: 'Cy' }, origin: true }));
+  await record(device('GET', '/api/projects/' + meadow.id + '/editors', { session: owner }));
+
+  // A device that redeems another game's code edits that game instead; one that pairs is an owner, and edits none.
+  const otherCode = ((await device('POST', '/api/projects/' + other.id + '/edit-code', { session: owner, origin: true })).body as { code: string }).code;
+  const moved = editorToken(await record(device('POST', '/edit', { form: { code: otherCode, name: 'Ada' }, origin: true, editor: ada })));
+  await refused(device('GET', '/api/me', { editor: ada }), ENDED);
+  await record(device('GET', '/api/me', { editor: moved }));
+  const pairing = ((await device('POST', '/api/pairing', { json: {}, session: owner, origin: true })).body as { code: string }).code;
+  const paired = await record(device('POST', '/pair', { form: { code: pairing }, origin: true, editor: moved }));
+  assert.match(paired.cookie ?? '', /\nzirbel_editor=; HttpOnly; SameSite=Strict; Path=\/; Max-Age=0$/);
+  await record(device('GET', '/api/me', { session: token(paired) }));
+  await refused(device('GET', '/api/me', { editor: moved }), ENDED);
+
+  // A removed game takes its code and its editors with it.
+  const last = ((await device('POST', '/api/projects/' + meadow.id + '/edit-code', { session: owner, origin: true })).body as { code: string }).code;
+  const cy = editorToken(await record(device('POST', '/edit', { form: { code: last, name: 'Cy' }, origin: true })));
+  await record(device('POST', '/api/projects/' + meadow.id + '/remove', { json: {}, session: owner, origin: true }));
+  await refused(device('GET', '/api/projects', { editor: cy }), ENDED);
+  await record(device('GET', '/api/projects/' + meadow.id + '/editors', { session: owner }));
+  await record(device('POST', '/edit', { form: { code: last, name: 'Cy' }, origin: true }));
+
+  // Wrong codes from one address: ten in a minute, then none, for the right code too.
+  for (let tries = 0; tries < 6; tries++) await record(device('POST', '/edit', { form: { code: 'ZZZ-ZZY', name: 'Cy' }, origin: true }));
+  await record(device('POST', '/edit', { form: { code: otherCode, name: 'Cy' }, origin: true }));
+  return steps;
+}
+
 const results = new Map<string, Step[]>();
+const editing = new Map<string, Step[]>();
 
 for (const host of hosts) {
-  test(host.name + ' box runs the scripted session', async (t) => {
-    const steps = await session(await startBox(t, host.command));
-    for (const [index, step] of steps.entries()) assert.ok(step.status < 500, 'step ' + index + ': ' + step.status + ' ' + JSON.stringify(step.body));
-    results.set(host.name, steps);
-  });
+  for (const [name, run, kept] of [['session', session, results], ['editors session', editorsSession, editing]] as const) {
+    test(host.name + ' box runs the scripted ' + name, async (t) => {
+      const steps = await run(await startBox(t, host.command));
+      for (const [index, step] of steps.entries()) assert.ok(step.status < 500, 'step ' + index + ': ' + step.status + ' ' + JSON.stringify(step.body));
+      kept.set(host.name, steps);
+    });
+  }
 }
 
 if (hosts.length > 1) {
-  test('both boxes answer the session identically', (t) => {
-    const node = results.get('node')!.map(normalizer());
-    const go = results.get('go')!.map(normalizer());
-    t.diagnostic(node.length + ' steps: ' + node.map(({ status }) => status).join(' '));
-    assert.equal(go.length, node.length);
-    for (const [index, step] of node.entries()) assert.deepEqual(go[index], step, 'step ' + index);
-  });
+  for (const [name, kept] of [['session', results], ['editors session', editing]] as const) {
+    test('both boxes answer the ' + name + ' identically', (t) => {
+      const node = kept.get('node')!.map(normalizer());
+      const go = kept.get('go')!.map(normalizer());
+      t.diagnostic(node.length + ' steps: ' + node.map(({ status }) => status).join(' '));
+      assert.equal(go.length, node.length);
+      for (const [index, step] of node.entries()) assert.deepEqual(go[index], step, 'step ' + index);
+    });
+  }
 }
 
 test('the Go box runs no harnesses and says why', { skip: !hosts.some((host) => host.name === 'go') }, async (t) => {
