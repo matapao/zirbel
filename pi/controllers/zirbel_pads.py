@@ -115,10 +115,20 @@ def main() -> None:
         log(f"No Bluetooth: the system bus didn't answer ({error}).")
         service.bluetooth = None
 
+    # The host's socket is watched while it is open, and no longer once it closes, wherever it closes: a closed socket's
+    # watch would wake the loop for nothing, or its number would come back as the next socket's.
+    watching: list[int] = []
+
+    def unwatch_link() -> None:
+        while watching:
+            GLib.source_remove(watching.pop())
+
+    link.closed = unwatch_link
+
     def connect() -> bool:
         if not link.connected and link.open() and link.sock:
-            GLib.io_add_watch(link.sock.fileno(), GLib.PRIORITY_DEFAULT, GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR,
-                              lambda *_: link.readable())
+            watching.append(GLib.io_add_watch(link.sock.fileno(), GLib.PRIORITY_DEFAULT,
+                                              GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, lambda *_: link.readable()))
         return True
 
     def rescan() -> bool:
