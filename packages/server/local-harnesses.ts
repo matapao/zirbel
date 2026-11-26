@@ -1,7 +1,7 @@
 // The person's own Claude Code and Codex, each run through its agent's SDK by the harness library, signed in as the
 // person is. A turn works in its thread's folder (threads.ts) and continues the thread's session; without a thread it
 // gets a folder of its own that goes after it.
-import { AgentRuntime, claudeAgent, codexAgent, findProgram, type AgentLogin, type Host, type RunHandle, type RunProgress,
+import { AgentRuntime, claudeAgent, codexAgent, findProgram, type AgentAsk, type AgentLogin, type Host, type RunHandle, type RunProgress,
   type RunSpec, type Runtime } from 'celler/harness';
 import { constants, copyFileSync, existsSync, lstatSync, chmodSync, realpathSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -59,7 +59,7 @@ function reuseCodexSignIn(codexHome: string) {
 }
 
 type LocalProcessor = Pick<Processor, 'id' | 'name'> & {
-  runtime: Runtime & Pick<AgentRuntime, 'login'>; unavailable?: string;
+  runtime: Runtime & Pick<AgentRuntime, 'login'>; unavailable?: string | undefined;
   /** What a turn needs first: says what it did, when it did something. */
   prepare?: (signal?: AbortSignal) => Promise<{ title: string; detail: string } | undefined>;
 };
@@ -93,12 +93,17 @@ export function localHarnesses(projectDirectory: string, root = accountDirectory
 
 export class LocalHarnesses implements Processors {
   private readonly signIns = new Map<string, ActiveSignIn>();
-  private checking?: Promise<Processor[]>;
-  private checked?: { at: number; processors: Processor[] };
+  private checking: Promise<Processor[]> | undefined;
+  private checked: { at: number; processors: Processor[] } | undefined;
   /** The runs still going, which close() stops and waits for. */
   private readonly running = new Set<RunHandle>();
+  private readonly cwd: string;
+  private readonly processors: LocalProcessor[];
 
-  constructor(private readonly cwd: string, private readonly processors: LocalProcessor[]) {}
+  constructor(cwd: string, processors: LocalProcessor[]) {
+    this.cwd = cwd;
+    this.processors = processors;
+  }
 
   async list() {
     if (this.checking) return this.checking;
@@ -143,9 +148,10 @@ export class LocalHarnesses implements Processors {
     const cwd = place?.cwd ?? await mkdtemp(join(this.cwd, 'turn-'));
     try {
       signal?.throwIfAborted();
-      return await this.run(processor, { cwd, prompt, systemPrompt: '', model: model ?? '', effort,
+      return await this.run(processor, { cwd, prompt, systemPrompt: '', model: model ?? '', ...(effort === undefined ? {} : { effort }),
         sessionId: place?.sessionId ?? newId(), resume: Boolean(place?.resume && place.sessionId),
-        mcpServers: place?.mcpServers ?? [], readable: place?.readable, purpose: 'work', timeoutMs: NO_TIME_LIMIT },
+        mcpServers: place?.mcpServers ?? [], ...(place?.readable ? { readable: place.readable } : {}), purpose: 'work',
+        timeoutMs: NO_TIME_LIMIT },
       { signal, update, ask, session });
     } finally {
       if (!place) await rm(cwd, { recursive: true, force: true, maxRetries: 2 }).catch(() => console.warn('Could not remove a harness scratch folder.'));
@@ -162,8 +168,8 @@ export class LocalHarnesses implements Processors {
       if (event.type === 'tool' && event.call && event.mcp) servers.set(event.call, event.mcp);
       report?.(event);
     };
-    const handle = runtime.run({ ...spec, ask: ask && ((question, withdrawn) =>
-      ask(question, withdrawn, { folder: spec.cwd, harness: name, mcp: servers.get(question.call) })) }, progress);
+    const handle = runtime.run({ ...spec, ...(ask ? { ask: (question: AgentAsk, withdrawn: AbortSignal) =>
+      ask(question, withdrawn, { folder: spec.cwd, harness: name, mcp: servers.get(question.call) }) } : {}) }, progress);
     this.running.add(handle);
     const stop = () => handle.cancel();
     signal?.addEventListener('abort', stop, { once: true });

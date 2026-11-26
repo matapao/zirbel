@@ -76,6 +76,10 @@ const sharedAddress = (host: string) => !loopbackName(host) && isIP(host.replace
 /** A box's player side: the LAN listener on every interface for the box's own network (reach), and the addresses of
  *  the pairing page and the edit page the lobby links to, on the host name a device reached it by. */
 type BoxPlayers = { reach: PlayerReach; pair: (host: string) => string; edit: (host: string) => string };
+type HostingOptions = {
+  playerPort: number; lanHost?: string | undefined; qr?: (link: string) => Promise<string>; box?: BoxPlayers | undefined;
+  spacesBinary?: string | undefined;
+};
 
 /** How often the spaces kernel's spaces are listed: their members for the lobby, and the rooms whose space ended. */
 const SWEEP = 2000;
@@ -84,7 +88,7 @@ const SWEEP = 2000;
 export class Players {
   local?: Listener;
   private lan?: Listener;
-  private startingLan?: Promise<Listener>;
+  private startingLan: Promise<Listener> | undefined;
   readonly lobby: Lobby;
   /** The screens and controllers of both listeners, and the box's own gamepads (core/pads.ts). */
   readonly pads = new Pads();
@@ -97,12 +101,16 @@ export class Players {
   // Read from the build beside the release runtime, and shared by both listeners.
   private readonly addons: Addons;
   private readonly lobbyContext: LobbyContext;
+  readonly rooms: Rooms;
+  private readonly releases: Releases;
+  private readonly options: HostingOptions;
 
   // qr renders a LAN link for the editor; the headless host prints links only. spacesBinary: the kernel's, as named
   // (--spaces-binary, ZIRBEL_SPACES_BINARY).
-  constructor(readonly rooms: Rooms, private releases: Releases,
-    private options: { playerPort: number; lanHost?: string; qr?: (link: string) => Promise<string>; box?: BoxPlayers;
-      spacesBinary?: string }) {
+  constructor(rooms: Rooms, releases: Releases, options: HostingOptions) {
+    this.rooms = rooms;
+    this.releases = releases;
+    this.options = options;
     this.addons = threeAddons(releases.webRoot);
     this.spaces = new Spaces({ binary: spacesBinary(options.spacesBinary, join(releases.webRoot, '..')),
       manifest: join(releases.webRoot, 'skalet.json') });

@@ -157,12 +157,13 @@ function ownWifi(box: BoxHealth, { ownNetwork, network }: OwnWifi) {
           link(there.href, there.href));
       }, 'primary'),
       action('Cancel', () => { input.checked = false; panel.hidden = true; }));
-      return;
+      return true;
     }
     if (on || !confirm('The box ends its own Wi-Fi and goes back to the networks it joined before, or opens its Wi-Fi ' +
       'setup when it has none. Every device on its Wi-Fi loses the box.')) return false;
     await change({ ownNetwork: false });
     inform('The box ends its own Wi-Fi.');
+    return true;
   });
   part.append(row, panel);
   if (!network) part.append(el('p', ownNetwork ? 'The box’s own Wi-Fi has no name and password here.'

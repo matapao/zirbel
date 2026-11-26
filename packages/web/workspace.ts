@@ -198,7 +198,7 @@ export function render() {
 }
 
 // Checked below: the sender is the playtest frame, from the player's origin, for this room.
-// nosemgrep: javascript.browser.security.insufficient-postmessage-origin-validation.insufficient-postmessage-origin-validation
+// nosemgrep: javascript.browser.security.insufficient-postmessage-origin-validation.insufficient-postmessage-origin-validation -- checked below
 window.addEventListener('message', (event) => {
   const frame = $<HTMLIFrameElement>('playframe');
   if (!ws.playtest || !frame || event.source !== frame.contentWindow || event.origin !== new URL(ws.playtest.link).origin ||

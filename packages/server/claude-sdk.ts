@@ -21,6 +21,8 @@ const NAME = '@anthropic-ai/claude-agent-sdk';
 const SLOT = Symbol.for('zirbel.claude-agent-sdk');
 const REGISTRY = 'https://registry.npmjs.org';
 const VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
+/** The pin the build put in, if any. */
+const builtPin = () => (typeof ZIRBEL_CLAUDE_SDK === 'undefined' ? undefined : ZIRBEL_CLAUDE_SDK);
 const LIMITS = { tarball: 32 * 1024 * 1024, unpacked: 64 * 1024 * 1024, files: 1000, fetchMs: 120_000 };
 /** A fetch an editor stopped in the middle of leaves its folder; one this old is no other editor's. */
 const ABANDONED_MS = 60 * 60 * 1000;
@@ -29,7 +31,8 @@ const ABANDONED_MS = 60 * 60 * 1000;
 function untilStopped(work: Promise<void>, signal?: AbortSignal) {
   if (!signal) return work;
   return new Promise<void>((resolve, reject) => {
-    const stop = () => reject(signal.reason);
+    // An abort's reason is an Error (an AbortError, or the editor's own); any other is given as one.
+    const stop = () => reject(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason)));
     if (signal.aborted) return stop();
     signal.addEventListener('abort', stop, { once: true });
     work.then(resolve, reject).finally(() => signal.removeEventListener('abort', stop));
@@ -48,16 +51,16 @@ function withEditor() {
 type Fetched = { title: string; detail: string };
 
 export class ClaudeSdk {
-  private readonly pin?: Pin;
+  private readonly pin: Pin | undefined;
   private readonly registry: string;
   private readonly installed: () => boolean;
-  private fetching?: Promise<void>;
+  private fetching: Promise<void> | undefined;
+  private readonly folder: string;
 
-  constructor(
-    private readonly folder: string,
-    o: { pin?: Pin; registry?: string; withEditor?: () => boolean } = {},
-  ) {
-    const pin = 'pin' in o ? o.pin : typeof ZIRBEL_CLAUDE_SDK === 'undefined' ? undefined : ZIRBEL_CLAUDE_SDK;
+  /** o.pin: the SDK to fetch; given as undefined, none (an editor that knows of no pin). */
+  constructor(folder: string, o: { pin?: Pin | undefined; registry?: string; withEditor?: () => boolean } = {}) {
+    this.folder = folder;
+    const pin = 'pin' in o ? o.pin : builtPin();
     if (pin && (!VERSION.test(pin.version) || !/^sha512-[A-Za-z0-9+/]{86}==$/.test(pin.integrity)))
       throw new Error('The Claude Agent SDK pin is not a version and a sha512 hash.');
     this.pin = pin;

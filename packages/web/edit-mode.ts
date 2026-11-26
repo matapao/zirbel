@@ -21,17 +21,20 @@ function setEditing(on: boolean) {
   renderEditing();
 }
 
+/** The edit bar's hint: none while playing, else what editing does here. */
+function editHint() {
+  if (!ws.editing) return '';
+  if (ws.candidate) return 'Showing a proposal · switch to Before to edit';
+  return ws.project && !authored()
+    ? 'Select to inspect · drag to move · drag empty space to mark'
+    : 'Click the game to play';
+}
+
 export function renderEditing() {
   $('desk').toggleAttribute('data-editing', ws.editing);
   const toggle = $('edit-toggle');
   toggle.setAttribute('aria-pressed', String(ws.editing));
-  $('hint').textContent = !ws.editing
-    ? ''
-    : ws.candidate
-      ? 'Showing a proposal · switch to Before to edit'
-      : ws.project && !authored()
-        ? 'Select to inspect · drag to move · drag empty space to mark'
-        : 'Click the game to play';
+  $('hint').textContent = editHint();
   renderViewport();
   renderObjects();
   scheduleDraw();

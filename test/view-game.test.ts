@@ -49,7 +49,7 @@ test('a turn’s MCP server has view_game alone, for its own folder, behind the 
 
   const viewed = await servers.handle(call(3, 'view_game', { actions: [{ key: 'ArrowLeft' }, { wait: 50 }], captures: [0, 2], width: 320, height: 200 }), credential) as
     { result: { content: { type: string; data?: string; mimeType?: string; text?: string }[]; isError?: boolean } };
-  assert.equal(viewed.result.isError, undefined, viewed.result.content.at(-1)?.text);
+  assert.equal(viewed.result.isError, undefined, viewed.result.content.at(-1)?.text ?? 'view_game failed');
   assert.deepEqual(viewed.result.content.slice(0, 2).map(({ type, mimeType, data }) => [type, mimeType, Buffer.from(data ?? '', 'base64').toString()]),
     [['image', 'image/png', 'png one'], ['image', 'image/png', 'png two']]);
   assert.deepEqual(JSON.parse(viewed.result.content[2]?.text ?? '{}'), { screenshots: [{ afterActions: 0 }, { afterActions: 2 }],
@@ -129,7 +129,7 @@ fetch('https://example.com/').catch(() => console.log('no network'));`,
     const { servers: [server] } = servers.open(folder, { title: 'WebGL', assets: [], maxPlayers: 1 });
     const viewed = await servers.handle(call(1, 'view_game', { actions: [{ key: 'ArrowRight' }, { wait: 200 }], captures: [0, 2], width: 320, height: 200 }),
       server?.headers.authorization) as { result: { isError?: boolean; content: { type: string; data?: string; text?: string }[] } };
-    assert.equal(viewed.result.isError, undefined, viewed.result.content.at(-1)?.text);
+    assert.equal(viewed.result.isError, undefined, viewed.result.content.at(-1)?.text ?? 'view_game failed');
     const [before, after] = viewed.result.content.filter(({ type }) => type === 'image').map(({ data }) => Buffer.from(data ?? '', 'base64'));
     assert.ok(before && after);
     assert.deepEqual(before.subarray(1, 4).toString(), 'PNG');

@@ -12,11 +12,22 @@ export class RoomClient {
   private stopped = false;
   private attempts = 0;
   private retry?: number;
+  private readonly roomId: string;
+  private readonly releaseId: string;
+  private credential: string;
+  private readonly onMessage: (message: ServerMessage) => void;
+  private readonly onStatus: (status: string) => void;
 
   constructor(
-    private roomId: string, private releaseId: string, private credential: string,
-    private onMessage: (message: ServerMessage) => void, private onStatus: (status: string) => void,
-  ) {}
+    roomId: string, releaseId: string, credential: string, onMessage: (message: ServerMessage) => void,
+    onStatus: (status: string) => void,
+  ) {
+    this.roomId = roomId;
+    this.releaseId = releaseId;
+    this.credential = credential;
+    this.onMessage = onMessage;
+    this.onStatus = onStatus;
+  }
 
   open() {
     const url = new URL('/rooms/' + this.roomId + '/socket', location.href);
@@ -72,7 +83,7 @@ export async function fetchRoom<T>(room: string, route: string, value?: object, 
   if (value) headers['content-type'] = 'application/json';
   if (credential) headers.authorization = 'Bearer ' + credential;
   const response = await fetch('/rooms/' + room + '/' + route, {
-    method: value ? 'POST' : 'GET', headers, body: value ? JSON.stringify(value) : undefined,
+    method: value ? 'POST' : 'GET', headers, body: value ? JSON.stringify(value) : null,
   });
   const result = await response.json();
   if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Unable to open the game.');

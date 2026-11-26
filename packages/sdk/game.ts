@@ -61,9 +61,9 @@ const gameFields = z.strictObject({
   registerObjects: z.boolean().optional(),
   files: gameFiles.optional(),
 });
-const withinPlayers = (game: { maxPlayers: number; net?: true }) => game.maxPlayers <= SHARED_PLAYERS || game.net === true;
+const withinPlayers = (game: { maxPlayers: number; net?: true | undefined }) => game.maxPlayers <= SHARED_PLAYERS || game.net === true;
 const playersError = { message: 'A game for more than 4 players needs net.', path: ['maxPlayers'] };
-const ownAdapter = (game: { net?: true; adapter?: string; files?: Record<string, string> }) =>
+const ownAdapter = (game: { net?: true | undefined; adapter?: string | undefined; files?: Record<string, string> | undefined }) =>
   game.adapter === undefined || (game.net === true && game.files !== undefined && Object.hasOwn(game.files, game.adapter));
 const adapterError = { message: 'An adapter is one of the game’s own files, in a game with net.', path: ['adapter'] };
 export const gameDocument = gameFields.refine(withinPlayers, playersError).refine(ownAdapter, adapterError);

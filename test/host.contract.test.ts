@@ -161,7 +161,7 @@ for (const host of hosts) {
 
     // three.js's addons and the decoders they load, beside three.module.js and cached like it.
     for (const [name, type] of [['loaders/GLTFLoader.js', 'application/javascript; charset=utf-8'],
-      ['libs/draco/draco_decoder.wasm', 'application/wasm'], ['libs/basis/basis_transcoder.wasm', 'application/wasm']]) {
+      ['libs/draco/draco_decoder.wasm', 'application/wasm'], ['libs/basis/basis_transcoder.wasm', 'application/wasm']] as const) {
       const url = runtimeBase + 'three/addons/' + name;
       const bytes = readFileSync('dist/web/three/examples/jsm/' + name);
       let addon = await fetch(url, { headers: { 'accept-encoding': 'gzip' } });

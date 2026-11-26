@@ -128,7 +128,7 @@ function normalizer() {
   };
   const text = (value: string) => value
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\b[0-9a-f]{40}\b/g, name)
-    // A grant's commits name it by the start of its id (docs/git-store.md).
+    // A grant's commits name it by the start of its id (AGENTS.md: The git store).
     .replace(/\bMCP grant ([0-9a-f]{8})\b/g, (_, prefix: string) => 'MCP grant ' + name(prefix))
     .replace(/\b\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\b/g, '<date>');
   const walk = (value: unknown): unknown => {
@@ -141,25 +141,26 @@ function normalizer() {
   return (step: Step) => ({ status: step.status, body: walk(step.body) });
 }
 
-const results = new Map<string, Awaited<ReturnType<typeof session>>>();
-
-for (const host of hosts) {
-  test(host.name + ' MCP server runs the scripted session', async (t) => {
-    const { ready } = launch(t, host.command, ['--data', join(tempDir(t, 'zirbel-mcp-'), 'data'), '--port', '0', '--enable-mcp'],
-      (line) => typeof line.editor === 'string' ? line.editor : undefined);
-    const result = await session(await ready);
-    for (const [index, step] of result.steps.entries()) assert.equal(step.status, 200, 'step ' + index + ': ' + JSON.stringify(step.body));
-    // Every guide is the build's file, byte for byte.
-    for (const { uri, name } of guideResources) assert.equal(result.guides.get(uri), readFileSync('dist/web/mcp-guides/' + name + '.md', 'utf8'), uri);
-    results.set(host.name, result);
-  });
-}
-
-if (hosts.length > 1) {
-  test('both MCP servers answer the session identically', () => {
+// Each host's run is a step of one test, and the comparison its last: steps keep their order, whatever order
+// --test-randomize gives the file's tests.
+test('every MCP server runs the scripted session, and both answer it identically', async (t) => {
+  const results = new Map<string, Awaited<ReturnType<typeof session>>>();
+  for (const host of hosts) {
+    await t.test(host.name + ' MCP server runs the scripted session', async (t) => {
+      const { ready } = launch(t, host.command, ['--data', join(tempDir(t, 'zirbel-mcp-'), 'data'), '--port', '0', '--enable-mcp'],
+        (line) => typeof line.editor === 'string' ? line.editor : undefined);
+      const result = await session(await ready);
+      for (const [index, step] of result.steps.entries()) assert.equal(step.status, 200, 'step ' + index + ': ' + JSON.stringify(step.body));
+      // Every guide is the build's file, byte for byte.
+      for (const { uri, name } of guideResources) assert.equal(result.guides.get(uri), readFileSync('dist/web/mcp-guides/' + name + '.md', 'utf8'), uri);
+      results.set(host.name, result);
+    });
+  }
+  if (hosts.length < 2) return;
+  await t.test('both MCP servers answer the session identically', () => {
     const node = results.get('node')!.steps.map(normalizer());
     const go = results.get('go')!.steps.map(normalizer());
     assert.equal(go.length, node.length);
     for (const [index, step] of node.entries()) assert.deepEqual(go[index], step, 'step ' + index);
   });
-}
+});

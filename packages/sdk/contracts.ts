@@ -11,7 +11,7 @@ export const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const color = z.string().regex(/^#[a-fA-F0-9]{6}$/);
 const template = z.enum(['blank', 'mosslight', 'tessellate', 'orbit-garden', 'lantern-quest']);
 const objectKind = z.enum(['tree', 'rock', 'crystal', 'campfire', 'cabin', 'water', 'bridge', 'spawn', 'placeholder', 'npc', 'enemy']);
-const sceneObject = z.strictObject({
+export const sceneObject = z.strictObject({
   id, kind: objectKind, name: z.string().trim().min(1).max(80),
   x: z.number().min(0).max(WORLD.width), y: z.number().min(0).max(WORLD.height),
   size: z.number().min(8).max(340), color,
@@ -65,7 +65,7 @@ export const proposalInput = z.strictObject({
 // the editor itself stored by their hashes.
 const storedOperation = z.discriminatedUnion('op', [z.strictObject({ op: z.literal('writeGame'), game: gameDocument }), ...sceneOperations]);
 export const storedProposalInput = proposalInput.extend({ operations: z.array(storedOperation).min(1).max(160) });
-// A revision in full. Its id is its commit's hash (docs/git-store.md); author: who made it, as its commit names them.
+// A revision in full. Its id is its commit's hash (AGENTS.md: The git store); author: who made it, as its commit names them.
 const revision = z.strictObject({
   id, parent: id.nullable(), restoredFrom: id.optional(),
   label: z.string().min(1).max(120), date: z.iso.datetime(), author: z.string().min(1).max(120).optional(),
@@ -251,7 +251,7 @@ export const spacesList = z.array(z.object({
 
 export type SceneObject = z.infer<typeof sceneObject>;
 export type Scene = z.infer<typeof scene>;
-export function legacyScene(value: { scene?: Scene }) {
+export function legacyScene(value: { scene?: Scene | undefined }) {
   if (!value.scene) throw new Error('This legacy project has no scene.');
   return value.scene;
 }

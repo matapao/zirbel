@@ -64,8 +64,10 @@ export function editorToken(cookie = '') {
 export class Editors {
   private readonly wrong = new Map<string, { since: number; count: number }>();
   private readonly file: string;
+  private readonly now: () => number;
 
-  constructor(folder: string, private readonly now = Date.now) {
+  constructor(folder: string, now = Date.now) {
+    this.now = now;
     privateDirectory(folder);
     this.file = join(folder, 'editors.json');
   }

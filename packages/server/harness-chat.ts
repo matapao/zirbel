@@ -52,11 +52,14 @@ function folderGame(projects: Projects, folder: string | undefined, output: Excl
     ...(registerObjects ? {} : { registerObjects: false }), ...(files.size ? { files: stored } : {}) };
 }
 
-type Turn = { text: string; branch: string; proposalId?: string; registerObjects?: boolean; objects?: RegisteredObject[]; markedIds?: string[];
+type Turn = {
+  text: string; branch: string; proposalId?: string | undefined; registerObjects?: boolean | undefined;
+  objects?: RegisteredObject[] | undefined; markedIds?: string[] | undefined;
   /** The thread's working folder, whose game/ a create or edit keeps. */
-  folder?: string;
+  folder?: string | undefined;
   /** Who sent the message. The harness is the author of what it makes. */
-  author?: Ident };
+  author?: Ident | undefined;
+};
 export async function runHarnessChat(harnesses: Processors, processor: string, projects: Projects, project: Project, base: Revision,
   request: Turn, references: Reference[], options?: ProcessorRun): Promise<ChatReply & { task?: string }> {
   options?.signal?.throwIfAborted();

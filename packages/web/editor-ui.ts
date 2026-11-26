@@ -10,8 +10,8 @@ function request(path: string, payload?: unknown, accept = 'application/json', s
     redirect: 'error',
     method: method ?? (payload === undefined ? 'GET' : 'POST'),
     headers,
-    signal,
-    body: payload === undefined ? undefined : JSON.stringify(payload),
+    signal: signal ?? null,
+    body: payload === undefined ? null : JSON.stringify(payload),
   });
 }
 

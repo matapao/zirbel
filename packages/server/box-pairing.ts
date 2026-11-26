@@ -37,13 +37,15 @@ export function normalizeCode(input: string) {
   return /^[0-9A-HJKMNP-TV-Z]{8}$/.test(plain) ? plain.slice(0, 4) + '-' + plain.slice(4) : undefined;
 }
 
+/** Browsers and systems by a mark in the User-Agent, in order: the first that matches names it. */
+const BROWSERS = [[/Edg\//, 'Edge'], [/Firefox\//, 'Firefox'], [/Chrome\//, 'Chrome'], [/Safari\//, 'Safari']] as const;
+const SYSTEMS = [[/iPhone/, 'iPhone'], [/iPad/, 'iPad'], [/Android/, 'Android'], [/CrOS/, 'ChromeOS'],
+  [/Mac OS X/, 'Mac'], [/Windows/, 'Windows'], [/Linux/, 'Linux']] as const;
+
 /** A short name for the device a browser runs on, from its User-Agent. */
 export function deviceLabel(agent = '') {
-  const browser = /Edg\//.test(agent) ? 'Edge' : /Firefox\//.test(agent) ? 'Firefox' : /Chrome\//.test(agent) ? 'Chrome'
-    : /Safari\//.test(agent) ? 'Safari' : 'A browser';
-  const system = /iPhone/.test(agent) ? 'iPhone' : /iPad/.test(agent) ? 'iPad' : /Android/.test(agent) ? 'Android'
-    : /CrOS/.test(agent) ? 'ChromeOS' : /Mac OS X/.test(agent) ? 'Mac' : /Windows/.test(agent) ? 'Windows'
-    : /Linux/.test(agent) ? 'Linux' : '';
+  const browser = BROWSERS.find(([mark]) => mark.test(agent))?.[1] ?? 'A browser';
+  const system = SYSTEMS.find(([mark]) => mark.test(agent))?.[1] ?? '';
   return system ? browser + ' on ' + system : browser;
 }
 
@@ -61,8 +63,10 @@ export class Pairing {
   private readonly codes = new Map<string, { hash: Buffer; expires: number }>();
   private readonly wrong = new Map<string, { since: number; count: number }>();
   private readonly file: string;
+  private readonly now: () => number;
 
-  constructor(folder: string, private readonly now = Date.now) {
+  constructor(folder: string, now = Date.now) {
+    this.now = now;
     privateDirectory(folder);
     this.file = join(folder, 'paired.json');
   }

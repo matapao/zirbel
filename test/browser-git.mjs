@@ -1,4 +1,4 @@
-// A game as a git repository in the editor (docs/git-store.md): History reads git's log (what, who, when), and Clone
+// A game as a git repository in the editor (AGENTS.md: The git store): History reads git's log (what, who, when), and Clone
 // with git… gives the command that clones the game as it is.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';

@@ -16,7 +16,7 @@ function sceneApp() {
   let pending: number | undefined;
 
   // An MCP Apps view cannot know its host frame's origin; it sends only JSON-RPC tool calls.
-  // nosemgrep: javascript.browser.security.wildcard-postmessage-configuration.wildcard-postmessage-configuration
+  // nosemgrep: javascript.browser.security.wildcard-postmessage-configuration.wildcard-postmessage-configuration -- no origin to name
   const send = (message: object) => parent.postMessage({ jsonrpc: '2.0', ...message }, '*');
   const fail = (message: string) => {
     byId('result').hidden = true;
@@ -44,7 +44,7 @@ function sceneApp() {
   };
 
   // MCP Apps gives the view no fixed host origin; the sender must be the parent frame and the message JSON-RPC.
-  // nosemgrep: javascript.browser.security.insufficient-postmessage-origin-validation.insufficient-postmessage-origin-validation
+  // nosemgrep: javascript.browser.security.insufficient-postmessage-origin-validation.insufficient-postmessage-origin-validation -- the sender is checked
   window.addEventListener('message', event => {
     const message = event.data;
     if (event.source !== parent || message?.jsonrpc !== '2.0') return;

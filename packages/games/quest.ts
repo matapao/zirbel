@@ -1,5 +1,14 @@
 import { WORLD, type Scene, type SceneObject } from '../sdk/contracts.ts';
 
+/** What is left once a relic is recovered: more relics, or the way back to the guide. */
+function relicsLeft(remaining: number, guide: SceneObject | undefined) {
+  if (remaining) return remaining + (remaining === 1 ? ' relic remains.' : ' relics remain.');
+  return 'Return to ' + (guide?.name ?? 'the final guardian') + '.';
+}
+
+/** Where a won battle leads: to the relic it freed, or on exploring. */
+const afterBattle = (prize: SceneObject | undefined) => (prize ? 'Recover ' + prize.name + '.' : 'Continue exploring.');
+
 export function createQuest(scene: Scene) {
   const spawn = scene.objects.find((object) => object.kind === 'spawn') ?? { x: 340, y: 355 };
   const guides = scene.objects.filter((object) => object.kind === 'npc');
@@ -23,6 +32,7 @@ export function createQuest(scene: Scene) {
   const requirement = (item: SceneObject) => {
     if (item.requires && names.has(item.requires) && !state.hidden.has(item.requires)) return names.get(item.requires);
     if (item.kind === 'crystal' && !item.requires && enemies.length === 1 && !state.defeated) return enemies[0]?.name;
+    return undefined;
   };
 
   return {
@@ -51,8 +61,8 @@ export function createQuest(scene: Scene) {
         state.found = state.relics === relics.length;
         state.won = state.found && state.defeated && !guide;
         const remaining = relics.length - state.relics;
-        state.message = 'You recovered ' + target.name + '. ' + (state.won ? 'Quest complete!' : remaining ?
-          remaining + (remaining === 1 ? ' relic remains.' : ' relics remain.') : 'Return to ' + (guide?.name ?? 'the final guardian') + '.');
+        state.message = 'You recovered ' + target.name + '. ' +
+          (state.won ? 'Quest complete!' : relicsLeft(remaining, guide));
       } else {
         state.won = target === guide && state.defeated && state.found;
         if (target !== guide) state.health = maxHealth;
@@ -71,8 +81,7 @@ export function createQuest(scene: Scene) {
           if (enemies.length > 1) state.health = Math.min(maxHealth, state.health + 5);
           const prize = relics.find(({ requires, id }) => !state.hidden.has(id) && (requires === opponent?.id || enemies.length === 1));
           state.won = state.defeated && state.found && !guide;
-          state.message = 'You defeated ' + opponent.name + '. ' + (state.won ? 'Quest complete!' :
-            prize ? 'Recover ' + prize.name + '.' : 'Continue exploring.');
+          state.message = 'You defeated ' + opponent.name + '. ' + (state.won ? 'Quest complete!' : afterBattle(prize));
           opponent = undefined;
           return;
         }

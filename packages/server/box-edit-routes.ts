@@ -62,7 +62,7 @@ function editLink(box: BoxContext, host: string, plain: string) {
 /** A game's code and the people editing it, for its owners: /api/projects/<id>/edit-code[/stop] and
  *  /api/projects/<id>/editors[/<editor>]. Says whether it answered the request. */
 export async function editorsRequest(box: BoxContext, projects: Projects, request: IncomingMessage, response: ServerResponse,
-  access: Access, url: URL, route: { pathID?: string; action?: string; tail?: string }) {
+  access: Access, url: URL, route: { pathID?: string | undefined; action?: string | undefined; tail?: string | undefined }) {
   const { pathID, action, tail } = route;
   const method = request.method;
   const known = action === 'edit-code' ? method === 'POST' && (!tail || tail === 'stop')

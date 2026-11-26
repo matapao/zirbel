@@ -176,7 +176,7 @@ export function boxHealth(box: BoxContext) {
 /** The box's own API: /api/pairing… and /api/box/… (its controllers: box-controllers.ts). Says whether it answered the
  *  request. */
 export async function boxRequest(box: BoxContext, request: IncomingMessage, response: ServerResponse, access: Access,
-  route: { resource?: string; pathID?: string; action?: string; tail?: string }) {
+  route: { resource?: string; pathID?: string | undefined; action?: string | undefined; tail?: string | undefined }) {
   const { resource, pathID, action, tail } = route;
   const method = request.method;
   if (method !== 'GET') checkOrigin(request, !access.local);

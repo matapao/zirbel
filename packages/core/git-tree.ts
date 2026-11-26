@@ -2,7 +2,7 @@
 // the game's own zirbel.json), with the host's own files under .zirbel/ (the document's own fields, an older project's
 // scene, imported assets), and anything else kept as it is. readTree reads one into a revision's content under the
 // rules every host applies; treeChanges writes content over a base tree, touching only what the host manages.
-// docs/git-store.md is the design; the Go host follows it.
+// The git store in AGENTS.md is the design; the Go host follows it.
 import { z } from 'zod';
 import { asset, PORTABLE_FILE_LIMIT, scene, type Asset, type Scene } from '../sdk/contracts.ts';
 import { gameDocument, gameFilePath, MAX_GAME_FILES, NET_PLAYERS, SHARED_PLAYERS, type GameDocument } from '../sdk/game.ts';
@@ -10,7 +10,7 @@ import { describedGame, GAME_BYTES } from './game-files.ts';
 import { blobId, identName, type CommitInfo, type Entry, type FastImport } from './git.ts';
 
 /** A revision's content: an older project's scene, the game, and the imported assets. */
-export type Content = { scene?: Scene; game?: GameDocument; assets: Asset[] };
+export type Content = { scene?: Scene | undefined; game?: GameDocument | undefined; assets: Asset[] };
 /** A revision as history lists it. */
 export type RevisionMeta = { id: string; parent: string | null; restoredFrom?: string; label: string; date: string; author: string };
 

@@ -1,4 +1,4 @@
-// Git as the revision engine, on both hosts (docs/git-store.md): the editor's saves are commits a clone sees, a push of
+// Git as the revision engine, on both hosts (AGENTS.md: The git store): the editor's saves are commits a clone sees, a push of
 // a game becomes its head and anything else is refused before the branch moves, a game imports from a git URL and
 // updates from its source (a fast-forward, a merge, a conflict reported), and the version-1 projects of a data folder
 // become repositories at start-up. Each host is held to the same answers; where both run, they must write the same
@@ -21,7 +21,7 @@ async function startEditor(t: TestContext, command: string[], data: string, env?
   const editor = await ready;
   const call = async (method: string, path: string, payload?: unknown) => {
     const response = await fetch(editor + path, { method, headers: { origin: editor, ...(payload === undefined ? {} : { 'content-type': 'application/json' }) },
-      body: payload === undefined ? undefined : JSON.stringify(payload) });
+      body: payload === undefined ? null : JSON.stringify(payload) });
     const text = await response.text();
     let body: unknown = text;
     try { body = JSON.parse(text); } catch { /* not JSON */ }
@@ -36,8 +36,6 @@ async function startEditor(t: TestContext, command: string[], data: string, env?
 }
 type Editor = Awaited<ReturnType<typeof startEditor>>;
 const headOf = (project: Project, branch = 'main') => project.revisions.find(({ id }) => id === project.branches[branch])!;
-const trees = new Map<string, string[]>();
-const migrations = new Map<string, Record<string, Record<string, string>>>();
 
 /** The editor's saves, as commits a clone sees: ids, authors, Zirbel committing, the restore's trailer, the files. */
 async function savesAreCommits({ ok, call }: Editor, work: string) {
@@ -233,12 +231,33 @@ async function migration(t: TestContext, command: string[], root: string) {
   return heads;
 }
 
+// Each host's run is a step of one test, and the comparison its last: steps keep their order, whatever order
+// --test-randomize gives the file's tests.
+test('every editor keeps its saves as commits, which a clone sees, and both write the same trees', async (t) => {
+  const trees = new Map<string, string[]>();
+  for (const host of hosts) {
+    await t.test(host.name + ' editor saves become commits, which a clone sees', async (t) => {
+      const root = tempDir(t, 'zirbel-git-');
+      const editor = await startEditor(t, host.command, join(root, 'data'));
+      trees.set(host.name, await savesAreCommits(editor, root));
+    });
+  }
+  if (hosts.length > 1) await t.test('both hosts write the same trees for the same games', () => assert.deepEqual(trees.get('go'), trees.get('node')));
+});
+
+test('every host migrates the version-1 projects of its data folder at start-up, both to the same commits', async (t) => {
+  const migrations = new Map<string, Record<string, Record<string, string>>>();
+  for (const host of hosts) {
+    await t.test(host.name + ' migrates the version-1 projects of its data folder at start-up', async (t) => {
+      migrations.set(host.name, await migration(t, host.command, tempDir(t, 'zirbel-git-')));
+    });
+  }
+  if (hosts.length > 1) {
+    await t.test('both hosts migrate a data folder to the same commits', () => assert.deepEqual(migrations.get('go'), migrations.get('node')));
+  }
+});
+
 for (const host of hosts) {
-  test(host.name + ' editor saves become commits, which a clone sees', async (t) => {
-    const root = tempDir(t, 'zirbel-git-');
-    const editor = await startEditor(t, host.command, join(root, 'data'));
-    trees.set(host.name, await savesAreCommits(editor, root));
-  });
   test(host.name + ' takes a push of a game as its head and refuses anything else', async (t) => {
     const root = tempDir(t, 'zirbel-git-');
     await pushes(await startEditor(t, host.command, join(root, 'data')), root);
@@ -252,18 +271,10 @@ for (const host of hosts) {
     const local = sourceRepository(join(root, 'other'), { 'index.html': '<p>local</p>' });
     assert.equal((await strict.call('POST', '/api/projects/import-git', { url: local.url })).status, 400);
   });
-  test(host.name + ' migrates the version-1 projects of its data folder at start-up', async (t) => {
-    migrations.set(host.name, await migration(t, host.command, tempDir(t, 'zirbel-git-')));
-  });
   test(host.name + ' editor refuses to start without git, and says so', async (t) => {
     const root = tempDir(t, 'zirbel-git-');
     mkdirSync(join(root, 'bin'));
     const { ready } = launch(t, host.command, ['--data', join(root, 'data'), '--port', '0'], (line) => line.editor, { PATH: join(root, 'bin') });
     await assert.rejects(ready, /exited with 1: .*Zirbel needs git 2\.38 or later to keep its games' history \(found no git\)\. Install git and start Zirbel again\./s);
   });
-}
-
-if (hosts.length > 1) {
-  test('both hosts write the same trees for the same games', () => assert.deepEqual(trees.get('go'), trees.get('node')));
-  test('both hosts migrate a data folder to the same commits', () => assert.deepEqual(migrations.get('go'), migrations.get('node')));
 }

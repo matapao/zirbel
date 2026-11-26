@@ -51,20 +51,17 @@ function stateOf(entry: ActivityEntry) {
 const expandable = (entry: ActivityEntry) =>
   Boolean(entry.diff || (entry.detail && entry.detail.trim() !== titleOf(entry)));
 
+/** A diff line's mark: a header, an added or a removed line, or none for a line kept. */
+function lineKind(line: string) {
+  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@')) return 'meta';
+  if (line.startsWith('+')) return 'add';
+  return line.startsWith('-') ? 'del' : undefined;
+}
+
 /** A diff as lines marked added or removed. */
 export function diffView(diff: string) {
   const view = el('pre', undefined, 'diff');
-  for (const line of diff.split('\n')) {
-    const kind =
-      line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@')
-        ? 'meta'
-        : line.startsWith('+')
-          ? 'add'
-          : line.startsWith('-')
-            ? 'del'
-            : '';
-    view.append(el('span', line + '\n', kind || undefined));
-  }
+  for (const line of diff.split('\n')) view.append(el('span', line + '\n', lineKind(line)));
   return view;
 }
 

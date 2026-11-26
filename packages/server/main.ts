@@ -82,7 +82,7 @@ type EditorOptions = { harnesses?: (root: string) => Processors; webRoot?: strin
 async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileURLToPath(new URL('./web/', import.meta.url)),
   account = accountDirectory() }: EditorOptions) {
   const root = resolve(values.data ?? process.env.ZIRBEL_DATA ?? join(homedir(), '.zirbel'));
-  // Every game is a git repository (docs/git-store.md): no git, no editor.
+  // Every game is a git repository (AGENTS.md: The git store): no git, no editor.
   requireGit();
   // Built before the claim so a missing build fails without holding the directory.
   const projects = new Projects(root);

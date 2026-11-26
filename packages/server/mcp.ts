@@ -73,9 +73,18 @@ const tools = [
 // read this from contracts/mcp-tools.json.
 export const toolDescriptors = tools.map(({ access, descriptor }) => ({ access, descriptor }));
 
+/** The scene document, when a URI names it. */
+const sceneText = (uri: unknown) => (uri === sceneResource.uri ? sceneDocument : undefined);
+
 export class Mcp {
-  /** guides: each guide's text by its URI (readGuides). */
-  constructor(private projects: Projects, private guides: ReadonlyMap<string, string>) {}
+  private readonly projects: Projects;
+  /** Each guide's text by its URI (readGuides). */
+  private readonly guides: ReadonlyMap<string, string>;
+
+  constructor(projects: Projects, guides: ReadonlyMap<string, string>) {
+    this.projects = projects;
+    this.guides = guides;
+  }
   private get directory() { return join(this.projects.root, 'grants'); }
   private file(id: string) { return join(this.directory, safeId(id) + '.json'); }
 
@@ -134,7 +143,7 @@ export class Mcp {
     if (method === 'resources/read') {
       const uri = params?.uri;
       const guide = guideResources.find((item) => item.uri === uri);
-      const text = guide ? this.guides.get(guide.uri) : uri === sceneResource.uri ? sceneDocument : undefined;
+      const text = guide ? this.guides.get(guide.uri) : sceneText(uri);
       if (text === undefined) return { ...response, error: { code: -32002, message: 'Resource not found.' } };
       const { mimeType } = guide ?? sceneResource;
       return { ...response, result: { contents: [{ uri, mimeType, text }] } };

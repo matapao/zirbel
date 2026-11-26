@@ -11,11 +11,15 @@ export function privateDirectory(directory: string) {
     throw new Error('Zirbel account storage must be a private directory owned by this user.');
 }
 
+/** The folder this system keeps a user's app settings in. */
+function configDirectory(home: string) {
+  if (process.platform === 'darwin') return join(home, 'Library', 'Application Support');
+  if (process.platform === 'win32') return process.env.LOCALAPPDATA || join(home, 'AppData', 'Local');
+  return process.env.XDG_CONFIG_HOME || join(home, '.config');
+}
+
 export function accountDirectory() {
-  const home = homedir();
-  const config = process.platform === 'darwin' ? join(home, 'Library', 'Application Support') :
-    process.platform === 'win32' ? process.env.LOCALAPPDATA || join(home, 'AppData', 'Local') :
-    process.env.XDG_CONFIG_HOME || join(home, '.config');
+  const config = configDirectory(homedir());
   const directory = process.env.ZIRBEL_ACCOUNT_DIR || join(config, 'Zirbel');
   if (!isAbsolute(directory)) throw new Error('Zirbel account storage requires an absolute path.');
   return directory;

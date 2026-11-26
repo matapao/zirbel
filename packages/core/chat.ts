@@ -12,8 +12,8 @@ export type ChatReply = {
 };
 
 /** author: who sent the message, whose undo is theirs. */
-type Request = { text: string; branch: string; proposalId?: string; author?: Ident };
-type Draft = { title?: string; game: GameDocument };
+type Request = { text: string; branch: string; proposalId?: string | undefined; author?: Ident | undefined };
+type Draft = { title?: string | undefined; game: GameDocument };
 
 function wantsReview(text: string) {
   return /^(?:please\s+)?(?:propose|preview|suggest)\b|\b(?:show|give|offer|compare|prepare)\b[^.!?]{0,70}\b(?:options|alternatives)\b|\bbefore applying\b/i.test(text);
@@ -55,7 +55,8 @@ export function applyChatControl(projects: Projects, project: Project, base: Rev
 }
 
 export function startFromChat(projects: Projects, draft: Draft, text: string, message: string, usage?: ChatUsage,
-  history: ReadonlyArray<{ role: 'creator' | 'assistant'; text: string; usage?: ChatUsage }> = [], author?: Ident): ChatReply {
+  history: ReadonlyArray<{ role: 'creator' | 'assistant'; text: string; usage?: ChatUsage | undefined }> = [], author?: Ident,
+): ChatReply {
   const newProject = projects.createGame(draft.title, draft.game, author);
   for (const note of history) projects.addNote(newProject.id, { ...note, branch: 'main', references: [], attachments: [] });
   projects.addNote(newProject.id, { text, branch: 'main', role: 'creator', references: [], attachments: [] });

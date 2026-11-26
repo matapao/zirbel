@@ -50,6 +50,7 @@ export function mosslight(scene: Scene): Simulation {
       const length = Math.max(1, Math.hypot(x, y));
       player.dx = x / length;
       player.dy = y / length;
+      return undefined;
     },
     tick(dt) {
       let changed = false;
@@ -119,6 +120,7 @@ export function tessellate(solo: boolean): Simulation {
         const next = [4, 0, 8, 2, 6, 1, 3, 5, 7].find((cell) => board[cell] === null);
         if (next !== undefined) place('bot', next);
       }
+      return undefined;
     },
     tick() { return false; },
     snapshot() { return { board: [...board], order: [...order], turn, winner, draw, solo }; },

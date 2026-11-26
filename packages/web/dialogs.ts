@@ -1,8 +1,8 @@
 // Split from workspace.ts; shares state through ws in state.ts.
 import { action, api, attempt, dialog, el, formValue, inform, openDialog, option } from './editor-ui.ts';
 import { current, library, loadProject, openProject, refreshProject, route, scope } from './workspace.ts';
-import { editorOf, Preview, ws } from './state.ts';
-import { type Manifest, type Project } from '../sdk/contracts.ts';
+import { editorOf, type Preview, ws } from './state.ts';
+import type { Manifest, Project } from '../sdk/contracts.ts';
 import { templates } from '../games/templates.ts';
 import { lobbyOffers, roomCard, type Room } from './library.ts';
 import { revisionLine } from './git.ts';
@@ -81,11 +81,15 @@ export async function sharingDialog() {
   dev.append(label, el('p', multiplayer
     ? 'Guests open a standalone game. The room stays on revision ' + baseRevision.slice(0, 8) + ' while you keep editing.'
     : 'Ask the harness to add multiplayer to this game.'));
+  /** Opens a development room on this revision, or closes the one that shares it. */
+  const share = (enabled: boolean) => {
+    if (enabled) return api('projects/' + id + '/development-room', { branch, baseRevision });
+    return sharing ? api('rooms/' + sharing.id + '/close', {}) : Promise.resolve();
+  };
   toggle.addEventListener('change', () => {
     const enabled = toggle.checked;
     toggle.disabled = true;
-    void (enabled ? api('projects/' + id + '/development-room', { branch, baseRevision }) :
-      sharing ? api('rooms/' + sharing.id + '/close', {}) : Promise.resolve()).then(sharingDialog).catch((error: Error) => {
+    void share(enabled).then(sharingDialog).catch((error: Error) => {
       toggle.checked = !enabled; toggle.disabled = false; inform(error.message, true);
     });
   });

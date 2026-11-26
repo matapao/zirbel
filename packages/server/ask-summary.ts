@@ -23,7 +23,9 @@ export const SANDBOXED = 'Runs in this turn’s folder on this computer, with no
 
 /** Where a request comes from: the turn's working folder, the harness that asks, and for a call to one of the turn's
  *  MCP servers, that server and tool as the harness reported them. */
-export type AskPlace = { folder?: string; harness?: string; mcp?: { server: string; tool: string } };
+export type AskPlace = {
+  folder?: string | undefined; harness?: string | undefined; mcp?: { server: string; tool: string } | undefined;
+};
 
 const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
 const cap = (value: string, room: number) => (value.length <= room ? value : value.slice(0, room - 1) + '…');
@@ -34,7 +36,8 @@ const record = (value: unknown): Record<string, unknown> =>
 function inFolder(path: string, folder?: string) {
   if (!folder) return isAbsolute(path) ? basename(path) : path;
   const inside = relative(folder, resolve(folder, path));
-  return inside === '' ? '.' : inside.startsWith('..') || isAbsolute(inside) ? path : inside;
+  if (inside === '') return '.';
+  return inside.startsWith('..') || isAbsolute(inside) ? path : inside;
 }
 
 function shellCommand(input: Record<string, unknown>, title: string) {
@@ -81,6 +84,12 @@ function leadingFolder(command: string) {
   return match ? { folder: match[1]!.replace(/^['"]|['"]$/g, ''), rest: command.slice(match[0].length) } : undefined;
 }
 
+/** A command's headline: what the harness says it does, else the programs it runs. */
+function commandHeadline(description: string | undefined, programs: string) {
+  if (description) return cap(description, HEADLINE);
+  return programs ? 'Run a command: ' + programs : 'Run a command';
+}
+
 function shell(question: AgentAsk, input: Record<string, unknown>, place: AskPlace): PermissionRequest {
   const command = shellCommand(input, question.title);
   const stated = text(input.cwd) ?? text(input.workdir) ?? text(input.working_directory);
@@ -89,7 +98,7 @@ function shell(question: AgentAsk, input: Record<string, unknown>, place: AskPla
   const description = text(input.description);
   const programs = programList(programsOf(leading && !stated ? leading.rest : command));
   return {
-    summary: description ? cap(description, HEADLINE) : programs ? 'Run a command: ' + programs : 'Run a command',
+    summary: commandHeadline(description, programs),
     tool: question.tool,
     command: cap(command, COMMAND_LIMIT),
     ...(folder ? { folder: cap(inFolder(folder, place.folder), 1000) } : {}),
@@ -131,6 +140,14 @@ function readable(name: string) {
   return name.replace(/[_-]+/g, ' ').trim();
 }
 
+/** The headline of a tool that reads, searches, fetches or does anything else: the file it reads, or the tool. */
+function toolHeadline(question: AgentAsk, tool: string, target: string) {
+  if (READ_TOOLS.has(question.tool)) return 'Read' + (target || ' a file');
+  if (SEARCH_TOOLS.has(question.tool)) return 'Search with ' + readable(tool);
+  if (FETCH_TOOLS.has(question.tool)) return 'Fetch a page with ' + readable(tool);
+  return 'Use ' + (readable(tool) || 'a tool');
+}
+
 /** The plain headline, scope, reason and details of a permission request. */
 export function describeAsk(question: AgentAsk, place: AskPlace = {}): PermissionRequest & ActionReach {
   const input = record(question.input);
@@ -155,10 +172,7 @@ export function describeAsk(question: AgentAsk, place: AskPlace = {}): Permissio
   if (EDIT_TOOLS.has(question.tool)) return { ...edit(question, input, place), ...reason, ...sandboxed, tool };
   const path = text(input.file_path) ?? text(input.path) ?? text(input.notebook_path);
   const target = path ? ' ' + inFolder(path, place.folder) : '';
-  const summary = READ_TOOLS.has(question.tool) ? 'Read' + (target || ' a file')
-    : SEARCH_TOOLS.has(question.tool) ? 'Search with ' + readable(tool)
-    : FETCH_TOOLS.has(question.tool) ? 'Fetch a page with ' + readable(tool)
-    : 'Use ' + (readable(tool) || 'a tool');
+  const summary = toolHeadline(question, tool, target);
   return {
     summary: cap(summary, HEADLINE),
     tool,

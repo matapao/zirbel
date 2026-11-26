@@ -12,7 +12,7 @@ import { TurnEndedError, type ProcessorRun, type Processors } from '../packages/
 import { inThread } from '../packages/server/thread-turns.ts';
 import { CONTINUE_TEXT } from '../packages/sdk/chat-stream.ts';
 import { projectThread, Threads, workspaceThread } from '../packages/server/threads.ts';
-import { tempDir } from './helpers.ts';
+import { abortError, tempDir } from './helpers.ts';
 
 type Call = { id: string; run: ProcessorRun };
 
@@ -105,7 +105,7 @@ test('a turn is marked running; the editor stopping, or ending mid-turn, leaves 
     // The harness names its session as it starts, long before the turn ends.
     run.session?.('live');
     started.resolve();
-    await new Promise((_resolve, reject) => run.signal?.addEventListener('abort', () => reject(run.signal?.reason), { once: true }));
+    await new Promise((_resolve, reject) => run.signal?.addEventListener('abort', () => reject(abortError(run.signal)), { once: true }));
   });
   const running = inThread(threads, harnesses, key, { ...turn('turn-1'), noteId: 'note-1' }, {}, controller.signal,
     (harness) => harness.start('codex', 'Make it', { signal: controller.signal }));

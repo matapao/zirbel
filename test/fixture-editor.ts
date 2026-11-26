@@ -44,7 +44,7 @@ await main({
     session?.(sessionId);
     let reply: FixtureReply;
     try {
-      const response = await fetch(fixture + '/runs', { method: 'POST', signal,
+      const response = await fetch(fixture + '/runs', { method: 'POST', signal: signal ?? null,
         body: JSON.stringify({ processor, prompt, cwd: place?.cwd, resume: place?.resume, sessionId }) });
       if (!response.ok) throw new ZirbelError(response.status, 'The harness connection could not complete the request.');
       reply = await response.json() as FixtureReply;

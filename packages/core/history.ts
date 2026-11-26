@@ -36,8 +36,11 @@ export class History {
   private readonly logs = new Map<string, { key: string; revisions: RevisionMeta[] }>();
   private readonly contents = new Map<string, Content>();
   private readonly hashes = new Map<string, Map<string, string>>();
+  private readonly store: AssetStore;
 
-  constructor(private readonly store: AssetStore) {}
+  constructor(store: AssetStore) {
+    this.store = store;
+  }
 
   /** The history of a repository with these branches: its newest commits and every head, oldest first. */
   revisions(repo: string, branches: Record<string, string>) {

@@ -4,9 +4,9 @@ type CTX = CanvasRenderingContext2D;
 type Point = [number, number];
 type Explorer = { id: string; x: number; y: number; color: string; score: number };
 type Drawing = {
-  selected?: Set<string>; collected?: Set<string>; explorers?: Explorer[]; currentSeat?: string;
-  grid?: boolean; time?: number; region?: { x: number; y: number; width: number; height: number };
-  blank?: boolean;
+  selected?: Set<string> | undefined; collected?: Set<string> | undefined; explorers?: Explorer[] | undefined;
+  currentSeat?: string | undefined; grid?: boolean | undefined; time?: number | undefined;
+  region?: { x: number; y: number; width: number; height: number } | undefined; blank?: boolean | undefined;
 };
 
 function polygon(ctx: CTX, points: Point[], fill: string, stroke?: string) {

@@ -15,7 +15,7 @@ import { setThreadOpen } from './desk.ts';
 // The viewport's own state. What the workspace modules share is in ws.
 let drawFrame = 0;
 let drag: { start: { x: number; y: number }; clientX: number; clientY: number; panX: number; panY: number;
-  object?: SceneObject; moved?: SceneObject; region?: Box; movedPointer: boolean } | undefined;
+  object?: SceneObject | undefined; moved?: SceneObject; region?: Box; movedPointer: boolean } | undefined;
 
 export function renderViewport() {
   if (!ws.project) return;

@@ -1,6 +1,6 @@
 // The git program, as the host runs it: with none of the system's or the person's settings (credential helpers,
 // insteadOf, hooks), no prompts, and plain C messages. Everything is plumbing: ls-tree and cat-file to read, fast-import
-// to write, update-ref --stdin to move refs, each move compare-and-swap. docs/git-store.md is the design.
+// to write, update-ref --stdin to move refs, each move compare-and-swap. The git store in AGENTS.md is the design.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
@@ -19,7 +19,7 @@ export const OWNER: Ident = { name: 'Owner', email: 'owner@zirbel.invalid' };
 
 /** A name as an ident takes it: no angle brackets, control characters or surrounding space, at most 120 code points. */
 export function identName(name: string, fallback = 'Unknown') {
-  // oxlint-disable-next-line no-control-regex
+  // oxlint-disable-next-line no-control-regex -- control characters are what a name in a commit loses
   const plain = Array.from(name.replace(/[<>\u0000-\u001f\u007f]/g, '').trim()).slice(0, 120).join('').trim();
   return plain || fallback;
 }
@@ -39,7 +39,7 @@ export function gitEnvironment(extra: Record<string, string> = {}): Record<strin
 /** Runs git on a repository and waits: its output, or a 500 with git's own words in the log. allow: exit codes that
  *  are answers (1 for "no"), not failures. */
 export function git(repo: string, args: string[], options: { input?: Buffer | string; allow?: number[];
-  env?: Record<string, string> } = {}) {
+  env?: Record<string, string> | undefined } = {}) {
   const result = spawnSync('git', ['--git-dir=' + repo, ...args], { input: options.input, env: options.env ?? gitEnvironment(),
     maxBuffer: 1 << 30, windowsHide: true });
   if (result.error) throw new Error('git could not run: ' + result.error.message);
@@ -210,7 +210,7 @@ export class FastImport {
   }
 
   /** A commit on ref. changes: 'deleteall', ['M', mode, blob mark or id, path] or ['D', path]. Its mark. */
-  commit(ref: string, info: { author: Ident; time: number; message: string; from?: string; merge?: string[] },
+  commit(ref: string, info: { author: Ident; time: number; message: string; from?: string | undefined; merge?: string[] },
     changes: Array<'deleteall' | ['M', string, string, string] | ['D', string]>) {
     const mark = ':' + ++this.marks;
     const message = Buffer.from(info.message);

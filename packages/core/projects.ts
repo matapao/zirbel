@@ -1,7 +1,7 @@
 // The project store. A project is its metadata (projects/<id>.json: title, notes, attachments, where it came from) and
 // a bare git repository (git/<id>.git) whose commits are its revisions and whose branches are its branches. Every save
 // is a commit: a proposal is one on refs/zirbel/proposals/<id> until it is applied, and applying moves the branch to it,
-// compare-and-swap. docs/git-store.md is the design; the Go host follows it.
+// compare-and-swap. The git store in AGENTS.md is the design; the Go host follows it.
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -99,8 +99,10 @@ const proposalRef = (proposalId: string) => 'refs/zirbel/proposals/' + proposalI
 
 export class Projects {
   readonly history: History;
+  readonly root: string;
 
-  constructor(public readonly root: string) {
+  constructor(root: string) {
+    this.root = root;
     for (const name of ['projects', 'proposals', 'assets', 'media', 'releases', 'grants', 'git']) {
       mkdirSync(join(root, name), { recursive: true, mode: 0o700 });
     }
@@ -199,8 +201,8 @@ export class Projects {
     return this.createRevision(title, { game, assets: [], label: game ? 'Created with harness' : 'Created project' }, author);
   }
 
-  createRevision(title: string, initial: { scene?: FullRevision['scene']; game?: GameDocument; assets: Asset[];
-    template?: Template; upstream?: string; label: string }, author: Ident = OWNER) {
+  createRevision(title: string, initial: { scene?: FullRevision['scene']; game?: GameDocument | undefined; assets: Asset[];
+    template?: Template | undefined; upstream?: string; label: string }, author: Ident = OWNER) {
     const { template, upstream } = initial;
     const first = content.parse({ scene: initial.scene, game: initial.game, assets: initial.assets });
     const name = titleSchema.parse(title);

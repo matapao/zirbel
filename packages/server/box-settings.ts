@@ -73,8 +73,10 @@ export class BoxSettings {
     return (this.cached = { ...read, tv: read.tv ?? this.defaults.tv });
   }
 
-  update(change: Partial<Omit<BoxSwitches, 'version'>>) {
-    const next = settings.parse({ ...this.read(), ...change });
+  /** A switch the change leaves out, or gives as undefined, keeps its value. */
+  update(change: { [Name in keyof Omit<BoxSwitches, 'version'>]?: BoxSwitches[Name] | undefined }) {
+    const given = Object.fromEntries(Object.entries(change).filter(([, value]) => value !== undefined));
+    const next = settings.parse({ ...this.read(), ...given });
     atomicWrite(this.file, JSON.stringify(next));
     return (this.cached = { ...next, tv: next.tv ?? this.defaults.tv });
   }
@@ -84,9 +86,14 @@ const OFF = 'Harnesses are off on this box. Turn them on in Box settings.';
 
 /** The box's harnesses, built only while the switch is on: off, nothing of theirs is built, checked or started. */
 export class BoxHarnesses implements Processors {
-  private inner?: Processors;
+  private inner: Processors | undefined;
+  private readonly build: () => Processors;
+  private readonly on: () => boolean;
 
-  constructor(private readonly build: () => Processors, private readonly on: () => boolean) {}
+  constructor(build: () => Processors, on: () => boolean) {
+    this.build = build;
+    this.on = on;
+  }
 
   private get() {
     if (!this.on()) throw new ZirbelError(409, OFF);

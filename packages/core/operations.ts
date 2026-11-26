@@ -1,5 +1,5 @@
 // What a proposal's operations do to a revision's content, and the references a note or a turn marks in a scene.
-import { scene, type FullRevision, type Operation, type Reference } from '../sdk/contracts.ts';
+import { scene, sceneObject, type FullRevision, type Operation, type Reference } from '../sdk/contracts.ts';
 import { ZirbelError } from './errors.ts';
 
 export function applyOperations(base: Pick<FullRevision, 'scene' | 'assets' | 'game'>, operations: Operation[]) {
@@ -25,7 +25,8 @@ export function applyOperations(base: Pick<FullRevision, 'scene' | 'assets' | 'g
       case 'update': {
         const object = objects.get(operation.id);
         if (!object) throw new ZirbelError(409, 'The target object is missing.');
-        objects.set(operation.id, { ...object, ...operation.changes });
+        // The change's properties over the object's, read back as an object (each change and object is one already).
+        objects.set(operation.id, sceneObject.parse({ ...object, ...operation.changes }));
         break;
       }
       case 'remove':

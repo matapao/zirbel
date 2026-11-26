@@ -14,95 +14,66 @@ ul:empty,[hidden]{display:none}
 <strong id="revision-label"></strong><div id="revision-id"></div><ul id="objects"></ul>
 <details id="game" hidden><summary>Game source</summary><pre id="source"></pre></details>
 </section><script>(function sceneApp() {
-    const byId = (id)=>document.getElementById(id);
-    const form = byId('scene');
-    const branch = byId('branch');
-    const button = byId('read');
-    let nextId = 2;
-    let pending;
-    // An MCP Apps view cannot know its host frame's origin; it sends only JSON-RPC tool calls.
-    // nosemgrep: javascript.browser.security.wildcard-postmessage-configuration.wildcard-postmessage-configuration
-    const send = (message)=>parent.postMessage({
-            jsonrpc: '2.0',
-            ...message
-        }, '*');
-    const fail = (message)=>{
-        byId('result').hidden = true;
-        byId('error').textContent = message;
-    };
-    const show = (result)=>{
-        const value = result.content?.find((block)=>block.type === 'text')?.text;
-        if (result.isError || !value) {
-            fail(value || 'The scene could not be read.');
-            return;
-        }
-        try {
-            const revision = JSON.parse(value);
-            if (typeof revision.id !== 'string' || typeof revision.label !== 'string') throw new Error();
-            byId('revision-label').textContent = revision.label;
-            byId('revision-id').textContent = revision.id;
-            byId('source').textContent = revision.game?.html ?? '';
-            byId('game').hidden = !revision.game;
-            const list = byId('objects');
-            list.replaceChildren(...(revision.scene?.objects ?? []).map((object)=>{
-                const item = document.createElement('li');
-                item.textContent = object.name;
-                return item;
-            }));
-            byId('result').hidden = false;
-            byId('error').textContent = '';
-        } catch  {
-            fail('The connector returned an unreadable revision.');
-        }
-    };
-    // MCP Apps gives the view no fixed host origin; the sender must be the parent frame and the message JSON-RPC.
-    // nosemgrep: javascript.browser.security.insufficient-postmessage-origin-validation.insufficient-postmessage-origin-validation
-    window.addEventListener('message', (event)=>{
-        const message = event.data;
-        if (event.source !== parent || message?.jsonrpc !== '2.0') return;
-        if (message.id === 1 && message.result) {
-            send({
-                method: 'ui/notifications/initialized',
-                params: {}
-            });
-            button.disabled = false;
-        } else if (message.method === 'ui/notifications/tool-input') {
-            branch.value = message.params?.arguments?.branch ?? 'main';
-        } else if (message.method === 'ui/notifications/tool-result') {
-            show(message.params);
-        } else if (pending !== undefined && message.id === pending) {
-            pending = undefined;
-            button.disabled = false;
-            if (message.error) fail(message.error.message || 'The scene could not be read.');
-            else show(message.result);
-        }
-    });
-    form.addEventListener('submit', (event)=>{
-        event.preventDefault();
-        if (button.disabled || !branch.value.trim()) return;
-        button.disabled = true;
-        pending = nextId++;
-        send({
-            id: pending,
-            method: 'tools/call',
-            params: {
-                name: 'read_scene',
-                arguments: {
-                    branch: branch.value.trim()
-                }
-            }
-        });
-    });
-    send({
-        id: 1,
-        method: 'ui/initialize',
-        params: {
-            appInfo: {
-                name: 'Zirbel',
-                version: '0.1.0'
-            },
-            appCapabilities: {},
-            protocolVersion: '2026-01-26'
-        }
-    });
+  const byId = (id        ) => document.getElementById(id) ;
+  const form = byId('scene')                   ;
+  const branch = byId('branch')                    ;
+  const button = byId('read')                     ;
+  let nextId = 2;
+  let pending                    ;
+
+  // An MCP Apps view cannot know its host frame's origin; it sends only JSON-RPC tool calls.
+  // nosemgrep: javascript.browser.security.wildcard-postmessage-configuration.wildcard-postmessage-configuration -- no origin to name
+  const send = (message        ) => parent.postMessage({ jsonrpc: '2.0', ...message }, '*');
+  const fail = (message        ) => {
+    byId('result').hidden = true;
+    byId('error').textContent = message;
+  };
+  const show = (result                                                                    ) => {
+    const value = result.content?.find(block => block.type === 'text')?.text;
+    if (result.isError || !value) { fail(value || 'The scene could not be read.'); return; }
+    try {
+      const revision = JSON.parse(value)            ;
+      if (typeof revision.id !== 'string' || typeof revision.label !== 'string') throw new Error();
+      byId('revision-label').textContent = revision.label;
+      byId('revision-id').textContent = revision.id;
+      byId('source').textContent = revision.game?.html ?? '';
+      byId('game').hidden = !revision.game;
+      const list = byId('objects');
+      list.replaceChildren(...(revision.scene?.objects ?? []).map(object => {
+        const item = document.createElement('li');
+        item.textContent = object.name;
+        return item;
+      }));
+      byId('result').hidden = false;
+      byId('error').textContent = '';
+    } catch { fail('The connector returned an unreadable revision.'); }
+  };
+
+  // MCP Apps gives the view no fixed host origin; the sender must be the parent frame and the message JSON-RPC.
+  // nosemgrep: javascript.browser.security.insufficient-postmessage-origin-validation.insufficient-postmessage-origin-validation -- the sender is checked
+  window.addEventListener('message', event => {
+    const message = event.data;
+    if (event.source !== parent || message?.jsonrpc !== '2.0') return;
+    if (message.id === 1 && message.result) {
+      send({ method: 'ui/notifications/initialized', params: {} });
+      button.disabled = false;
+    } else if (message.method === 'ui/notifications/tool-input') {
+      branch.value = message.params?.arguments?.branch ?? 'main';
+    } else if (message.method === 'ui/notifications/tool-result') {
+      show(message.params);
+    } else if (pending !== undefined && message.id === pending) {
+      pending = undefined;
+      button.disabled = false;
+      if (message.error) fail(message.error.message || 'The scene could not be read.');
+      else show(message.result);
+    }
+  });
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    if (button.disabled || !branch.value.trim()) return;
+    button.disabled = true;
+    pending = nextId++;
+    send({ id: pending, method: 'tools/call', params: { name: 'read_scene', arguments: { branch: branch.value.trim() } } });
+  });
+  send({ id: 1, method: 'ui/initialize', params: { appInfo: { name: 'Zirbel', version: '0.1.0' }, appCapabilities: {}, protocolVersion: '2026-01-26' } });
 })();</script></body></html>

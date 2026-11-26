@@ -26,7 +26,7 @@ function client(editor: string) {
     // An empty origin means "send none" (MCP clients are not browsers).
     const merged: Record<string, string> = { origin: editor, ...(sent === undefined ? {} : { 'content-type': 'application/json' }), ...headers };
     if (merged.origin === '') delete merged.origin;
-    const response = await fetch(editor + path, { method, headers: merged, body: sent });
+    const response = await fetch(editor + path, { method, headers: merged, body: sent ?? null });
     const text = await response.text();
     let body: unknown = text;
     try { body = JSON.parse(text); } catch { /* not JSON */ }
@@ -46,7 +46,7 @@ function normalizer() {
   };
   const text = (value: string) => value
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, (id) => name(id, 'id'))
-    // Revisions are commits (docs/git-store.md), each named by its hash.
+    // Revisions are commits (AGENTS.md: The git store), each named by its hash.
     .replace(/\b[0-9a-f]{40}\b/g, (commit) => name(commit, 'commit'))
     .replace(/\b\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\b/g, '<date>')
     .replace(/127\.0\.0\.1:\d+/g, '127.0.0.1:<port>')
@@ -99,7 +99,7 @@ async function session(editor: string) {
 
   // Bodies are read as Zod reads them: a missing key takes its default; null, "" or a wrong type is refused.
   for (const title of [null, '', '\ufeff', 5]) await record(post('/api/projects', { title }));
-  // A new project's first commit is named by what it holds and the second it is made in (docs/git-store.md), like
+  // A new project's first commit is named by what it holds and the second it is made in (AGENTS.md: The git store), like
   // the first project's: the next ones start a second of their own, so on either host they are commits of their own.
   await new Promise((done) => setTimeout(done, 1005 - (Date.now() % 1000)));
   await record(post('/api/projects', {}));
@@ -244,33 +244,34 @@ async function session(editor: string) {
     keysRelease: keysRelease.body };
 }
 
-const results = new Map<string, Awaited<ReturnType<typeof session>>>();
-
-for (const host of editors) {
-  test(host.name + ' editor runs the scripted session', async (t) => {
-    const { editor } = await startEditor(t, host.command, join(tempDir(t, 'zirbel-editor-'), 'data'));
-    assert.equal(await statusForHost(editor + '/api/health', 'evil.example'), 403);
-    const result = await session(editor);
-    for (const [index, step] of result.steps.entries()) {
-      assert.ok(step.status < 500, 'step ' + index + ' failed with ' + step.status + ': ' + JSON.stringify(step.body));
-    }
-    // The keys come in the release's game, in their inputs' order, and each place's fields in theirs.
-    assert.equal(JSON.stringify((result.keysRelease as { game: { controls?: unknown } }).game.controls),
-      '{"keys":{"a":"Space","b":"ShiftLeft","left":"KeyA","start":"Enter","up":"ArrowUp"},' +
-      '"players":[{"keys":{"a":"KeyF","up":"KeyW"},"name":"Red car","color":"#d03030"},{"color":"#3050d0"}]}');
-    results.set(host.name, result);
-  });
-}
-
-if (editors.length > 1) {
-  test('both editors answer the session identically', () => {
+// Each editor's run is a step of one test, and the comparisons its last: steps keep their order, whatever order
+// --test-randomize gives the file's tests.
+test('every editor runs the scripted session, both answer it identically, and each imports the other’s releases', async (t) => {
+  const results = new Map<string, Awaited<ReturnType<typeof session>>>();
+  for (const host of editors) {
+    await t.test(host.name + ' editor runs the scripted session', async (t) => {
+      const { editor } = await startEditor(t, host.command, join(tempDir(t, 'zirbel-editor-'), 'data'));
+      assert.equal(await statusForHost(editor + '/api/health', 'evil.example'), 403);
+      const result = await session(editor);
+      for (const [index, step] of result.steps.entries()) {
+        assert.ok(step.status < 500, 'step ' + index + ' failed with ' + step.status + ': ' + JSON.stringify(step.body));
+      }
+      // The keys come in the release's game, in their inputs' order, and each place's fields in theirs.
+      assert.equal(JSON.stringify((result.keysRelease as { game: { controls?: unknown } }).game.controls),
+        '{"keys":{"a":"Space","b":"ShiftLeft","left":"KeyA","start":"Enter","up":"ArrowUp"},' +
+        '"players":[{"keys":{"a":"KeyF","up":"KeyW"},"name":"Red car","color":"#d03030"},{"color":"#3050d0"}]}');
+      results.set(host.name, result);
+    });
+  }
+  if (editors.length < 2) return;
+  await t.test('both editors answer the session identically', () => {
     const node = results.get('node')!.steps.map(normalizer());
     const go = results.get('go')!.steps.map(normalizer());
     assert.equal(go.length, node.length);
     for (const [index, step] of node.entries()) assert.deepEqual(go[index], step, 'step ' + index);
   });
 
-  test('a release published by either editor imports into the other', async (t) => {
+  await t.test('a release published by either editor imports into the other', async (t) => {
     const start = async (name: string) => startEditor(t, editors.find((item) => item.name === name)!.command, join(tempDir(t, 'zirbel-cross-'), 'data'));
     for (const [from, to] of [['node', 'go'], ['go', 'node']] as const) {
       const { release, templateRelease, builtRelease, netRelease, keysRelease } = results.get(from)!;
@@ -292,7 +293,9 @@ if (editors.length > 1) {
       await origin.stop();
     }
   });
+});
 
+if (editors.length > 1) {
   test('both editors share one data directory', async (t) => {
     const data = join(tempDir(t, 'zirbel-shared-'), 'data');
     let previous: string | undefined;

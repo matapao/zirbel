@@ -15,18 +15,30 @@ const PAGE_POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; im
 
 /** The pad page's, which also reaches the pads socket on its own host, over plain ws: as the player page does. */
 const padPolicy = (host: string) => "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
-  // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+  // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- plain HTTP by design
   "connect-src 'self' ws://" + host + "; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 /** /pad, or /pad/<code>: a phone as a controller of the screen whose code it has. */
 const PAD_PAGE = /^\/pad(?:\/[A-Za-z0-9-]{1,16})?$/;
 /** The TV page's: the lobby's, and the pads socket on this host for the screen it is. */
 const tvPolicy = (host: string) => PAGE_POLICY.replace("connect-src 'self'", "connect-src 'self' ws://" + host);
+/** The scripts and styles beside the lobby's, TV's and pad's pages, served by their own names. */
+const PAGE_FILES = ['/lobby.js', '/lobby.css', '/tv.js', '/tv.css', '/pad.js', '/pad.css'];
+
+/** The lobby's own page or file a path names, if it names one. */
+function lobbyFile(pathname: string) {
+  if (pathname === '/' || pathname === '/join') return 'lobby.html';
+  if (pathname === '/tv') return 'tv.html';
+  if (PAD_PAGE.test(pathname)) return 'pad.html';
+  return PAGE_FILES.includes(pathname) ? pathname.slice(1) : undefined;
+}
 
 /** pair and edit: on a box, the addresses of the pairing page and of the page that redeems a game's edit code, on the
  *  host name a device reached the lobby by; link: the lobby's address for other devices on the network, as the owner's
  *  side names it (hosting.ts lobbyLink), for the LAN listener's pages to show (the TV page's QR codes). */
-export type LobbyContext = { lobby: Lobby; files: LobbyFiles; pair?: (host: string) => string; edit?: (host: string) => string;
-  link?: (host: string) => string | null };
+export type LobbyContext = {
+  lobby: Lobby; files: LobbyFiles; pair?: ((host: string) => string) | undefined; edit?: ((host: string) => string) | undefined;
+  link?: ((host: string) => string | null) | undefined;
+};
 
 /** The player page in a room, holding a seat's one-time ticket (a net game's, its space's and a ticket into it): it goes
  *  straight in. */
@@ -41,13 +53,12 @@ export async function lobbyRequest(context: LobbyContext, access: 'local' | 'lan
   url: URL) {
   const { pathname } = url;
   const method = request.method;
-  const file = pathname === '/' || pathname === '/join' ? 'lobby.html' : pathname === '/tv' ? 'tv.html' : PAD_PAGE.test(pathname) ? 'pad.html'
-    : ['/lobby.js', '/lobby.css', '/tv.js', '/tv.css', '/pad.js', '/pad.css'].includes(pathname) ? pathname.slice(1) : undefined;
+  const file = lobbyFile(pathname);
   const entry = file && context.files.get(file);
   if (file && entry && method === 'GET') {
     if (file === 'lobby.html') response.setHeader('content-security-policy', PAGE_POLICY);
     // The LAN player is plain HTTP by design, so the screen's socket is ws: on this same host.
-    // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+    // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- plain HTTP by design
     if (file === 'tv.html') response.setHeader('content-security-policy', tvPolicy(url.host));
     if (file === 'pad.html') response.setHeader('content-security-policy', padPolicy(url.host));
     sendImmutable(request, response, typeFor(file), entry, 'no-cache');

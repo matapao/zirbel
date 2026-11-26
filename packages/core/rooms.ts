@@ -39,7 +39,7 @@ export type Peer = {
 type Seat = {
   info: SeatInfo;
   resume: string;
-  peer?: Peer;
+  peer?: Peer | undefined;
   ack: number;
   expires: number;
 };
@@ -57,6 +57,7 @@ function sharedState(): Simulation {
       if (!boundedJson(value) || JSON.stringify(value).length > 4096) return 'Send a compact JSON state.';
       states.set(seat, value as z.core.util.JSONType);
       changed = true;
+      return undefined;
     },
     tick() { const update = changed; changed = false; return update; },
     snapshot() { return Object.fromEntries(states); },
@@ -84,28 +85,49 @@ export class Room {
   private tickNumber = 0;
   private activity = Date.now();
   private closed = false;
+  readonly release: Release;
+  readonly solo: boolean;
+  readonly access: 'local' | 'lan';
+  readonly development: boolean;
+  /** The short code a session is joined by, from the lobby. */
+  code: string | null;
+  /** The address that started the session in the lobby. */
+  readonly startedBy: string | undefined;
 
-  /** code: the short code a session is joined by, from the lobby; startedBy: the address that started it there. */
   constructor(
-    readonly release: Release, readonly solo: boolean, readonly access: 'local' | 'lan',
-    readonly development = false, public code: string | null = null, readonly startedBy?: string,
+    release: Release, solo: boolean, access: 'local' | 'lan', development = false, code: string | null = null,
+    startedBy?: string,
   ) {
+    this.release = release;
+    this.solo = solo;
+    this.access = access;
+    this.development = development;
+    this.code = code;
+    this.startedBy = startedBy;
     const kind = release.manifest.simulation;
-    this.simulation = kind === 'mosslight-v1' ? mosslight(legacyScene(release)) :
-      kind === 'tessellate-v1' ? tessellate(solo) : kind === 'shared-state-v1' ? sharedState() : null;
+    if (kind === 'mosslight-v1') this.simulation = mosslight(legacyScene(release));
+    else if (kind === 'tessellate-v1') this.simulation = tessellate(solo);
+    else if (kind === 'shared-state-v1') this.simulation = sharedState();
+    else this.simulation = null;
   }
 
   summary() {
     const seats = [...this.seats.values()].map((seat) => seat.info);
     return {
       id: this.id, manifest: this.release.manifest, solo: this.solo, development: this.development, access: this.access, seats,
-      status: this.closed ? 'closed' : seats.some((seat) => seat.connected) || this.members.connected ? 'active' : 'waiting',
+      status: this.status(seats),
       ...(this.code ? { code: this.code } : {}),
     };
   }
 
   /** The player seats taken now, by players connected or still within their grace. */
   get players() { return this.space ? this.members.participants : this.used('player'); }
+
+  /** The room's state in its summary: closed, active while a seat or the space's member is connected, else waiting. */
+  private status(seats: SeatInfo[]) {
+    if (this.closed) return 'closed';
+    return seats.some((seat) => seat.connected) || this.members.connected ? 'active' : 'waiting';
+  }
 
   /** An invitation, a held seat or a seat's own. A room with a space is for its members alone (Rooms.proven). */
   mayView(credential: string) {
@@ -142,7 +164,10 @@ export class Room {
     return this.used(role) + [...this.pending.values()].filter((item) => item.role === role).length < this.capacity(role);
   }
 
-  private capacity(role: SeatInfo['role']) { return role === 'spectator' ? 4 : this.solo ? 1 : this.release.manifest.players.max; }
+  private capacity(role: SeatInfo['role']) {
+    if (role === 'spectator') return 4;
+    return this.solo ? 1 : this.release.manifest.players.max;
+  }
 
   private used(role: SeatInfo['role']) {
     return [...this.seats.values()].filter((seat) => seat.info.role === role).length;

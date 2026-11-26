@@ -64,3 +64,7 @@ test('other web addresses are for the system browser, and other schemes for noth
     assert.ok(!mayNavigate(where, false) && !mayNavigate(where, true));
   }
 });
+
+test('the tests run in UTC', () => {
+  assert.equal(Intl.DateTimeFormat().resolvedOptions().timeZone, 'UTC');
+});

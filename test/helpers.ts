@@ -11,7 +11,7 @@ import { PROTOCOL_VERSION, type ServerMessage } from '../packages/sdk/contracts.
 import { importGameFolder } from '../packages/core/game-files.ts';
 import { Projects } from '../packages/core/projects.ts';
 import { Releases } from '../packages/core/releases.ts';
-import { type Peer, type Room } from '../packages/core/rooms.ts';
+import type { Peer, Room } from '../packages/core/rooms.ts';
 import { starterScene, templates } from '../packages/games/templates.ts';
 import type { Template } from '../packages/sdk/contracts.ts';
 
@@ -48,6 +48,13 @@ export function joinRoom(room: Room, credential: string) {
     send(sequence: number, action: object) {
       room.message(id, peer, { type: 'action', sequence, action: JSON.parse(JSON.stringify(action)) });
     } };
+}
+
+/** Why a signal was aborted, as the Error a promise rejects with: an abort's reason is one (an AbortError, or the
+ *  editor's own), and anything else is given as one. */
+export function abortError(signal?: AbortSignal) {
+  const reason: unknown = signal?.reason;
+  return reason instanceof Error ? reason : new Error('Aborted: ' + String(reason));
 }
 
 // The Go host under test; ZIRBEL_GO_HOST picks a coverage build (scripts/coverage-go.mjs).

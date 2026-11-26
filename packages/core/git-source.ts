@@ -1,7 +1,7 @@
 // A game's source elsewhere: a public git repository the host imports a game from, and fetches again to update it.
 // The host holds no outside credentials and never pushes outside; it fetches over https alone, with none of the
 // person's git settings, within a time and size limit. An update merges the source's commits under the host's own
-// (a fast-forward when it has none), and a conflict is reported, never forced. docs/git-store.md is the design.
+// (a fast-forward when it has none), and a conflict is reported, never forced. The git store in AGENTS.md is the design.
 import { spawn } from 'node:child_process';
 import { readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';

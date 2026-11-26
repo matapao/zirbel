@@ -1,4 +1,4 @@
-// The git store (docs/git-store.md): every save a commit, the game's folder at the top of its tree, the host's own
+// The git store (AGENTS.md): every save a commit, the game's folder at the top of its tree, the host's own
 // files under .zirbel/, proposals on refs of their own, history from git, and the version-1 projects migrated.
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';

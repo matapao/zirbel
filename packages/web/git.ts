@@ -1,4 +1,4 @@
-// A game as a git repository (docs/git-store.md): Clone with git… shows the clone command, with this device's git token
+// A game as a git repository (AGENTS.md: The git store): Clone with git… shows the clone command, with this device's git token
 // off a box; Import from a git URL… makes a game of a public repository; Update from source fetches the game's source
 // again and brings its changes under the game's own.
 import type { Project } from '../sdk/contracts.ts';
@@ -50,5 +50,5 @@ export async function updateFromSource(projectId: string, baseRevision: string, 
 }
 
 /** Under a revision in History: its short id, who made it and when. */
-export const revisionLine = (revision: { id: string; author?: string; date: string }) =>
+export const revisionLine = (revision: { id: string; author?: string | undefined; date: string }) =>
   revision.id.slice(0, 8) + ' · ' + (revision.author ? revision.author + ' · ' : '') + new Date(revision.date).toLocaleString();

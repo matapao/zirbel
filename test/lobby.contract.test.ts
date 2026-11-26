@@ -43,7 +43,7 @@ function fixtures(t: TestContext) {
 type Answer = { status: number; body: unknown; headers: Headers };
 /** A request with the base's own origin unless headers say otherwise, its JSON body when it has one. */
 async function call(base: string, method: string, path: string, json?: unknown, headers: Record<string, string> = { origin: base }): Promise<Answer> {
-  const response = await fetch(base + path, { method, body: json === undefined ? undefined : JSON.stringify(json),
+  const response = await fetch(base + path, { method, body: json === undefined ? null : JSON.stringify(json),
     headers: { ...(json === undefined ? {} : { 'content-type': 'application/json' }), ...headers } });
   const text = await response.text();
   let body: unknown = text;
@@ -91,10 +91,10 @@ for (const host of hosts) {
       'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' });
     assert.equal(await page.text(), readFileSync('dist/web/lobby.html', 'utf8'));
     assert.equal((await fetch(player + '/', { headers: { 'if-none-match': page.headers.get('etag')! } })).status, 304);
-    for (const [file, type] of [['lobby.js', 'application/javascript; charset=utf-8'], ['lobby.css', 'text/css; charset=utf-8']]) {
+    for (const [file, type] of [['lobby.js', 'application/javascript; charset=utf-8'], ['lobby.css', 'text/css; charset=utf-8']] as const) {
       const served = await fetch(player + '/' + file);
       assert.deepEqual([served.status, served.headers.get('content-type'), served.headers.get('cache-control')], [200, type, 'no-cache'], file);
-      assert.equal(await served.text(), readFileSync('dist/web/' + file!, 'utf8'));
+      assert.equal(await served.text(), readFileSync('dist/web/' + file, 'utf8'));
     }
     for (const path of ['/lobby/', '/lobby/nope', '/lobby/state/more', '/lobby.html'])
       assert.equal((await fetch(player + path)).status, 404, path);

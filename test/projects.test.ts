@@ -180,7 +180,7 @@ test('bridge JSON validation bounds sparse arrays before serialization', () => {
   assert.equal(boundedJson({ inventory: [null, 'torch'] }), true);
   // Nested holes used to pass the length check and cost one stringify each.
   assert.equal(boundedJson(Array.from({ length: 120 }, () => Array(120))), false);
-  assert.equal(boundedJson([1, , 3]), false); // oxlint-disable-line no-sparse-arrays
+  assert.equal(boundedJson([1, , 3]), false); // oxlint-disable-line no-sparse-arrays -- a hole is what this refuses
   assert.equal(objectRegistry.safeParse(Array(MAX_REGISTERED_OBJECTS + 1)).success, false);
   const item = { id: 'lantern', properties: { lit: true } };
   assert.equal(objectRegistry.safeParse([item]).success, true);

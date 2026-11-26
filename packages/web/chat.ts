@@ -2,11 +2,11 @@
 // The composer and the status line of a turn: sending, the live status line with the current step and elapsed time,
 // and Stop while a turn runs. The turns themselves are turn-runner.ts's.
 import { $, action, api, attempt, option } from './editor-ui.ts';
-import { ActivityTurn, chatBusy, editorOf, markedObjects, visibleTurn, ws } from './state.ts';
+import { type ActivityTurn, chatBusy, editorOf, markedObjects, visibleTurn, ws } from './state.ts';
 import { authored, hasContent, library, loadProject, recentCards, render } from './workspace.ts';
 import { references, renderObjects } from './inspector.ts';
 import { scheduleDraw } from './viewport.ts';
-import { type Processor } from '../server/processors.ts';
+import type { Processor } from '../server/processors.ts';
 import { modelPicker } from './model-picker.ts';
 import { showHarnessAccounts } from './harness-accounts.ts';
 import { openBoxSettings } from './box.ts';
@@ -124,13 +124,18 @@ function renderNotice(ready: boolean) {
   notice.append(' ', action('Harnesses', () => openHarnesses(), 'link'));
 }
 
+/** What the harness list says when none is ready: still checking, a sign-in needed, or none at all. */
+function noHarness() {
+  if (processorNotice === 'Checking harnesses…') return processorNotice;
+  return providers.some(({ signIn }) => signIn) ? 'Sign-in required' : 'No harness available';
+}
+
 export function renderProcessors() {
   const select = $<HTMLSelectElement>('provider');
   const send = $<HTMLButtonElement>('send');
   if (!select || !send) return;
   const available = providers.filter(({ ready }) => ready !== false);
-  const empty = processorNotice === 'Checking harnesses…' ? processorNotice :
-    providers.some(({ signIn }) => signIn) ? 'Sign-in required' : 'No harness available';
+  const empty = noHarness();
   select.replaceChildren(...(available.length ? available.map(({ id, name }) => option(id, name)) : [option('', empty)]));
   select.value = available.some(({ id }) => id === preferredProcessor) ? preferredProcessor : available[0]?.id ?? '';
   select.disabled = chatBusy() || !available.length;

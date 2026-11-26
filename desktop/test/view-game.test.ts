@@ -44,7 +44,11 @@ test('the app renders a game with its own Electron: WebGL, keys, its console, an
     execFile(ELECTRON, [MAIN, '--use-mock-keychain'], {
       env: { ...launchEnv(made), VIEW_PROFILE: made.profile, VIEW_REQUEST: JSON.stringify(request), VIEW_MESSAGES: JSON.stringify(refused) },
       timeout: 80_000,
-    }, (error, stdout) => (error ? reject(error) : resolve(stdout))));
+    }, (error, stdout) => {
+      // execFile's error is an Error whose type lost its base (Omit<…>): it is passed on as one.
+      if (error) reject(error instanceof Error ? error : new Error(error.message));
+      else resolve(stdout);
+    }));
   const replies = JSON.parse(output.trim().split('\n').at(-1) ?? '[]') as Reply[];
   assert.deepEqual(replies.slice(0, 2).map(({ id, error }) => [id, error]),
     [['elsewhere', 'The app refused that request.'], ['many', 'The app refused that request.']]);

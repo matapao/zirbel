@@ -2,7 +2,7 @@
 // derived from a secret the account folder keeps (box/git-secret), so the editor can show a device its token at any
 // time, and both hosts agree on it: <kind>.<holder id>.<mac>, kind o for a paired device and e for an editor, mac the
 // unpadded base64url of HMAC-SHA256(secret, "zirbel-git-token\n" + kind + "\n" + holder id). A token works while its
-// device stays paired or its editor's session lasts. docs/git-store.md is the design.
+// device stays paired or its editor's session lasts. The git store in AGENTS.md is the design.
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

@@ -3,6 +3,12 @@ import { action, api, attempt, dialog, el, link, openDialog } from './editor-ui.
 
 type AccountChoices = { providers: Processor[]; notice: string };
 
+/** A harness's state in the list: ready, signed out, or why it is unavailable. */
+function harnessState(processor: Processor) {
+  if (processor.ready !== false) return 'Ready';
+  return processor.signIn ? 'Signed out' : processor.detail ?? 'Unavailable';
+}
+
 export function showHarnessAccounts(refresh: () => Promise<AccountChoices>) {
   const body = openDialog('Harnesses');
   const reload = async () => {
@@ -13,7 +19,7 @@ export function showHarnessAccounts(refresh: () => Promise<AccountChoices>) {
     body.replaceChildren();
     for (const processor of providers) {
       const item = el('section', undefined, 'item');
-      const detail = processor.ready !== false ? 'Ready' : processor.signIn ? 'Signed out' : processor.detail ?? 'Unavailable';
+      const detail = harnessState(processor);
       item.append(el('strong', processor.name), el('small', detail));
       if (processor.signIn) item.append(action('Sign in to ' + processor.name, () => signInHarness(item, processor, reload), 'primary'));
       body.append(item);

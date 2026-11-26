@@ -13,12 +13,10 @@ const ALERT =
 let cards = 0;
 
 /** The headline a request shows: never the raw command. */
-export const headlineOf = (request: HarnessAction) =>
-  request.kind === 'permission'
-    ? request.summary
-    : request.kind === 'link'
-      ? 'Open a web page'
-      : request.title || 'Fill in a form';
+export const headlineOf = (request: HarnessAction) => {
+  if (request.kind === 'permission') return request.summary;
+  return request.kind === 'link' ? 'Open a web page' : request.title || 'Fill in a form';
+};
 
 function scopeBadge(request: HarnessAction) {
   const badge = el('p', undefined, 'scope');

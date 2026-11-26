@@ -160,7 +160,7 @@ function updateRoom() {
   gamePort?.postMessage(message);
 }
 // Checked below: the sender is the game frame and its origin is the sandbox's opaque 'null'.
-// nosemgrep: javascript.browser.security.insufficient-postmessage-origin-validation.insufficient-postmessage-origin-validation
+// nosemgrep: javascript.browser.security.insufficient-postmessage-origin-validation.insufficient-postmessage-origin-validation -- checked below
 window.addEventListener('message', (event) => {
   if (!authoredFrame || event.source !== authoredFrame.contentWindow || event.origin !== 'null') return;
   const port = event.ports[0];
@@ -192,7 +192,7 @@ function receiveGameMessage(data: MessageEvent['data']) {
   if (type === 'zirbel.objects' && window.parent !== window && info.solo && info.registerObjects !== false) {
     const objects = objectRegistry.safeParse(value);
     // frame-ancestors lets only the editor frame the player, so the parent is the editor; the payload is the validated registry.
-    // nosemgrep: javascript.browser.security.wildcard-postmessage-configuration.wildcard-postmessage-configuration
+    // nosemgrep: javascript.browser.security.wildcard-postmessage-configuration.wildcard-postmessage-configuration -- the parent is the editor
     if (objects.success) window.parent.postMessage({ type, room, value: objects.data }, '*');
   }
 }
@@ -222,6 +222,17 @@ function showLobby(message = '') {
   byId('leave').hidden = true;
 }
 
+/** The first and the second player's marks on a tile; any other tile shows a dot. */
+const MARKS = new Map([[1, '✧'], [2, '●']]);
+
+/** The line under the board: who won, a draw, or whose turn it is. */
+function scoreLine(state: ReturnType<typeof tileState.parse>, name: (id: string) => string) {
+  if (state.winner) return name(state.winner) + ' wins';
+  if (state.draw) return 'Draw';
+  if (!state.turn) return 'Waiting for another player';
+  return seat?.id === state.turn ? 'Your turn' : name(state.turn) + '’s turn';
+}
+
 function renderBoard() {
   if (!tile) return;
   const name = (id: string) => id === 'bot' ? 'Computer' : seats.find((seat) => seat.id === id)?.name ?? 'Player';
@@ -229,14 +240,13 @@ function renderBoard() {
     const index = Number(button.dataset.cell);
     const value = tile.board[index];
     const mark = value ? tile.order.indexOf(value) + 1 : 0;
-    button.textContent = mark === 1 ? '✧' : mark === 2 ? '●' : '·';
+    button.textContent = MARKS.get(mark) ?? '·';
     button.disabled = !!value || !seat || seat.id !== tile.turn;
     delete button.dataset.mark;
     if (mark) button.dataset.mark = String(mark);
     button.setAttribute('aria-label', value ? name(value) + ', tile ' + (index + 1) : 'Place on tile ' + (index + 1));
   }
-  score.textContent = tile.winner ? name(tile.winner) + ' wins' : tile.draw ? 'Draw' : !tile.turn ? 'Waiting for another player' :
-    seat?.id === tile.turn ? 'Your turn' : name(tile.turn) + '’s turn';
+  score.textContent = scoreLine(tile, name);
   reset.hidden = !tile.winner && !tile.draw || seat?.role !== 'player';
 }
 
@@ -461,14 +471,20 @@ async function reserveSeat(event: SubmitEvent) {
   finally { submit.disabled = false; }
 }
 
+/** The badge beside the title: the session's code, else which playtest this is. */
+function badgeText(session: RoomInfo) {
+  if (session.code) return 'Code ' + session.code;
+  if (session.development) return 'Development playtest';
+  return session.solo && !ticket ? 'Local playtest' : '';
+}
+
 /** The room's title, description and badge, from its info. */
 function describe() {
   document.title = info.manifest.title + ' · Zirbel';
   byId('game-title').textContent = info.manifest.title;
   byId('lobby-title').textContent = info.manifest.title;
   byId('lobby-description').textContent = info.gameUrl || !info.manifest.template ? '' : templates[info.manifest.template].description;
-  byId('badge').textContent = info.code ? 'Code ' + info.code : info.development ? 'Development playtest'
-    : info.solo && !ticket ? 'Local playtest' : '';
+  byId('badge').textContent = badgeText(info);
 }
 
 try {
@@ -488,8 +504,10 @@ try {
     }
     describe();
     if (credential !== invite) connect(credential);
-    else if (info.solo) connect((await fetchRoom<{ ticket: string }>(room, 'reserve', { invite, name: 'Explorer', role: 'player' })).ticket);
-    else showLobby();
+    else if (info.solo) {
+      const { ticket } = await fetchRoom<{ ticket: string }>(room, 'reserve', { invite, name: 'Explorer', role: 'player' });
+      connect(ticket);
+    } else showLobby();
   }
 } catch (reason) {
   showLobby((reason as Error).message);

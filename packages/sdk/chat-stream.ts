@@ -7,8 +7,8 @@ export const CONTINUE_TEXT = 'The previous turn was interrupted. Continue where 
 /** What a thread has, as the editor reports it: the turn running in it, or the one interrupted when its editor ended;
  *  before a project, its messages so far and the project its first game became. */
 export type ThreadView = {
-  turn?: { id: string; name: string; text: string; noteId?: string; startedAt: string };
-  interrupted?: { text: string; harness: string; noteId?: string };
+  turn?: { id: string; name: string; text: string; noteId?: string | undefined; startedAt: string };
+  interrupted?: { text: string; harness: string; noteId?: string | undefined };
   conversation?: { role: 'creator' | 'assistant'; text: string; usage?: Note['usage'] }[];
   project?: string;
 };
@@ -16,10 +16,10 @@ type ChatPhase = 'running' | 'responding' | 'validating';
 export type ActionField = {
   name: string;
   title: string;
-  description?: string;
+  description?: string | undefined;
   type: 'string' | 'number' | 'integer' | 'boolean' | 'array';
   required: boolean;
-  choices?: { value: string; label: string }[];
+  choices?: { value: string; label: string }[] | undefined;
 };
 /** Where an answered request takes effect: inside the turn's sandbox, or outside it; reach says so in plain words. */
 export type ActionReach = { scope: 'sandboxed' | 'outside'; reach: string };

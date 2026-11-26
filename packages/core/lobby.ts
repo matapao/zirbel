@@ -67,17 +67,25 @@ export class CodeTries {
 /** Titles as a reader orders them: case aside, then by case. */
 const byTitle = (a: string, b: string) => {
   const [x, y] = [a.toLowerCase(), b.toLowerCase()];
-  return x < y ? -1 : x > y ? 1 : a < b ? -1 : a > b ? 1 : 0;
+  if (x < y) return -1;
+  if (x > y) return 1;
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
 };
 
 export class Lobby {
   private offers: string[];
   private readonly manifests = new Map<string, Manifest>();
   private readonly tries: CodeTries;
+  private readonly rooms: Rooms;
+  private readonly releases: Releases;
+  private readonly file: string;
 
   /** Reads the offers as the host starts: a lobby.json that is not one stops it. */
-  constructor(private readonly rooms: Rooms, private readonly releases: Releases, private readonly file = join(releases.root, 'lobby.json'),
-    now = Date.now) {
+  constructor(rooms: Rooms, releases: Releases, file = join(releases.root, 'lobby.json'), now = Date.now) {
+    this.rooms = rooms;
+    this.releases = releases;
+    this.file = file;
     this.tries = new CodeTries(now);
     let text = '';
     try { text = readFileSync(this.file, 'utf8'); } catch (error) {

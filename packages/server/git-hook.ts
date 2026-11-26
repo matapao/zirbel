@@ -3,7 +3,7 @@
 // project grant's push makes no new one), and end at a commit whose tree holds a game a host can keep (a scene
 // project: a game or a scene), read under the rules every host applies (git-tree.ts). It reads the pushed objects in
 // receive-pack's quarantine, so a refused push leaves nothing behind; the reason goes to stderr, which the client
-// shows. docs/git-store.md is the design.
+// shows. The git store in AGENTS.md is the design.
 import { readFileSync } from 'node:fs';
 import { basename, dirname, join, resolve as resolvePath } from 'node:path';
 import { id } from '../sdk/contracts.ts';

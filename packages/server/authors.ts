@@ -1,4 +1,4 @@
-// Who a commit the host makes names as its author: the person or agent who asked (docs/git-store.md). Zirbel itself is
+// Who a commit the host makes names as its author: the person or agent who asked (AGENTS.md: The git store). Zirbel itself is
 // every such commit's committer.
 import { ident, OWNER, type Ident } from '../core/git.ts';
 import type { Access } from './box-routes.ts';

@@ -1,4 +1,4 @@
-// Git over HTTP on a box (--box), on both hosts (docs/git-store.md): the box itself clones and pushes every game; from
+// Git over HTTP on a box (--box), on both hosts (AGENTS.md: The git store): the box itself clones and pushes every game; from
 // its network a git client needs a paired device's git token (every game), an editor's (its game alone), or a project
 // grant while external MCP access is on (its game; pushing with a write grant alone), and a token ends with its device
 // or editor. The editor shows each device its own token in the clone command.
@@ -26,13 +26,19 @@ async function startBox(t: TestContext, command: string[], root: string) {
   return ready;
 }
 
+/** A call's request body: its JSON, else its form, else none. */
+function requestBody(json: unknown, form: Record<string, string> | undefined) {
+  if (json !== undefined) return JSON.stringify(json);
+  return form ? new URLSearchParams(form) : null;
+}
+
 /** The editor's API as a device calls it: its session (an owner's) or editor's cookie, and its Origin. */
 function api(base: string) {
   return async <T>(method: string, path: string, options: { json?: unknown; form?: Record<string, string>; session?: string; editor?: string } = {}) => {
     const cookies = [...(options.session ? ['zirbel_session=' + options.session] : []), ...(options.editor ? ['zirbel_editor=' + options.editor] : [])];
     const response = await fetch(base + path, { method, redirect: 'manual', headers: { origin: base,
       ...(cookies.length ? { cookie: cookies.join('; ') } : {}), ...(options.json !== undefined ? { 'content-type': 'application/json' } : {}) },
-    body: options.json !== undefined ? JSON.stringify(options.json) : options.form ? new URLSearchParams(options.form) : undefined });
+    body: requestBody(options.json, options.form) });
     const text = await response.text();
     let body: unknown = text;
     try { body = JSON.parse(text); } catch { /* a page */ }

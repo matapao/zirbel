@@ -29,7 +29,7 @@ function drawer(template: string, initialize: () => void, place?: () => void) {
   return ({ body }: { body: HTMLElement }) => {
     body.replaceChildren($<HTMLTemplateElement>(template).content.cloneNode(true));
     initialize();
-    return { place };
+    return place ? { place } : {};
   };
 }
 
@@ -63,9 +63,15 @@ export function mountDesk(game: () => void, thread: () => void, place: () => voi
   arranged = 'both';
 }
 
+/** The arrangement the desk wants: the thread alone before a game exists, else the game with or without the thread. */
+function arrangementFor(empty: boolean): Arrangement {
+  if (empty) return 'thread';
+  return ws.threadOpen ? 'both' : 'game';
+}
+
 /** Shows the thread alone before a game exists, then the game with the thread beside it, or the game alone. */
 export function arrangeDesk(empty: boolean) {
-  const next: Arrangement = empty ? 'thread' : ws.threadOpen ? 'both' : 'game';
+  const next = arrangementFor(empty);
   if (next === arranged) return;
   if (arranged === 'both') split = layout.layoutNow();
   arranged = next;

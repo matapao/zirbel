@@ -2,7 +2,7 @@
 // The thread: the conversation, each turn's steps right after the message that started it, any request the harness
 // waits on in its row, and the card for staged proposals. A turn's steps are kept by the Node editor; a thread loads
 // each kept turn when it comes into view.
-import type { Note, Reference } from '../sdk/contracts.ts';
+import type { Note, Project, Reference } from '../sdk/contracts.ts';
 import { TurnLog, type TurnRecord } from '../sdk/activity.ts';
 import { $, action, api, dialog, el } from './editor-ui.ts';
 import { type ActivityTurn, type WorkspaceMessage, activityKey, visibleTurn, ws } from './state.ts';
@@ -68,6 +68,21 @@ function keptSteps(projectId: string, noteId: string) {
   return element;
 }
 
+/** The steps under a creator's note: the conversation's, or in a project the running turn's or the kept ones. */
+function stepsOf(note: Note | WorkspaceMessage, project: Project | undefined, turn: ActivityTurn | undefined) {
+  if (!project)
+    return conversationSteps.get(note.text) ??
+      (turn && !turn.showPrompt && turn.text === note.text ? liveSteps(turn) : undefined);
+  if ('id' in note && turn?.note?.id === note.id) return liveSteps(turn);
+  return 'id' in note ? keptSteps(project.id, note.id) : undefined;
+}
+
+/** Where an interrupted turn goes: after its note and that note's steps, else at the end. */
+function interruptedAt(children: HTMLElement[], after: number) {
+  if (after < 0) return children.length;
+  return children[after + 1]?.classList.contains('steps') ? after + 2 : after + 1;
+}
+
 async function loadSteps(key: string) {
   const known = kept.get(key);
   if (!known || known === 'none' || known.state !== 'waiting') return;
@@ -109,14 +124,7 @@ export function renderMessages() {
         'id' in note ? note.id : undefined),
     );
     if (note.role === 'assistant') continue;
-    const steps = !project
-      ? (conversationSteps.get(note.text) ??
-        (turn && !turn.showPrompt && turn.text === note.text ? liveSteps(turn) : undefined))
-      : 'id' in note && turn?.note?.id === note.id
-        ? liveSteps(turn)
-        : 'id' in note
-          ? keptSteps(project.id, note.id)
-          : undefined;
+    const steps = stepsOf(note, project, turn);
     if (steps) children.push(steps);
   }
   if (turn?.showPrompt && !notes.some((note) => 'id' in note && note.id === turn.note?.id)) {
@@ -126,8 +134,7 @@ export function renderMessages() {
   if (interrupted) {
     const after = interrupted.noteId ? children.findIndex((child) => child.dataset.note === interrupted.noteId) : -1;
     const started = after >= 0 ? [] : [bubble(interrupted.text, false, [])];
-    const at = after >= 0 && children[after + 1]?.classList.contains('steps') ? after + 2 : after >= 0 ? after + 1 : children.length;
-    children.splice(at, 0, ...started, interruptedRow());
+    children.splice(interruptedAt(children, after), 0, ...started, interruptedRow());
   }
   node.replaceChildren(...children);
   if (turn) renderTurnActions(turn, false);

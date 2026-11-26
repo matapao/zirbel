@@ -1,21 +1,44 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "unicorn", "oxc", "import", "node", "promise"],
+  "plugins": ["typescript", "unicorn", "oxc", "import", "node", "promise", "vitest"],
   "categories": { "correctness": "error" },
   "env": { "browser": true, "node": true, "es2024": true },
   "rules": {
-    "typescript/no-floating-promises": "error",
-    "typescript/no-misused-promises": "error",
-    "typescript/await-thenable": "error",
-    "typescript/no-base-to-string": "error",
-    "typescript/unbound-method": "error",
-    "typescript/no-unnecessary-type-assertion": "error",
+    "eqeqeq": "error",
+    "no-nested-ternary": "error",
+    "import/no-default-export": "error",
     "typescript/no-explicit-any": "error",
+    "typescript/await-thenable": "error",
+    "typescript/no-array-delete": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-for-in-array": "error",
+    "typescript/no-implied-eval": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/no-redundant-type-constituents": "error",
+    "typescript/no-unnecessary-template-expression": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-unsafe-unary-minus": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/switch-exhaustiveness-check": ["error", { "considerDefaultExhaustiveForUnions": true }],
+    "typescript/unbound-method": "error",
+    "typescript/ban-ts-comment": ["error", { "ts-expect-error": "allow-with-description", "minimumDescriptionLength": 10 }],
     "unicorn/require-post-message-target-origin": "error",
-    "eqeqeq": "error"
+    "vitest/no-focused-tests": "error",
+    "vitest/no-identical-title": "error"
   },
   "overrides": [
-    { "files": ["test/**", "desktop/test/**"], "rules": { "typescript/no-floating-promises": "off" } }
+    {
+      "files": ["*.config.{js,mjs,ts,mts}"],
+      "rules": { "import/no-default-export": "off" }
+    },
+    {
+      "files": ["test/**", "tests/**", "**/*.test.{ts,tsx,mts,mjs}"],
+      "rules": { "typescript/no-floating-promises": "off" }
+    }
   ],
-  "ignorePatterns": ["dist/**", "node_modules/**"]
+  "ignorePatterns": ["dist/**", "coverage/**", "node_modules/**"]
 }

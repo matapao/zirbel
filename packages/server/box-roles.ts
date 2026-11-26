@@ -9,7 +9,10 @@ import { ZirbelError } from '../core/projects.ts';
 import { ONE_GAME } from './box-editors.ts';
 import type { Access } from './box-routes.ts';
 
-export type ApiRoute = { method?: string; resource?: string; pathID?: string; action?: string; tail?: string };
+export type ApiRoute = {
+  method?: string | undefined; resource?: string | undefined; pathID?: string | undefined; action?: string | undefined;
+  tail?: string | undefined;
+};
 
 /** Who sent a request, as GET /api/me tells the workspace: the machine the editor runs on (on a box, the box itself),
  *  an owner, or an editor of one game. */

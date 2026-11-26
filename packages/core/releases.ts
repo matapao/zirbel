@@ -6,8 +6,14 @@ import type { Ident } from './git.ts';
 import { templates } from '../games/templates.ts';
 import { atomicWrite, deliveryAssets, digest, gameFileBytes, gameFileHashes, head, newId, readData, safeId, verifyAssetBytes, ZirbelError, type Projects } from './projects.ts';
 
+/** The simulation a game from source runs: its own netcode, shared state for several players, or none for one. */
+function sourceSimulation(game: GameDocument) {
+  if (game.net) return 'net-v2' as const;
+  return game.maxPlayers > 1 ? 'shared-state-v1' as const : null;
+}
+
 function runtimeSettings(template: Manifest['template'], game?: Revision['game']) {
-  if (game) return { simulation: game.net ? 'net-v2' as const : game.maxPlayers > 1 ? 'shared-state-v1' as const : null,
+  if (game) return { simulation: sourceSimulation(game),
     max: game.maxPlayers, capabilities: game.net || game.maxPlayers > 1 ? ['multiplayer' as const] : [] };
   if (template) return templates[template];
   throw new ZirbelError(422, 'This project has no game source yet.');
@@ -17,9 +23,13 @@ export class Releases {
   readonly runtime: ReadonlyMap<string, Buffer>;
   readonly fileHashes: Manifest['files'];
   private readonly files: Release['files'];
+  private readonly projects: Projects;
+  readonly webRoot: string;
 
   // webRoot is the build the runtime comes from (dist/web), which the player listeners also serve from.
-  constructor(private projects: Projects, readonly webRoot: string) {
+  constructor(projects: Projects, webRoot: string) {
+    this.projects = projects;
+    this.webRoot = webRoot;
     const files = ['player.html', 'player.js', 'garden-3d.js', 'garden-3d.js.LEGAL.txt', 'player.css',
       'game-sdk.js', 'three.module.js', 'three-license.txt', 'zod-license.txt',
       ...readdirSync(join(webRoot, 'chunks')).map((file) => 'chunks/' + file)];

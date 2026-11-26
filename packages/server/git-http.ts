@@ -2,7 +2,7 @@
 // machine the editor runs on (on a box, the box itself) clones and pushes every game without credentials; from a box's
 // network a git client sends a git token (a paired device's, for every game; an editor's, for its game) or a project
 // grant (its game; pushes with a write grant alone), as its Basic password or a bearer token. A push is checked by the
-// host's own pre-receive hook (git-hook.ts) before any ref moves. docs/git-store.md is the design.
+// host's own pre-receive hook (git-hook.ts) before any ref moves. The git store in AGENTS.md is the design.
 import { spawn } from 'node:child_process';
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -22,7 +22,7 @@ const services = ['git-upload-pack', 'git-receive-pack'];
 const SIGN_IN = 'Sign in with this device’s git token: the editor shows it in Clone with git.';
 
 export type GitContext = {
-  projects: Projects; mcp: Mcp; box?: BoxContext; tokens?: GitTokens;
+  projects: Projects; mcp: Mcp; box?: BoxContext | undefined; tokens?: GitTokens | undefined;
   /** Where the hook that checks pushes is (writeHooks). */
   hooks: string;
 };

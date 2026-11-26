@@ -63,7 +63,7 @@ export type PlayerReach = { hosts: () => string[]; network: (address: string) =>
 /** spaces: where /.skalet/* goes, the spaces kernel's address while Zirbel runs one (spaces-proxy.ts). */
 export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, Buffer>, addons: Addons, config: {
   port: number; bind: string; lan: boolean; editorOrigins?: string[] | ((host: string) => string[]); extraHosts?: string[];
-  reach?: PlayerReach; lobby: LobbyContext; pads: Pads; spaces: SpacesTarget;
+  reach?: PlayerReach | undefined; lobby: LobbyContext; pads: Pads; spaces: SpacesTarget;
 }) {
   let port: number;
   const hosts = () => [...config.reach?.hosts() ?? ['localhost', '127.0.0.1', ...(config.lan ? lanAddresses() : [])],
@@ -99,7 +99,7 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
       const frame = config.lan ? "'none'" : ["'self'", ...editorOrigins(url.hostname)].join(' ');
       const playerPolicy = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" +
         // The LAN player is plain HTTP by design, so its room socket is ws: on this same host.
-        // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+        // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- plain HTTP by design
         " connect-src 'self' ws://" + url.host + "; frame-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors " + frame;
       response.setHeader('content-security-policy', playerPolicy);
       if (route === 'game' && request.method === 'GET' && room.release.game && parts[0] === room.documentKey) {

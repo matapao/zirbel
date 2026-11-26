@@ -43,8 +43,13 @@ function alive(pid: number) {
 }
 
 export class Threads {
-  /** data: the project data folder this editor owns, which names its turns. */
-  constructor(readonly root: string, private readonly data: string) {
+  readonly root: string;
+  /** The project data folder this editor owns, which names its turns. */
+  private readonly data: string;
+
+  constructor(root: string, data: string) {
+    this.root = root;
+    this.data = data;
     privateDirectory(root);
   }
 

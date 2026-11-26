@@ -43,11 +43,19 @@ async function startBox(t: TestContext, command: string[]) {
 }
 type Started = Awaited<ReturnType<typeof startBox>>;
 
-type Step = { status: number; body: unknown; location?: string | null; cookie?: string; headers?: Record<string, string | null> };
+type Step = {
+  status: number; body: unknown; location?: string | null; cookie?: string | undefined; headers?: Record<string, string | null> | undefined;
+};
 /** The pairing and edit pages' headers, which a browser's form and its Origin depend on. */
 const PAGE_HEADERS = ['content-type', 'cache-control', 'referrer-policy', 'content-security-policy', 'x-content-type-options'];
 /** session: an owner's, as its cookie carries it; editor: an editor's of one game. */
 type Call = { json?: unknown; form?: Record<string, string>; origin?: boolean; session?: string; editor?: string; raw?: string };
+
+/** A call's request body: its JSON, else its form, else none. */
+function requestBody(json: unknown, form: Record<string, string> | undefined) {
+  if (json !== undefined) return JSON.stringify(json);
+  return form ? new URLSearchParams(form) : null;
+}
 
 function client(base: string) {
   return async (method: string, path: string, { json, form, origin, session, editor, raw }: Call = {}): Promise<Step> => {
@@ -56,7 +64,7 @@ function client(base: string) {
     const cookies = [...(session ? ['zirbel_session=' + session] : []), ...(editor ? ['zirbel_editor=' + editor] : [])];
     if (cookies.length) headers.cookie = cookies.join('; ');
     if (json !== undefined || raw !== undefined) headers['content-type'] = 'application/json';
-    const body = raw ?? (json !== undefined ? JSON.stringify(json) : form ? new URLSearchParams(form) : undefined);
+    const body = raw ?? requestBody(json, form);
     const response = await fetch(base + path, { method, headers, body, redirect: 'manual' });
     const text = await response.text();
     let parsed: unknown = text;
@@ -439,34 +447,31 @@ async function controllersSession(t: TestContext, { editor: base, pads }: Starte
   return steps;
 }
 
-const results = new Map<string, Step[]>();
-const editing = new Map<string, Step[]>();
-const controlling = new Map<string, Step[]>();
-const SESSIONS = [['session', session, results], ['editors session', editorsSession, editing],
-  ['controllers session', controllersSession, controlling]] as const;
+const SESSIONS = [['session', session], ['editors session', editorsSession], ['controllers session', controllersSession]] as const;
 
-for (const host of hosts) {
-  for (const [name, run, kept] of SESSIONS) {
-    test(host.name + ' box runs the scripted ' + name, async (t) => {
-      const steps = await run(t, await startBox(t, host.command));
-      // No controllers service runs beside these hosts: its routes say so.
-      for (const [index, step] of steps.entries()) assert.ok(step.status < 500 || (step.status === 503 && kept === controlling),
-        'step ' + index + ': ' + step.status + ' ' + JSON.stringify(step.body));
-      kept.set(host.name, steps);
-    });
-  }
-}
-
-if (hosts.length > 1) {
-  for (const [name, , kept] of SESSIONS) {
-    test('both boxes answer the ' + name + ' identically', (t) => {
+// Each host's run is a step of one test, and the comparison its last: steps keep their order, whatever order
+// --test-randomize gives the file's tests.
+for (const [name, run] of SESSIONS) {
+  test('every box runs the scripted ' + name + ', and both answer it identically', async (t) => {
+    const kept = new Map<string, Step[]>();
+    for (const host of hosts) {
+      await t.test(host.name + ' box runs the scripted ' + name, async (t) => {
+        const steps = await run(t, await startBox(t, host.command));
+        // No controllers service runs beside these hosts: its routes say so.
+        for (const [index, step] of steps.entries()) assert.ok(step.status < 500 || (step.status === 503 && name === 'controllers session'),
+          'step ' + index + ': ' + step.status + ' ' + JSON.stringify(step.body));
+        kept.set(host.name, steps);
+      });
+    }
+    if (hosts.length < 2) return;
+    await t.test('both boxes answer the ' + name + ' identically', (t) => {
       const node = kept.get('node')!.map(normalizer());
       const go = kept.get('go')!.map(normalizer());
       t.diagnostic(node.length + ' steps: ' + node.map(({ status }) => status).join(' '));
       assert.equal(go.length, node.length);
       for (const [index, step] of node.entries()) assert.deepEqual(go[index], step, 'step ' + index);
     });
-  }
+  });
 }
 
 test('the Go box runs no harnesses and says why', { skip: !hosts.some((host) => host.name === 'go') }, async (t) => {

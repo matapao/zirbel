@@ -25,7 +25,10 @@ const replySchema = z.discriminatedUnion('choice', [
 ]);
 
 // The harness's options, by short names: its own when short, else what the option does.
-const optionTitle = (name: string, kind: string) => name.length <= 24 ? name : kind.startsWith('allow') ? 'Allow once' : 'Reject';
+const optionTitle = (name: string, kind: string) => {
+  if (name.length <= 24) return name;
+  return kind.startsWith('allow') ? 'Allow once' : 'Reject';
+};
 
 function actionOf(question: AgentAsk, place: AskPlace = {}): HarnessAction {
   const id = newId();
@@ -56,11 +59,22 @@ function actionOf(question: AgentAsk, place: AskPlace = {}): HarnessAction {
     detail: detail ?? 'The harness did not provide action details for approval.', options };
 }
 
+/** A request's headline: what it asks to do, never the raw command. */
+function requestHeadline(action: HarnessAction) {
+  if (action.kind === 'permission') return action.summary;
+  return action.kind === 'link' ? 'Open a web page' : action.title || 'Fill in a form';
+}
+
+/** What a request is about: the command or file a permission names, the page a link opens, or a form's title. */
+function requestSubject(action: HarnessAction) {
+  if (action.kind === 'permission') return action.command ?? action.file;
+  return action.kind === 'link' ? action.url : action.title;
+}
+
 /** A request as a step of the turn: its headline, and once it closes, the answer it got. */
 function requestEntry(action: HarnessAction, answer?: string): ActivityEntry {
-  const headline = action.kind === 'permission' ? action.summary : action.kind === 'link' ? 'Open a web page' : action.title || 'Fill in a form';
-  const parts = [answer, action.kind === 'permission' ? action.reason : undefined, action.reach,
-    action.kind === 'permission' ? action.command ?? action.file : action.kind === 'link' ? action.url : action.title];
+  const headline = requestHeadline(action);
+  const parts = [answer, action.kind === 'permission' ? action.reason : undefined, action.reach, requestSubject(action)];
   return { id: 'request:' + action.id, kind: 'request', title: headline, detail: parts.filter(Boolean).join('\n\n'),
     state: answer === undefined ? 'waiting' : 'completed', ...(action.kind === 'permission' && action.diff ? { diff: action.diff } : {}) };
 }
@@ -71,7 +85,8 @@ function answerText(action: HarnessAction, answer: AskAnswer | null) {
     const chosen = action.kind === 'permission' ? action.options.find(({ id }) => id === answer.option)?.title : undefined;
     return 'Answered: ' + (chosen ?? answer.option);
   }
-  return answer.accept ? (action.kind === 'link' ? 'Continued' : 'Sent') : 'Declined';
+  if (answer.accept) return action.kind === 'link' ? 'Continued' : 'Sent';
+  return 'Declined';
 }
 
 function formValue(field: Extract<HarnessAction, { kind: 'form' }>['fields'][number], value: ActionValue) {
@@ -101,8 +116,17 @@ export class ActiveTurn {
   phase?: Extract<ChatUpdate, { type: 'progress' }>['phase'];
   outcome?: Outcome;
   finished!: Promise<Outcome>;
+  readonly thread: string;
+  readonly name: string;
+  readonly text: string;
+  note: Note | undefined;
 
-  constructor(readonly thread: string, readonly name: string, readonly text: string, public note?: Note) {}
+  constructor(thread: string, name: string, text: string, note?: Note) {
+    this.thread = thread;
+    this.name = name;
+    this.text = text;
+    this.note = note;
+  }
 
   /** What a request that attaches now is sent first: the turn as it stands. */
   snapshot(): ChatEvent<unknown>[] {

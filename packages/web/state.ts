@@ -1,7 +1,7 @@
 // Split from workspace.ts; shares state through ws in state.ts.
-import { type Asset, type ChatUsage, type Note, type Project, type Reference, type Scene } from '../sdk/contracts.ts';
-import { type GameDocument, type RegisteredObject } from '../sdk/game.ts';
-import { type HarnessAction } from '../sdk/chat-stream.ts';
+import type { Asset, ChatUsage, Note, Project, Reference, Scene } from '../sdk/contracts.ts';
+import type { GameDocument, RegisteredObject } from '../sdk/game.ts';
+import type { HarnessAction } from '../sdk/chat-stream.ts';
 import { TurnLog } from '../sdk/activity.ts';
 import type { modelPicker } from './model-picker.ts';
 
@@ -18,7 +18,7 @@ export type Me = { role: 'box' | 'owner' | 'editor'; game?: string };
 export type Proposal = { id: string; label: string; baseRevision: string };
 export type Preview = { proposal: Proposal; preview: { scene?: Scene; game?: GameDocument; assets: Asset[] } };
 export type Box = { x: number; y: number; width: number; height: number };
-export type WorkspaceMessage = { role: 'creator' | 'assistant'; text: string; usage?: ChatUsage };
+export type WorkspaceMessage = { role: 'creator' | 'assistant'; text: string; usage?: ChatUsage | undefined };
 export type ChatReply = { projectId?: string; branch?: string; conversation?: WorkspaceMessage[]; proposalId?: string };
 export type ProjectCard = Pick<Project, 'id' | 'title' | 'template'>;
 export type ActivityTurn = {
@@ -39,7 +39,7 @@ export const ws = {
   /** That conversation's own thread, kept in browser storage so a page that comes back finds its running turn. */
   workspaceThread: '',
   /** A turn of the open thread that was interrupted when its editor ended, which Continue resumes. */
-  interrupted: undefined as { key: string; text: string; harness: string; noteId?: string } | undefined,
+  interrupted: undefined as { key: string; text: string; harness: string; noteId?: string | undefined } | undefined,
   branch: 'main',
   /** Edit shows the editing affordances on the running game; otherwise the person plays it. */
   editing: false,

@@ -36,7 +36,7 @@ const editor = {
   'project-bundle': projectBundle,
   'game-folder': gameFolder,
   grant: grantSchema,
-  // projects/<id>.json since git keeps the revisions (docs/git-store.md), and the git routes' bodies.
+  // projects/<id>.json since git keeps the revisions (AGENTS.md: The git store), and the git routes' bodies.
   'stored-project': storedProject,
   'import-git': importInput,
   'update-from-source': updateInput,
@@ -68,7 +68,8 @@ function prepare({ zodSchema, jsonSchema }: { zodSchema: z.core.$ZodTypes; jsonS
   const steps = (def.checks ?? []).map(({ _zod }) => {
     const step = _zod.def as { check: string; format?: string; tx?: (value: string) => unknown };
     if (step.check === 'overwrite' && step.tx?.(' a ') !== 'a') throw new Error('Only trim may rewrite a contract string.');
-    return step.check === 'overwrite' ? 'trim' : step.check === 'string_format' && step.format === 'url' ? 'url' : undefined;
+    if (step.check === 'overwrite') return 'trim';
+    return step.check === 'string_format' && step.format === 'url' ? 'url' : undefined;
   });
   if (steps.slice(1).some(Boolean)) throw new Error('A trim or URL check must come first in a contract string.');
   if (steps[0]) jsonSchema['x-zirbel-prepare'] = steps[0];

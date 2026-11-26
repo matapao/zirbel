@@ -7,7 +7,7 @@ import { test, type TestContext } from 'node:test';
 import type { RunSpec } from 'celler/harness';
 import { chatStreamType, type ChatEvent, type ChatUpdate } from '../packages/sdk/chat-stream.ts';
 import { head } from '../packages/core/projects.ts';
-import { rights, legacyProject, install, tempDir } from './helpers.ts';
+import { abortError, rights, legacyProject, install, tempDir } from './helpers.ts';
 import { fakeHarnesses } from './fake-harnesses.ts';
 
 /** A turn's working folder whose game/ holds these files, as a harness would leave it. */
@@ -20,6 +20,15 @@ function folderWith(t: TestContext, files: Record<string, string>) {
   return folder;
 }
 
+/** What the fake harness answers a message with: a question, a new game, or a start. */
+function harnessReply(message: string) {
+  if (message === 'simple 3D game using three.js')
+    return { action: 'reply', message: 'What should the player do in the game?' };
+  if (message === 'A small 3D JRPG')
+    return { action: 'create', message: 'Created the quest draft.', title: 'Sunstone Road' };
+  return { action: 'reply', message: 'Starting.' };
+}
+
 test('a harness provider runs each harness through the same chat path', async (t) => {
   const { runHarnessChat } = await import('../packages/server/harness-chat.ts');
   const { projects } = install(t);
@@ -29,11 +38,7 @@ test('a harness provider runs each harness through the same chat path', async (t
   const harnesses = fakeHarnesses([{ id: 'codex', name: 'Codex' }, { id: 'claude', name: 'Claude Code' }], async (processor, prompt) => {
     requests.push({ processor, prompt });
     const message = JSON.parse(prompt.slice(prompt.lastIndexOf('\n') + 1)).message;
-    const text = message === 'simple 3D game using three.js'
-      ? { action: 'reply', message: 'What should the player do in the game?' }
-      : message === 'A small 3D JRPG'
-      ? { action: 'create', message: 'Created the quest draft.', title: 'Sunstone Road' }
-      : { action: 'reply', message: 'Starting.' };
+    const text = harnessReply(message);
     return { task: 'task-' + requests.length, stopReason: 'end_turn', text: JSON.stringify(text), usage: { totalTokens: 150 } };
   });
   const send = (processor: string, text: string, projectId = project.id) => {
@@ -146,7 +151,7 @@ test('standalone harnesses use existing sign-in and enable chat after provider s
   let claudeReady = false;
   let loginStarts = 0;
   let workingFolder = '';
-  const health = (ready: boolean) => ({ ok: ready, checkedAt: Date.now(), detail: '', fix: ready ? undefined : 'login' as const });
+  const health = (ready: boolean) => ({ ok: ready, checkedAt: Date.now(), detail: '', ...(ready ? {} : { fix: 'login' as const }) });
   const harnesses = new LocalHarnesses(root, [
     { id: 'codex', name: 'Codex', runtime: {
       kind: 'codex', async health() { return health(true); }, login() { throw new Error('Already signed in'); },
@@ -272,7 +277,7 @@ test('a turn runs on its own: requests stream it, attach to it with its steps an
       form: { message: 'Choose the player count', fields: [{ name: 'players', title: 'Players', type: 'integer', required: true }] } }, signal);
     assert.deepEqual(form, { accept: true, content: { players: 2 } });
     responded.resolve();
-    return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+    return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(abortError(signal)), { once: true }));
   });
   assert.throws(() => chat.start('project.main', { name: 'Codex', text: 'Again' }, async () => ({})), /already running/);
   assert.equal(chat.count, 1);
@@ -322,7 +327,7 @@ test('a closed connection starts no stream, and the editor stopping interrupts i
   const chat = new ChatRuns();
   let reason: unknown;
   const turn = chat.start('project.main', { name: 'Codex', text: 'Make it' }, ({ signal }) =>
-    new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(reason = signal.reason), { once: true })));
+    new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(reason = abortError(signal)), { once: true })));
   const closed = streamed(t);
   closed.response.destroy();
   await streamTurn(closed.request, closed.response, turn);

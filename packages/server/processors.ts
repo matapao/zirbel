@@ -13,9 +13,9 @@ export type Processor = { id: string; name: string; ready?: boolean; signIn?: bo
 /** Why a harness's turn ended without its reply, where that is known for certain. */
 export type TurnEnded = NonNullable<RunResult['ended']>;
 type ProcessorReply = {
-  name: string; task: string; stopReason: string; text?: string; usage?: { totalTokens: number };
+  name: string; task: string; stopReason: string; text?: string | undefined; usage?: { totalTokens: number } | undefined;
   /** The session the turn ran in, which a later turn of the thread resumes. */
-  sessionId?: string;
+  sessionId?: string | undefined;
 };
 
 /** A turn's end in plain words, for the thread. */
@@ -30,24 +30,29 @@ function endedText(name: string, ended: TurnEnded) {
 
 /** A turn that ended without its reply for a reason the harness knows for certain. */
 export class TurnEndedError extends ZirbelError {
-  constructor(name: string, readonly ended: TurnEnded) { super(502, endedText(name, ended)); }
+  readonly ended: TurnEnded;
+
+  constructor(name: string, ended: TurnEnded) {
+    super(502, endedText(name, ended));
+    this.ended = ended;
+  }
 }
 
 /** A sign-in as it goes: the page to open, and for one finished on another device, the code to enter there. */
 /** A sign-in's state: its page and, from another device, the code to enter there; why it failed, when it says. */
 export type SignInStatus = { status: 'pending' | 'complete' | 'failed'; url?: string; userCode?: string; error?: string };
 /** Where a turn works: its thread's folder, the session it continues, its MCP servers and what else it may read. */
-type TurnPlace = { cwd: string; sessionId?: string; resume: boolean; mcpServers?: McpServerSpec[]; readable?: string[] };
+type TurnPlace = { cwd: string; sessionId?: string | undefined; resume: boolean; mcpServers?: McpServerSpec[]; readable?: string[] };
 export type ProcessorRun = {
-  signal?: AbortSignal;
-  update?: (event: ChatUpdate) => void;
+  signal?: AbortSignal | undefined;
+  update?: ((event: ChatUpdate) => void) | undefined;
   /** Puts a request to the person: place says which harness asks, and from which working folder. */
-  ask?: (question: AgentAsk, withdrawn: AbortSignal, place?: AskPlace) => Promise<AskAnswer | null>;
-  selection?: ModelSelection;
+  ask?: ((question: AgentAsk, withdrawn: AbortSignal, place?: AskPlace) => Promise<AskAnswer | null>) | undefined;
+  selection?: ModelSelection | undefined;
   /** The thread's folder and session. Without one, the turn works in a folder of its own that goes after it. */
-  place?: TurnPlace;
+  place?: TurnPlace | undefined;
   /** Hears the session's id as soon as the harness names it. */
-  session?: (sessionId: string) => void;
+  session?: ((sessionId: string) => void) | undefined;
 };
 
 export interface Processors {

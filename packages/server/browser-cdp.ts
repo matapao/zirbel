@@ -18,9 +18,12 @@ export function findBrowser(env: NodeJS.ProcessEnv = process.env): string | unde
     'Chromium/Application/chrome.exe'].map((exe) => join(root, exe)) : [];
   const onPath = (env.PATH ?? '').split(delimiter).filter((dir) => isAbsolute(dir)).flatMap((dir) =>
     ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'microsoft-edge', 'microsoft-edge-stable'].map((name) => join(dir, name)));
-  const candidates = process.platform === 'darwin' ? [...apps('/Applications'), ...apps(join(homedir(), 'Applications'))]
-    : process.platform === 'win32' ? [env.PROGRAMFILES, env['PROGRAMFILES(X86)'], env.LOCALAPPDATA].flatMap(windows) : onPath;
-  return candidates.find((file) => existsSync(file));
+  const installed = (candidates: string[]) => candidates.find((file) => existsSync(file));
+  if (process.platform === 'darwin')
+    return installed([...apps('/Applications'), ...apps(join(homedir(), 'Applications'))]);
+  if (process.platform === 'win32')
+    return installed([env.PROGRAMFILES, env['PROGRAMFILES(X86)'], env.LOCALAPPDATA].flatMap(windows));
+  return installed(onPath);
 }
 
 export const NO_BROWSER = 'No browser available to render the game: install Chrome, Edge or Chromium on this computer.';
@@ -45,8 +48,10 @@ type Message = { id?: number; method?: string; sessionId?: string; params?: Reco
   error?: { message: string } };
 type RemoteObject = { type?: string; value?: unknown; description?: string; unserializableValue?: string };
 
-const describe = (value: RemoteObject) => value.value !== undefined
-  ? (typeof value.value === 'string' ? value.value : JSON.stringify(value.value)) : value.description ?? value.unserializableValue ?? value.type ?? '';
+const describe = (value: RemoteObject) => {
+  if (value.value === undefined) return value.description ?? value.unserializableValue ?? value.type ?? '';
+  return typeof value.value === 'string' ? value.value : JSON.stringify(value.value);
+};
 
 /** One browser for one render: started, driven and gone with its profile once the render ends. */
 class Session {
@@ -55,8 +60,10 @@ class Session {
   private events = new Set<(message: Message) => void>();
   private buffered = '';
   sessionId?: string;
+  private readonly input: Writable;
 
-  constructor(private input: Writable, output: Readable) {
+  constructor(input: Writable, output: Readable) {
+    this.input = input;
     // A browser that ended closes its pipes: what still waits on it hears so, and nothing else breaks.
     input.on('error', (error) => this.fail(error));
     output.on('error', (error) => this.fail(error));

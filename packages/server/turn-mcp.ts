@@ -27,11 +27,24 @@ const viewGameTool = {
 type Turn = { folder: string; game: TurnGame };
 type ViewDeps = Parameters<typeof viewGame>[3];
 
+/** What a failed render tells the harness: our own message, the first argument problems, or the error cut short. */
+function renderFailure(error: unknown) {
+  if (error instanceof ZirbelError) return error.message;
+  if (error instanceof z.ZodError) return 'Check the arguments: ' + error.issues.slice(0, 3)
+    .map(({ path, message }) => (path.length ? path.join('.') + ': ' : '') + message).join('; ');
+  return 'The game could not be rendered: ' + (error instanceof Error ? error.message : String(error)).slice(0, 500);
+}
+
 export class TurnServers {
   /** The turns with a server, by their credential's hash. */
   private turns = new Map<string, Turn>();
+  private readonly deps: ViewDeps;
+  private readonly url: () => string;
 
-  constructor(private deps: ViewDeps, private url: () => string) {}
+  constructor(deps: ViewDeps, url: () => string) {
+    this.deps = deps;
+    this.url = url;
+  }
 
   /** A server for one turn's folder; revoke() takes its credential back. */
   open(folder: string, game: TurnGame): { servers: McpServerSpec[]; revoke(): void } {
@@ -77,9 +90,7 @@ export class TurnServers {
     try {
       return { ...response, result: await viewGame(params.arguments ?? {}, turn.folder, turn.game, this.deps) };
     } catch (error) {
-      const text = error instanceof ZirbelError ? error.message : error instanceof z.ZodError
-        ? 'Check the arguments: ' + error.issues.slice(0, 3).map(({ path, message }) => (path.length ? path.join('.') + ': ' : '') + message).join('; ')
-        : 'The game could not be rendered: ' + (error instanceof Error ? error.message : String(error)).slice(0, 500);
+      const text = renderFailure(error);
       return { ...response, result: { isError: true, content: [{ type: 'text', text }] } };
     }
   }

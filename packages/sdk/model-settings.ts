@@ -1,4 +1,4 @@
-export type ModelSelection = { model?: string; effort?: string };
+export type ModelSelection = { model?: string | undefined; effort?: string | undefined };
 
 type ModelChoice = { value: string; name: string; description?: string | null };
 export type ModelSetting = {
