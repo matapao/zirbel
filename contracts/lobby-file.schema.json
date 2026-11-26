@@ -1,0 +1,24 @@
+{
+  "$id": "https://zirbel.app/contracts/lobby-file.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "offered": {
+      "maxItems": 256,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+      }
+    }
+  },
+  "required": [
+    "version",
+    "offered"
+  ],
+  "additionalProperties": false
+}

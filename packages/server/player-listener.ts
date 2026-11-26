@@ -9,6 +9,7 @@ import { ClientMessage } from '../sdk/contracts.ts';
 import { gamePage, THREE_ADDONS } from './game-page.ts';
 import { GAME_FILE_TYPES } from '../sdk/game.ts';
 import { body, bytes, checkOrigin, contentType, fail, lanAddresses, listen, reply, requestUrl, secure, typeFor } from './http.ts';
+import { lobbyRequest, type LobbyContext } from './lobby-routes.ts';
 import { relaySockets } from './relay-socket.ts';
 import { acceptsGzip, prepareRuntime, sendImmutable, type Addons, type RuntimeEntry } from './runtime-files.ts';
 
@@ -58,11 +59,11 @@ export type PlayerReach = { hosts: () => string[]; network: (address: string) =>
 
 export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, Buffer>, addons: Addons, client: RuntimeEntry, config: {
   port: number; bind: string; lan: boolean; editorOrigins?: string[] | ((host: string) => string[]); extraHosts?: string[];
-  reach?: PlayerReach;
+  reach?: PlayerReach; lobby: LobbyContext;
 }) {
   let port: number;
-  const hosts = () => config.reach?.hosts() ??
-    ['localhost', '127.0.0.1', ...(config.lan ? lanAddresses() : []), ...(config.extraHosts ?? [])];
+  const hosts = () => [...config.reach?.hosts() ?? ['localhost', '127.0.0.1', ...(config.lan ? lanAddresses() : [])],
+    ...(config.extraHosts ?? [])];
   const editorOrigins = (host: string) =>
     typeof config.editorOrigins === 'function' ? config.editorOrigins(host) : config.editorOrigins ?? [];
   const allows = (room: { access: 'local' | 'lan' }) => {
@@ -91,6 +92,7 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
         sendImmutable(request, response, 'text/javascript; charset=utf-8', client, 'no-cache');
         return;
       }
+      if (await lobbyRequest(config.lobby, config.lan ? 'lan' : 'local', request, response, url)) return;
       if (!roomId) throw new ZirbelError(404, 'Open the invitation link from the host.');
       const room = rooms.get(roomId);
       allows(room);

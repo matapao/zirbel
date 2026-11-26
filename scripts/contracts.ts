@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { projectBundle, savedNote, savedProposal } from '../packages/core/projects.ts';
 import { gameFolder } from '../packages/core/game-files.ts';
 import {
-  asset, attachment, ClientMessage, id, portableRelease, project, proposalInput, scene, ServerMessage,
+  asset, attachment, ClientMessage, id, lobbyFile, lobbyJoin, lobbyOffer, lobbyStart, portableRelease, project, proposalInput, scene,
+  ServerMessage,
 } from '../packages/sdk/contracts.ts';
 import { gameDocument } from '../packages/sdk/game.ts';
 import { grantSchema, toolDescriptors } from '../packages/server/mcp.ts';
@@ -36,6 +37,7 @@ const editor = {
 const schemas = {
   'client-message': ClientMessage, 'server-message': ServerMessage, release: portableRelease,
   'game-document': gameDocument, project, proposal: proposalInput, reserve, scene, ...editor,
+  'lobby-start': lobbyStart, 'lobby-join': lobbyJoin, 'lobby-offer': lobbyOffer, 'lobby-file': lobbyFile,
 };
 
 // Zod trims some strings, and its URL check trims and drops tabs and newlines,

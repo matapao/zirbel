@@ -164,6 +164,16 @@ export const ServerMessage = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('closed'), message: z.string() }),
 ]);
 
+// The lobby (packages/core/lobby.ts). A player's display name is as the player page's join form takes it; a code is
+// read leniently (any case, spaces and dashes), so its shape is checked after this.
+const playerName = z.string().trim().min(1).max(24);
+export const lobbyStart = z.strictObject({ release: id, name: playerName });
+export const lobbyJoin = z.strictObject({ code: z.string().max(16), name: playerName });
+export const lobbyOffer = z.strictObject({ release: id, offered: z.boolean() });
+/** lobby.json in the data folder: the releases the owner offers, at most one per game. */
+export const lobbyFile = z.strictObject({ version: z.literal(1), offered: z.array(id).max(256) })
+  .refine((file) => new Set(file.offered).size === file.offered.length, 'A release is offered once.');
+
 export type SceneObject = z.infer<typeof sceneObject>;
 export type Scene = z.infer<typeof scene>;
 export function legacyScene(value: { scene?: Scene }) {

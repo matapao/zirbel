@@ -1,0 +1,22 @@
+{
+  "$id": "https://zirbel.app/contracts/lobby-start.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "release": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 24,
+      "x-zirbel-prepare": "trim"
+    }
+  },
+  "required": [
+    "release",
+    "name"
+  ],
+  "additionalProperties": false
+}

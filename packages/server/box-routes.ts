@@ -2,6 +2,7 @@
 // box itself behaves as without box mode. A request from elsewhere must come from the box's own network, and then
 // needs a paired device's session for everything but /pair, where a device pairs with a one-time code (or claims a
 // box no device has paired with yet), and /mcp while external MCP access is on, which checks its own project grant.
+// A device that isn't paired and opens the box's / goes to the lobby on its LAN player listener: playing needs no pairing.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BlockList } from 'node:net';
 import { hostname, networkInterfaces } from 'node:os';
@@ -16,6 +17,8 @@ export type BoxContext = {
   pairing: Pairing; settings: BoxSettings; harnesses: BoxHarnesses; capabilities: Capabilities;
   /** The editor's port, the turns running now, and a link (or a Wi-Fi network to join) as a QR code. */
   port: () => number; turns: () => number; qr: (text: string) => Promise<string>;
+  /** The LAN player listener's port, where the lobby is, while it runs. */
+  lobbyPort: () => number | undefined;
   /** The file that wakes the box's setup service (pi/setup) for its Wi-Fi setup: a systemd path unit starts the service
    *  when it appears. Beside it, the one for the box's own Wi-Fi (networkWake). */
   setupRequest: string;
@@ -76,8 +79,8 @@ export async function boxDoor(box: BoxContext, request: IncomingMessage, respons
   const device = box.pairing.session(request.headers.cookie);
   if (device) return { local: false, device: device.id };
   if (request.method === 'GET' && !url.pathname.startsWith('/api/')) {
-    response.writeHead(303, { location: '/pair', 'cache-control': 'no-store' });
-    response.end();
+    const lobby = box.lobbyPort();
+    redirect(response, url.pathname === '/' && lobby ? 'http://' + url.hostname + ':' + lobby + '/' : '/pair');
     return;
   }
   throw new ZirbelError(401, 'Pair this device with the box first.');

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Zirbel · Lobby</title>
+  <link rel="stylesheet" href="/lobby.css">
+  <script type="module" src="/lobby.js"></script>
+</head>
+<body>
+  <main class="lobby">
+    <header><span class="mark" aria-hidden="true">✦</span> <strong>Zirbel</strong> <span>Lobby</span></header>
+    <section id="started" class="card started" hidden aria-labelledby="started-title">
+      <h1 id="started-title">Your session is ready</h1>
+      <p>Give this code to the others:</p>
+      <p id="code" class="code"></p>
+      <a id="go-in" class="button primary" href="/">Go in</a>
+      <button id="back" type="button">Back to the lobby</button>
+    </section>
+    <div id="home">
+      <section class="card">
+        <label for="name">Your name</label>
+        <input id="name" name="name" maxlength="24" autocomplete="nickname" placeholder="Explorer">
+      </section>
+      <section class="card" aria-labelledby="join-title">
+        <h2 id="join-title">Join with a code</h2>
+        <form id="join-form" class="join">
+          <input id="join-code" name="code" maxlength="16" autocomplete="off" autocapitalize="characters" spellcheck="false"
+            placeholder="Code" aria-label="Session code" required>
+          <button class="primary">Join</button>
+        </form>
+      </section>
+      <section aria-labelledby="games-title">
+        <h2 id="games-title">Games</h2>
+        <ul id="games" class="list"></ul>
+        <p id="no-games" hidden>No games are in the lobby yet.</p>
+      </section>
+      <section aria-labelledby="sessions-title">
+        <h2 id="sessions-title">Playing now</h2>
+        <ul id="sessions" class="list"></ul>
+        <p id="no-sessions" hidden>Nobody is playing yet. Start a session above.</p>
+      </section>
+    </div>
+    <p id="error" class="error" role="alert"></p>
+    <footer><a id="pair" hidden>Own this box? Pair this device</a></footer>
+  </main>
+</body>
+</html>

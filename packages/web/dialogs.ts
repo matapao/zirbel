@@ -2,9 +2,9 @@
 import { action, api, attempt, dialog, el, formValue, inform, openDialog, option } from './editor-ui.ts';
 import { current, library, loadProject, openProject, refreshProject, route, scope } from './workspace.ts';
 import { Preview, ws } from './state.ts';
-import { type Project } from '../sdk/contracts.ts';
+import { type Manifest, type Project } from '../sdk/contracts.ts';
 import { templates } from '../games/templates.ts';
-import { roomCard, type Room } from './library.ts';
+import { lobbyOffers, roomCard, type Room } from './library.ts';
 
 function forkDialog(id: string) {
   const body = openDialog('Apply to a new branch');
@@ -93,22 +93,40 @@ export async function sharingDialog() {
 
   const form = el('form');
   const options = el('fieldset'); options.append(el('legend','Publish a release'));
-  for (const [name, title] of [['play','Allow play'],['download','Allow downloads'],['remix','Allow remixing']]) {
+  const boxes: Record<string, HTMLInputElement> = {};
+  for (const [name, title] of [['play','Allow play'],['download','Allow downloads'],['remix','Allow remixing'],
+    ['lobby', 'Offer in the lobby']]) {
     const label = el('label'); const input = el('input');
     input.type = 'checkbox'; input.name = name!; input.checked = true;
+    boxes[name!] = input;
     label.append(input, title!); options.append(label);
   }
+  // The lobby offers only what may be played.
+  boxes.play!.addEventListener('change', () => { boxes.lobby!.disabled = !boxes.play!.checked; });
+  options.append(await lobbyStatus(id));
   const publish = el('button','Publish to this host’s library', 'primary');
   form.append(options, publish); body.append(form);
   form.addEventListener('submit', (event) => {
     event.preventDefault(); attempt(async () => {
       const formData = new FormData(form);
-      await api('projects/' + id + '/release', { branch, baseRevision, permissions: {
-        play: formData.has('play'), download: formData.has('download'), remix: formData.has('remix'),
+      const play = formData.has('play');
+      const manifest = await api<Manifest>('projects/' + id + '/release', { branch, baseRevision, permissions: {
+        play, download: formData.has('download'), remix: formData.has('remix'),
       } });
-      inform('Published to this host’s library.'); await library.open();
+      const offer = play && formData.has('lobby');
+      if (offer) await api('lobby/offer', { release: manifest.releaseId, offered: true });
+      inform(offer ? 'Published to this host’s library and offered in the lobby.' : 'Published to this host’s library.');
+      await library.open();
     }, publish);
   });
+}
+
+/** Whether the lobby offers a release of this game, and which. */
+async function lobbyStatus(gameId: string) {
+  const [releases, offered] = await Promise.all([api<Manifest[]>('releases'), lobbyOffers()]);
+  const release = releases.find((item) => item.gameId === gameId && offered.includes(item.releaseId));
+  return el('small', release ? 'In the lobby now: revision ' + release.sourceRevision.slice(0, 8) + '. A new release offered takes its place.'
+    : 'No release of this game is in the lobby.', 'lobby-status');
 }
 
 export async function agentAccessDialog(projectId: string, title: string) {

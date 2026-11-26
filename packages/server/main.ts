@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { z } from 'zod';
 import QRCode from 'qrcode';
-import { attachment, asset, distribution, id, PORTABLE_FILE_LIMIT } from '../sdk/contracts.ts';
+import { attachment, asset, distribution, id, lobbyOffer, PORTABLE_FILE_LIMIT } from '../sdk/contracts.ts';
 import { assertCurrent, atomicWrite, mediaMatches, newId, Projects, safeId, ZirbelError } from '../core/projects.ts';
 import { Releases } from '../core/releases.ts';
 import { importGameFolder } from '../core/game-files.ts';
@@ -72,8 +72,12 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
   const projects = new Projects(root);
   const releases = new Releases(projects, webRoot);
   const rooms = new Rooms();
+  let editorPort = port;
+  // On a box, the lobby's players come from its own network, and those who own it pair at the editor's /pair.
   const players = new Players(rooms, releases, { playerPort, lanHost,
-    qr: (link) => QRCode.toDataURL(link, { margin: 2, width: 240 }) });
+    qr: (link) => QRCode.toDataURL(link, { margin: 2, width: 240 }),
+    box: boxMode ? { reach: { hosts: boxHosts, network: onBoxNetwork },
+      pair: (host) => 'http://' + host + (editorPort === 80 ? '' : ':' + editorPort) + '/pair' } : undefined });
   const claim = claimDirectory(root, { pid: process.pid, port, boot, editor: true });
   if (!claim.owner) {
     if (claim.editor && claim.port) {
@@ -113,7 +117,6 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
 
   try {
     projects.archiveLegacyPreviews();
-    let editorPort = port;
     const chat = new ChatRuns();
     let box: BoxContext | undefined;
     let harnesses: Processors;
@@ -124,6 +127,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
       const switched = new BoxHarnesses(() => harnessesFor(root), () => capabilities.harnesses && settings.read().harnesses);
       harnesses = switched;
       box = { pairing: new Pairing(join(account, 'box')), settings, harnesses: switched, capabilities, port: () => editorPort,
+        lobbyPort: () => players.lanPort,
         turns: () => chat.count, qr: (link) => QRCode.toDataURL(link, { margin: 2, width: 240 }),
         setupRequest: process.env.ZIRBEL_SETUP_REQUEST || '/run/zirbel-setup/request',
         ownNetwork: process.env.ZIRBEL_OWN_NETWORK || '/var/lib/zirbel-setup/own-network.json' };
@@ -352,6 +356,13 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
           if (method === 'POST' && pathID === 'import') { reply(response, releases.import(await body(request, PORTABLE_FILE_LIMIT)).manifest, 201); return; }
           if (method === 'POST' && pathID && action === 'remix') { reply(response, releases.remix(pathID), 201); return; }
         }
+        if (resource === 'lobby' && !action) {
+          if (method === 'GET' && !pathID) { reply(response, { offered: players.lobby.offered() }); return; }
+          if (method === 'POST' && pathID === 'offer') {
+            const input = lobbyOffer.parse(await body(request, 4096));
+            reply(response, players.lobby.offer(input.release, input.offered)); return;
+          }
+        }
         if (resource === 'rooms') {
           if (method === 'GET' && !pathID) { reply(response, rooms.list()); return; }
           if (method === 'POST' && !pathID) {
@@ -382,7 +393,8 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
     });
     const local = box ? await players.openLocal(0, boxEditorOrigins, { hosts: boxHosts, network: onBoxNetwork })
       : await players.openLocal(0, [editorOrigin(), 'http://localhost:' + editorPort, ]);
-    if (values.lan) await players.startLan();
+    // A box's lobby is on its LAN listener, where its door sends the devices that aren't paired.
+    if (values.lan || box) await players.startLan();
     for (const id of values.release ?? []) console.log(JSON.stringify(await players.start(id, Boolean(values.lan))));
     const info = { pid: process.pid, port: editorPort, boot, editor: true };
     atomicWrite(serviceFile, JSON.stringify(info));

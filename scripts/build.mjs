@@ -81,6 +81,12 @@ await Promise.all([
     bundle: true, format: 'esm', platform: 'browser', target: 'es2022', minify: true,
     banner: { js: '/*! zirbel-net, MIT License, Copyright (c) 2026 The zirbel authors */' },
   }),
+  // The lobby page every player listener serves at /. It is the host's own, like zirbel-net's client, and is built
+  // apart from the player runtime so the releases' chunks/ stay as they are.
+  build({
+    entryPoints: ['packages/web/lobby.ts'], outfile: 'dist/web/lobby.js',
+    bundle: true, format: 'esm', platform: 'browser', target: 'es2022', minify: true,
+  }),
   build({
     entryPoints: ['node_modules/three/build/three.module.js'], outfile: 'dist/web/three.module.js',
     bundle: true, platform: 'browser', format: 'esm', target: 'es2022', minify: true, legalComments: 'inline',

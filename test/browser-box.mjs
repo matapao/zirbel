@@ -16,7 +16,7 @@ process.env.ZIRBEL_OWN_NETWORK = join(setup, 'own-network.json');
 process.env.ZIRBEL_SETUP_REQUEST = join(setup, 'run', 'request');
 
 test('a box asks how to use it once, turns on agent access, and pairs another device with a code', { timeout: 60_000 }, async (t) => {
-  const { page, editor, browser, errors } = await openEditor(t, async (_context, res) => res.end('{}'), ['--box']);
+  const { page, editor, browser, errors } = await openEditor(t, async (_context, res) => res.end('{}'), ['--box', '--player-port', '0']);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('heading', { name: 'How do you want to use Zirbel here?' }).waitFor();
   assert.ok(await dialog.getByText('Run harnesses on this box', { exact: true }).isVisible());
@@ -65,7 +65,7 @@ test('a box makes its own Wi-Fi only after showing its name and password, then s
   writeFileSync(process.env.ZIRBEL_OWN_NETWORK, JSON.stringify({ version: 1, name: 'Zirbel 3F2A', password: 'abcd-efgh-jkmn' }));
   t.after(() => rmSync(process.env.ZIRBEL_OWN_NETWORK, { force: true }));
   const woken = join(setup, 'run', 'network');
-  const { page, errors } = await openEditor(t, async (_context, res) => res.end('{}'), ['--box']);
+  const { page, errors } = await openEditor(t, async (_context, res) => res.end('{}'), ['--box', '--player-port', '0']);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Not now' }).click();
   const settings = async () => {

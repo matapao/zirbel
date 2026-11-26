@@ -8,7 +8,9 @@ import { drawScene } from './scene.ts';
 
 function byId<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
 const room = location.pathname.split('/').at(-1) ?? '';
-const invite = location.hash.slice(1);
+// An invitation, or a seat the lobby held for this person (#seat=<ticket>), which goes straight in.
+const ticket = location.hash.startsWith('#seat=') ? location.hash.slice('#seat='.length) : '';
+const invite = ticket ? '' : location.hash.slice(1);
 const savedKey = 'zirbel-room:' + room;
 const soloMessage = byId('message');
 const lobby = byId('lobby');
@@ -28,7 +30,6 @@ let tile: ReturnType<typeof tileState.parse> | undefined;
 let seats: SeatInfo[] = [];
 let frame = 0;
 let disposeGarden: (() => void) | undefined;
-let resumed = false;
 let ready = false;
 let quest: Quest | undefined;
 
@@ -150,6 +151,7 @@ function showLobby(message = '') {
   game.hidden = true;
   lobby.hidden = false;
   form.hidden = !invite || Boolean(info?.solo);
+  byId('to-lobby').hidden = !ticket;
   soloMessage.textContent = message;
   connection.textContent = '';
   byId('leave').hidden = true;
@@ -348,20 +350,24 @@ async function reserveSeat(event: SubmitEvent) {
 }
 
 try {
-  const credential = saved() || invite;
+  const link = ticket || invite;
+  let credential = saved() || link;
   if (!credential) throw new Error('Open the complete invitation link from the room owner.');
-  try { info = await fetchRoom<RoomInfo>(room, 'info', undefined, credential); resumed = credential !== invite; }
+  try { info = await fetchRoom<RoomInfo>(room, 'info', undefined, credential); }
   catch (error) {
-    if (!invite || credential === invite) throw error;
+    if (!link || credential === link) throw ticket ? new Error('This seat has expired. Join again from the lobby.') : error;
     remember();
-    info = await fetchRoom<RoomInfo>(room, 'info', undefined, invite);
+    credential = link;
+    info = await fetchRoom<RoomInfo>(room, 'info', undefined, credential);
   }
   document.title = info.manifest.title + ' · Zirbel';
   byId('game-title').textContent = info.manifest.title;
   byId('lobby-title').textContent = info.manifest.title;
   byId('lobby-description').textContent = info.gameUrl || !info.manifest.template ? '' : templates[info.manifest.template].description;
-  byId('badge').textContent = info.development ? 'Development playtest' : info.solo ? 'Local playtest' : '';
-  if (resumed) connect(credential);
+  byId('badge').textContent = info.code ? 'Code ' + info.code : info.development ? 'Development playtest'
+    : info.solo && !ticket ? 'Local playtest' : '';
+  // A seat kept from before, or the one the lobby held.
+  if (credential !== invite) connect(credential);
   else if (info.solo) {
     const { ticket } = await fetchRoom<{ ticket: string }>(room, 'reserve', { invite, name: 'Explorer', role: 'player' });
     connect(ticket);
