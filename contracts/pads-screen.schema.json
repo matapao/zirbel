@@ -8,6 +8,11 @@
         "type": {
           "type": "string",
           "const": "claim"
+        },
+        "place": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
         }
       },
       "required": [
@@ -87,6 +92,97 @@
       "required": [
         "type",
         "link"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "move"
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "to": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        }
+      },
+      "required": [
+        "type",
+        "from",
+        "to"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "labels"
+        },
+        "labels": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "place": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 7
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 24
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              }
+            },
+            "required": [
+              "place",
+              "name",
+              "color"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "type",
+        "labels"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "local"
+        },
+        "places": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          }
+        }
+      },
+      "required": [
+        "type",
+        "places"
       ],
       "additionalProperties": false
     }

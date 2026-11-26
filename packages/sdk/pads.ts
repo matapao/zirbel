@@ -11,8 +11,8 @@
 
 /** Controllers one screen holds. */
 export const PAD_SLOTS = 8;
-export const PAD_BUTTONS = 32;
-export const PAD_AXES = 8;
+const PAD_BUTTONS = 32;
+const PAD_AXES = 8;
 /** The largest frame: 8 bytes of header, 32 values and 8 axes. */
 export const MAX_PAD_FRAME = 8 + PAD_BUTTONS + 2 * PAD_AXES;
 const STANDARD = 1;

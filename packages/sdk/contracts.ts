@@ -180,18 +180,27 @@ export const lobbyOffer = z.strictObject({ release: id, offered: z.boolean() });
 export const lobbyFile = z.strictObject({ version: z.literal(1), offered: z.array(id).max(256) })
   .refine((file) => new Set(file.offered).size === file.offered.length, 'A release is offered once.');
 
-// The pads socket (packages/core/pads.ts): what a screen sends the host on /pads, each at most 1 KB, and what the box's
-// controller service sends it on the local socket, each at most 4 KB. Pad state itself is binary (sdk/pads.ts).
-const padSlot = z.number().int().min(0).max(7);
+// The pads socket (packages/core/pads.ts): what a screen and a phone send the host on /pads, each at most 1 KB, and what
+// the box's controller service sends it on the local socket, each at most 4 KB. Pad state itself is binary (sdk/pads.ts).
+// A place is a controller's on its screen, P1 to P8 (0 to 7 here).
+const padPlace = z.number().int().min(0).max(7);
 const padDevice = z.number().int().min(0).max(15);
 export const padsScreenMessage = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('claim') }),
-  z.strictObject({ type: z.literal('release'), slot: padSlot }),
-  z.strictObject({ type: z.literal('rumble'), slot: padSlot, duration: z.number().min(0).max(5000),
+  // place: the next controller whose A goes down takes it; without one, the next box gamepad on no screen joins.
+  z.strictObject({ type: z.literal('claim'), place: padPlace.optional() }),
+  z.strictObject({ type: z.literal('release'), slot: padPlace }),
+  z.strictObject({ type: z.literal('rumble'), slot: padPlace, duration: z.number().min(0).max(5000),
     strong: z.number().min(0).max(1), weak: z.number().min(0).max(1) }),
   // Show on TV: a player page of this listener, as a path, for the box's own screen to open.
   z.strictObject({ type: z.literal('show'), link: z.string().max(256).regex(/^\/join\/[a-z0-9]{1,64}(?:#[A-Za-z0-9_=-]{1,128})?$/) }),
+  z.strictObject({ type: z.literal('move'), from: padPlace, to: padPlace }),
+  // What each place drives, as the game names it: all of them, the places left out having none.
+  z.strictObject({ type: z.literal('labels'), labels: z.array(z.strictObject({ place: padPlace, name: z.string().min(1).max(24),
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/) })).max(8) }),
+  // The places the screen's own device gamepads hold, which the host gives no other controller.
+  z.strictObject({ type: z.literal('local'), places: z.array(padPlace).max(8) }),
 ]);
+export const padsPadMessage = z.strictObject({ type: z.literal('place'), place: padPlace });
 export const padsServiceMessage = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('device'), device: padDevice, name: z.string().min(1).max(128), standard: z.boolean() }),
   z.strictObject({ type: z.literal('gone'), device: padDevice }),
@@ -227,3 +236,4 @@ export type ServerMessage = z.infer<typeof ServerMessage>;
 export type SeatInfo = z.infer<typeof seatInfo>;
 export type PadsScreenMessage = z.infer<typeof padsScreenMessage>;
 export type PadsServiceMessage = z.infer<typeof padsServiceMessage>;
+export type PadsPadMessage = z.infer<typeof padsPadMessage>;
