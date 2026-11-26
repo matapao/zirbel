@@ -265,8 +265,9 @@ func run() error {
 		if box, err = NewBox(account, func() int { return editorPort }); err != nil {
 			return err
 		}
-		// Those who own the box pair at the editor's /pair; the lobby links there.
-		lobby.pair = func(host string) string { return "http://" + host + portSuffix(editorPort) + "/pair" }
+		// Those who own the box pair at the editor's /pair, and those with a
+		// game's edit code redeem it at its /edit; the lobby links to both.
+		lobby.editorAt = func(host string) string { return "http://" + host + portSuffix(editorPort) }
 	}
 	localPort, config := o.playerPort, listenerConfig{lobby: lobby}
 	if o.lan || !o.hostOnly {

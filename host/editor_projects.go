@@ -59,6 +59,12 @@ func (s *EditorServer) serveProjects(w http.ResponseWriter, r *http.Request, pat
 			return err
 		}
 		s.rooms.CloseProject(projectID)
+		// A removed game takes its edit code and editors with it.
+		if s.box != nil {
+			if err := s.box.editors.Forget(projectID); err != nil {
+				return err
+			}
+		}
 		reply(w, http.StatusOK, map[string]any{})
 		return nil
 	case action == "title" && post:
@@ -225,6 +231,8 @@ func (s *EditorServer) serveProjects(w http.ResponseWriter, r *http.Request, pat
 		return s.solo(w, r, release)
 	case action == "grants" && s.mcpOn():
 		return s.serveGrants(w, r, projectID, tail)
+	case (action == "edit-code" || action == "editors") && s.box != nil:
+		return s.serveEditCodes(w, r, projectID, action, tail)
 	}
 	return fail(http.StatusNotFound, "Editor route does not exist.")
 }

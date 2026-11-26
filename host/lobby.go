@@ -22,9 +22,10 @@ type Lobby struct {
 	rooms    *Rooms
 	releases *Releases
 	file     string
-	// pair, on a box: its pairing page on the host name a device reached the
-	// lobby by, which the lobby links to for those who own the box.
-	pair func(host string) string
+	// editorAt, on a box: its editor's address on the host name a device
+	// reached the lobby by, where the lobby links to its pairing page for those
+	// who own the box and to its edit page for those with a game's edit code.
+	editorAt func(host string) string
 
 	mu      sync.Mutex
 	offered []string             // release IDs, in the order they were offered
@@ -60,6 +61,7 @@ type lobbyState struct {
 	Games    []lobbyGame    `json:"games"`
 	Sessions []lobbySession `json:"sessions"`
 	Pair     *string        `json:"pair"` // the box's pairing page; null elsewhere
+	Edit     *string        `json:"edit"` // the box's edit page; null elsewhere
 }
 
 // The sentence the host stops with, word for word as the Node host says it.
@@ -166,12 +168,12 @@ func (l *Lobby) State(access, host string) lobbyState {
 		sessions = append(sessions, lobbySession{room.Session, room.Release.Manifest.Title, room.players(),
 			room.Release.Manifest.Players.Max, isoTime(room.Started)})
 	}
-	var pair *string
-	if l.pair != nil {
-		link := l.pair(host)
-		pair = &link
+	var pair, edit *string
+	if l.editorAt != nil {
+		pairing, editing := l.editorAt(host)+"/pair", l.editorAt(host)+"/edit"
+		pair, edit = &pairing, &editing
 	}
-	return lobbyState{games, sessions, pair}
+	return lobbyState{games, sessions, pair, edit}
 }
 
 // byTitle orders titles as a reader does: case aside, then by case.

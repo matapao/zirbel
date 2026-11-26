@@ -111,7 +111,7 @@ func TestTheLobbyIsServedOnPlayerListeners(t *testing.T) {
 	if state.status != http.StatusOK || state.header.Get("cache-control") != "no-store" || room.Session == room.ID ||
 		!strings.Contains(state.body, `"sessions":[{"id":"`+room.Session+`","title":"Garden","players":0,"max":2,"started":"`) ||
 		!strings.HasPrefix(state.body, `{"games":[{"release":"shared","title":"Garden","players":{"min":1,"max":2},"multiplayer":true},`+
-			`{"release":"alone","title":"Walk","players":{"min":1,"max":1},"multiplayer":false}],`) || !strings.HasSuffix(state.body, `,"pair":null}`+"\n") {
+			`{"release":"alone","title":"Walk","players":{"min":1,"max":1},"multiplayer":false}],`) || !strings.HasSuffix(state.body, `,"pair":null,"edit":null}`+"\n") {
 		t.Fatalf("the state: %+v", state)
 	}
 	for _, secret := range []string{*session.Code, room.ID, ticket, "Ada"} {
@@ -261,11 +261,11 @@ func TestABoxSendsDevicesThatArentPairedToTheLobby(t *testing.T) {
 
 	// The lobby there links to pairing, on the editor's port and the name the device asked by.
 	lobby, rooms, _ := testLobby(t)
-	for port, want := range map[int]string{8080: "http://[fd00::2]:8080/pair", 80: "http://[fd00::2]/pair"} {
-		lobby.pair = func(host string) string { return "http://" + host + portSuffix(port) + "/pair" }
+	for port, want := range map[int]string{8080: "http://[fd00::2]:8080", 80: "http://[fd00::2]"} {
+		lobby.editorAt = func(host string) string { return "http://" + host + portSuffix(port) }
 		l := &Listener{rooms: rooms, port: 4174, config: listenerConfig{lan: true, lobby: lobby,
 			box: &playerReach{hosts: func() []string { return []string{"zirbel.local", "[fd00::2]"} }, network: onBoxNetwork}}}
-		if got := call(t, l, http.MethodGet, "[fd00::2]:4174", "/lobby/state", "[fd00::5]:5000", "", nil); got.body != `{"games":[],"sessions":[],"pair":"`+want+`"}`+"\n" {
+		if got := call(t, l, http.MethodGet, "[fd00::2]:4174", "/lobby/state", "[fd00::5]:5000", "", nil); got.body != `{"games":[],"sessions":[],"pair":"`+want+`/pair","edit":"`+want+`/edit"}`+"\n" {
 			t.Errorf("the pairing link with the editor on %d: %+v", port, got)
 		}
 	}

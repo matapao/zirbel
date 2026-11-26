@@ -124,14 +124,5 @@ input{width:100%;box-sizing:border-box;letter-spacing:.15em;text-transform:upper
 <label for="code">Pairing code, from a device already paired or the box's setup</label>
 <input id="code" name="code" autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX" value="` + html.EscapeString(code) + `" required>
 <button>Pair this device</button></form></body></html>`
-	header := w.Header()
-	header.Set("content-type", "text/html; charset=utf-8")
-	header.Set("cache-control", "no-store")
-	// A form posted under no-referrer carries the origin "null": this page's own forms carry its origin.
-	header.Set("referrer-policy", "same-origin")
-	header.Set("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
-	w.WriteHeader(status)
-	// Not XSS: every value in the page is escaped, and the page has its own CSP.
-	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
-	_, _ = w.Write([]byte(html)) // #nosec G705 -- every value in the page is escaped, and the page has its own CSP
+	boxPage(w, status, html)
 }
