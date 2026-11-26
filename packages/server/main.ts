@@ -44,7 +44,7 @@ const { values, positionals } = parseArgs({
   options: {
     data: { type: 'string' }, port: { type: 'string' }, 'player-port': { type: 'string' },
     'lan': { type: 'boolean' }, 'enable-mcp': { type: 'boolean' }, box: { type: 'boolean' },
-    'player-host': { type: 'string' },
+    'player-host': { type: 'string' }, 'pads-socket': { type: 'string' },
     release: { type: 'string', multiple: true }, import: { type: 'string', multiple: true },
     open: { type: 'boolean' }, help: { type: 'boolean' },
   },
@@ -56,6 +56,8 @@ const lanHost = readLanHost(values['player-host'] ?? process.env.ZIRBEL_LAN_HOST
 const enableMcp = values['enable-mcp'] || process.env.ZIRBEL_ENABLE_MCP === '1';
 // A box: the editor on its own network for paired devices (box-routes.ts), with the box's switches.
 const boxMode = values.box || process.env.ZIRBEL_BOX === '1';
+// Where the box's controller service brings its gamepads (pads-socket.ts).
+const padsSocket = values['pads-socket'] || process.env.ZIRBEL_PADS_SOCKET;
 const boot = newId();
 
 function browser(url: string) {
@@ -433,6 +435,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
       : await players.openLocal(0, [editorOrigin(), 'http://localhost:' + editorPort, ]);
     // A box's lobby is on its LAN listener, where its door sends the devices that aren't paired.
     if (values.lan || box) await players.startLan();
+    if (padsSocket) await players.listenForPads(padsSocket);
     for (const id of values.release ?? []) console.log(JSON.stringify(await players.start(id, Boolean(values.lan))));
     const info = { pid: process.pid, port: editorPort, boot, editor: true };
     atomicWrite(serviceFile, JSON.stringify(info));
@@ -448,7 +451,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
 /** Runs the command line: the editor, `--help` or the stdio MCP bridge. */
 export async function main(options: EditorOptions = {}) {
   try {
-    if (values.help) console.log('Zirbel\n  start: [--data DIR] [--port PORT] [--open] [--enable-mcp] [--box]\n  host: --host-only [--lan] [--player-port PORT] [--player-host HOST] [--import FILE] [--release ID]\n  mcp: set ZIRBEL_MCP_TOKEN and optional ZIRBEL_MCP_URL');
+    if (values.help) console.log('Zirbel\n  start: [--data DIR] [--port PORT] [--open] [--enable-mcp] [--box] [--pads-socket PATH]\n  host: --host-only [--lan] [--player-port PORT] [--player-host HOST] [--pads-socket PATH] [--import FILE] [--release ID]\n  mcp: set ZIRBEL_MCP_TOKEN and optional ZIRBEL_MCP_URL');
     else if (positionals[0] === 'mcp') await stdioMcp(process.env.ZIRBEL_MCP_URL ?? 'http://127.0.0.1:4173/mcp', z.string().min(1).parse(process.env.ZIRBEL_MCP_TOKEN));
     else if (positionals.length) throw new Error('Unknown command. Use --help.');
     else await start(options);

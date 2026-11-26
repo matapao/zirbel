@@ -21,10 +21,12 @@ export function relayOrigin(request: IncomingMessage) {
   try { return new URL(origin).host === (request.headers.host ?? '').toLowerCase(); } catch { return false; }
 }
 
-function forbidden(stream: Duplex) {
-  const body = JSON.stringify({ error: 'Cross-origin requests are denied.' });
-  stream.end('HTTP/1.1 403 Forbidden\r\nconnection: close\r\ncontent-type: application/json; charset=utf-8\r\n' +
-    'x-content-type-options: nosniff\r\ncontent-length: ' + Buffer.byteLength(body) + '\r\n\r\n' + body);
+/** Answers an upgrade the listener won't take with an HTTP error, as a request's would be. */
+export function refuseUpgrade(stream: Duplex, status: 400 | 403, error: string) {
+  const body = JSON.stringify({ error });
+  stream.end('HTTP/1.1 ' + status + (status === 403 ? ' Forbidden' : ' Bad Request') + '\r\nconnection: close\r\n' +
+    'content-type: application/json; charset=utf-8\r\nx-content-type-options: nosniff\r\ncontent-length: ' + Buffer.byteLength(body) +
+    '\r\n\r\n' + body);
 }
 
 type Held = Link & { readonly born: number };
@@ -80,7 +82,7 @@ export function relaySockets(rooms: Rooms, access: 'local' | 'lan') {
 
   return {
     upgrade(request: IncomingMessage, stream: Duplex, head: Buffer) {
-      if (!relayOrigin(request)) { forbidden(stream); return; }
+      if (!relayOrigin(request)) { refuseUpgrade(stream, 403, 'Cross-origin requests are denied.'); return; }
       if (waiting >= WAITING) { stream.destroy(); return; }
       sockets.handleUpgrade(request, stream, head, accept);
     },

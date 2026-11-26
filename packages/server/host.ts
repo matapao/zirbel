@@ -13,7 +13,7 @@ import { claimDirectory } from './service-lock.ts';
 const { values } = parseArgs({
   options: {
     'host-only': { type: 'boolean' }, data: { type: 'string' }, lan: { type: 'boolean' },
-    'player-port': { type: 'string' }, 'player-host': { type: 'string' },
+    'player-port': { type: 'string' }, 'player-host': { type: 'string' }, 'pads-socket': { type: 'string' },
     release: { type: 'string', multiple: true }, import: { type: 'string', multiple: true },
   },
 });
@@ -38,6 +38,9 @@ async function start() {
     importReleases(releases, values.import ?? []);
     const local = await players.openLocal(values.lan ? 0 : playerPort);
     if (values.lan) await players.startLan();
+    // Where the box's controller service brings its gamepads (pads-socket.ts).
+    const pads = values['pads-socket'] || process.env.ZIRBEL_PADS_SOCKET;
+    if (pads) await players.listenForPads(pads);
     for (const id of values.release ?? []) console.log(JSON.stringify(await players.start(id, Boolean(values.lan))));
     console.log(JSON.stringify({ pid: process.pid, data: root, editor: null, player: 'http://127.0.0.1:' + local.port, mcp: false }));
     process.once('SIGINT', () => void stopOnSignal(stop));

@@ -2,11 +2,13 @@ import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { PORTABLE_FILE_LIMIT, type Release } from '../sdk/contracts.ts';
 import { Lobby } from '../core/lobby.ts';
+import { Pads } from '../core/pads.ts';
 import { ZirbelError } from '../core/projects.ts';
 import type { Releases } from '../core/releases.ts';
 import type { Room, Rooms } from '../core/rooms.ts';
 import { lanAddresses, roomLink } from './http.ts';
 import type { LobbyContext } from './lobby-routes.ts';
+import { padsService } from './pads-socket.ts';
 import { playerListener, type PlayerReach } from './player-listener.ts';
 import { lobbyFiles, netFiles, threeAddons, type Addons, type NetFiles } from './runtime-files.ts';
 
@@ -79,6 +81,10 @@ export class Players {
   private lan?: Listener;
   private startingLan?: Promise<Listener>;
   readonly lobby: Lobby;
+  /** The screens and controllers of both listeners, and the box's own gamepads (core/pads.ts). */
+  readonly pads = new Pads();
+  private readonly padsSweep = setInterval(() => this.pads.sweep(), 1000).unref();
+  private padsLocal?: Promise<{ close(): void } | undefined>;
 
   // Read from the build beside the release runtime, and shared by both listeners.
   private readonly addons: Addons;
@@ -103,7 +109,7 @@ export class Players {
    *  network, embedded by the editor on the host name the device reached it by. */
   async openLocal(port: number, editorOrigins: string[] | ((host: string) => string[]) = [], reach?: PlayerReach) {
     const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons, this.net,
-      { bind, lan: false, port, editorOrigins, reach, lobby: this.lobbyContext });
+      { bind, lan: false, port, editorOrigins, reach, lobby: this.lobbyContext, pads: this.pads });
     this.local = await (reach ? everyInterface(open) : open('127.0.0.1'));
     return this.local;
   }
@@ -113,7 +119,7 @@ export class Players {
     if (this.lan) return Promise.resolve(this.lan);
     const { playerPort, lanHost, box } = this.options;
     const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons, this.net, { bind, lan: true,
-      port: playerPort, extraHosts: lanHost ? [lanHost] : [], reach: box?.reach, lobby: this.lobbyContext });
+      port: playerPort, extraHosts: lanHost ? [lanHost] : [], reach: box?.reach, lobby: this.lobbyContext, pads: this.pads });
     this.startingLan ??= (box ? everyInterface(open) : open('0.0.0.0')).then((active) => (this.lan = active))
       .finally(() => { this.startingLan = undefined; });
     return this.startingLan;
@@ -161,8 +167,20 @@ export class Players {
     return this.describe(this.rooms.create(release, false, share ? 'lan' : 'local'), host);
   }
 
+  /** Listens for the box's controller service at path (--pads-socket). A box comes up without its gamepads rather than
+   *  not at all, so a socket it can't open is said and passed over. */
+  async listenForPads(path: string) {
+    this.padsLocal ??= padsService(this.pads, path).catch((error: unknown) => {
+      console.error('Zirbel can\'t listen for the box\'s controllers at ' + path + ': ' + (error instanceof Error ? error.message : String(error)));
+      return undefined;
+    });
+    await this.padsLocal;
+  }
+
   async close() {
     await Promise.allSettled([this.startingLan]);
+    clearInterval(this.padsSweep);
+    (await this.padsLocal)?.close();
     this.rooms.dispose();
     this.local?.close();
     this.lan?.close();
