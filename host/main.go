@@ -84,6 +84,7 @@ func main() {
 
 type options struct {
 	root, lanHost       string
+	padsSocket          string
 	hostOnly, lan, open bool
 	enableMCP, box      bool
 	port, playerPort    int
@@ -102,6 +103,7 @@ func parseOptions() (*options, error) {
 	port := flags.String("port", "", "editor port (default 4173 or ZIRBEL_PORT)")
 	playerPort := flags.String("player-port", "", "player port (default 4174 or ZIRBEL_PLAYER_PORT)")
 	playerHost := flags.String("player-host", "", "host name for LAN links (or ZIRBEL_LAN_HOST)")
+	padsSocket := flags.String("pads-socket", "", "local socket for the box's controller service (or ZIRBEL_PADS_SOCKET)")
 	flags.Var(&o.imports, "import", "import a release file (repeatable)")
 	flags.Var(&o.releaseIDs, "release", "open a room for a release ID (repeatable)")
 	if err := flags.Parse(os.Args[1:]); err != nil {
@@ -130,6 +132,7 @@ func parseOptions() (*options, error) {
 		return nil, err
 	}
 	o.lanHost = strings.ToLower(firstOf(*playerHost, os.Getenv("ZIRBEL_LAN_HOST")))
+	o.padsSocket = firstOf(*padsSocket, os.Getenv("ZIRBEL_PADS_SOCKET"))
 	if o.lanHost != "" && !hostPattern.MatchString(o.lanHost) {
 		return nil, errors.New("the player host must be an IPv4 address or hostname")
 	}
@@ -301,7 +304,9 @@ func run() error {
 		// game's edit code redeem it at its /edit; the lobby links to both.
 		lobby.editorAt = func(host string) string { return "http://" + host + portSuffix(editorPort) }
 	}
-	localPort, config := o.playerPort, listenerConfig{lobby: lobby}
+	pads := NewPads(time.Now)
+	go pads.Run(ctx)
+	localPort, config := o.playerPort, listenerConfig{lobby: lobby, pads: pads}
 	if o.lan || !o.hostOnly {
 		localPort = 0
 	}
@@ -321,7 +326,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	players = &Players{rooms: rooms, runtime: runtimeFiles, local: local, lanHost: o.lanHost, lanPort: o.playerPort, lobby: lobby}
+	players = &Players{rooms: rooms, runtime: runtimeFiles, local: local, lanHost: o.lanHost, lanPort: o.playerPort, lobby: lobby, pads: pads}
 	lobby.link = players.LobbyLink
 	if box != nil {
 		// A box's lobby is on its LAN player port from the start: its door
@@ -331,6 +336,9 @@ func run() error {
 		if _, err := players.StartLAN(ctx); err != nil {
 			return err
 		}
+	}
+	if socket := listenForPads(ctx, pads, o.padsSocket); socket != nil {
+		defer func() { _ = socket.Close() }()
 	}
 
 	var handler *EditorServer

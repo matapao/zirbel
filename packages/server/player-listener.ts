@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { gzip } from 'node:zlib';
 import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
+import type { Pads } from '../core/pads.ts';
 import type { Peer, Room, Rooms } from '../core/rooms.ts';
 import { ZirbelError } from '../core/projects.ts';
 import { ClientMessage } from '../sdk/contracts.ts';
@@ -10,6 +11,7 @@ import { gamePage, THREE_ADDONS } from './game-page.ts';
 import { GAME_FILE_TYPES } from '../sdk/game.ts';
 import { body, bytes, checkOrigin, contentType, fail, lanAddresses, listen, reply, requestUrl, secure, typeFor } from './http.ts';
 import { lobbyRequest, type LobbyContext } from './lobby-routes.ts';
+import { padsSockets } from './pads-socket.ts';
 import { relaySockets } from './relay-socket.ts';
 import { acceptsGzip, prepareRuntime, sendImmutable, type Addons, type NetFiles } from './runtime-files.ts';
 
@@ -62,7 +64,7 @@ export type PlayerReach = { hosts: () => string[]; network: (address: string) =>
 
 export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, Buffer>, addons: Addons, net: NetFiles, config: {
   port: number; bind: string; lan: boolean; editorOrigins?: string[] | ((host: string) => string[]); extraHosts?: string[];
-  reach?: PlayerReach; lobby: LobbyContext;
+  reach?: PlayerReach; lobby: LobbyContext; pads: Pads;
 }) {
   let port: number;
   const hosts = () => [...config.reach?.hosts() ?? ['localhost', '127.0.0.1', ...(config.lan ? lanAddresses() : [])],
@@ -172,6 +174,7 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
   player.maxConnections = 256;
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 16_384, perMessageDeflate: false, autoPong: false });
   const relay = relaySockets(rooms, config.lan ? 'lan' : 'local');
+  const pads = padsSockets(config.pads, config.lan ? 'lan' : 'local');
   const handshakes = new Set<WebSocket>();
   const waitingForPong = new WeakSet<WebSocket>();
   player.on('upgrade', (request, stream, head) => {
@@ -179,6 +182,7 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
       if (!isLocalNetwork(request)) throw new ZirbelError(403, 'LAN access requires a local network address.');
       const url = requestUrl(request, port, hosts());
       if (url.pathname === '/mp') { relay.upgrade(request, stream, head); return; }
+      if (url.pathname === '/pads') { pads.upgrade(request, stream, head, url); return; }
       const match = /^\/rooms\/([a-z0-9]+)\/socket$/.exec(url.pathname);
       if (!match?.[1]) throw new ZirbelError(404, 'Room socket does not exist.');
       checkOrigin(request, true);
@@ -251,6 +255,7 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
     close() {
       clearInterval(heartbeat);
       relay.close();
+      pads.close();
       for (const socket of sockets.clients) socket.terminate();
       sockets.close();
       player.close();

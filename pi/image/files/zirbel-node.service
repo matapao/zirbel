@@ -1,5 +1,6 @@
 # The Zirbel editor (Node) on a 64-bit Zirbel box: on every network address at port 80, for paired devices only (--box), as the
-# `zirbel` user, whose home keeps the games, the harness sign-ins and the threads' folders.
+# `zirbel` user, whose home keeps the games, the harness sign-ins and the threads' folders. The box's controller service
+# brings its gamepads to /run/zirbel-pads.
 [Unit]
 Description=Zirbel editor
 Wants=network-online.target
@@ -13,7 +14,7 @@ WorkingDirectory=/home/zirbel
 Environment=ZIRBEL_PLAYER_PORT=4174
 Environment=PATH=/home/zirbel/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=ZIRBEL_BROWSER=/usr/bin/chromium
-ExecStart=/usr/local/bin/node /opt/zirbel/server.mjs --box --port 80
+ExecStart=/usr/local/bin/node /opt/zirbel/server.mjs --box --port 80 --pads-socket /run/zirbel-pads/host.sock
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 ProtectSystem=full
