@@ -144,7 +144,7 @@ for (const host of hosts) {
     const more = Array.from({ length: 7 }, () => raw(t, lan, 'role=pad&code=' + String(about.code)));
     // They connect at once: which gets which place is the host's to say.
     const taken = await Promise.all(more.map(async (item) => (await item.messages.next()).slot as number));
-    assert.deepEqual(taken.toSorted(), [1, 2, 3, 4, 5, 6, 7]);
+    assert.deepEqual(taken.toSorted((a, b) => a - b), [1, 2, 3, 4, 5, 6, 7]);
     await tv.messages.next((message) => message.type === 'pads' && (message.pads as unknown[]).length === 8, 'all eight');
     tv.messages.items.length = 0;
     const ninth = raw(t, lan, 'role=pad&code=' + String(about.code));
