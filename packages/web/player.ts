@@ -190,7 +190,10 @@ async function showGame() {
     authoredFrame.className = 'authored-game';
     authoredFrame.sandbox.add('allow-scripts');
     authoredFrame.referrerPolicy = 'no-referrer';
-    authoredFrame.src = info.gameUrl;
+    // A game with its own netcode finds its room on the relay from the address: zirbel-net's launchParams().
+    authoredFrame.src = info.manifest.simulation === 'net-v2'
+      ? info.gameUrl + '?room=' + encodeURIComponent(room) + '&key=' + encodeURIComponent(info.gameUrl.split('/')[3] ?? '')
+      : info.gameUrl;
     game.prepend(authoredFrame);
     return;
   }

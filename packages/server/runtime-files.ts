@@ -72,3 +72,15 @@ export function threeAddons(webRoot: string): Addons {
     return entry;
   };
 }
+
+// zirbel-net's client (packages/net), bundled by the build. Games with their own netcode import it from /zirbel-net.js
+// on whichever listener serves them; it is the host's, not a release's.
+export function netClient(webRoot: string): RuntimeEntry {
+  let body;
+  try {
+    body = readFileSync(join(webRoot, 'zirbel-net.js'));
+  } catch {
+    throw new Error('The player runtime is missing zirbel-net.js; run `pnpm build`.');
+  }
+  return runtimeEntry('zirbel-net.js', body);
+}

@@ -9,7 +9,8 @@ import { ClientMessage } from '../sdk/contracts.ts';
 import { gamePage, THREE_ADDONS } from './game-page.ts';
 import { GAME_FILE_TYPES } from '../sdk/game.ts';
 import { body, bytes, checkOrigin, contentType, fail, lanAddresses, listen, reply, requestUrl, secure, typeFor } from './http.ts';
-import { acceptsGzip, prepareRuntime, sendImmutable, type Addons } from './runtime-files.ts';
+import { relaySockets } from './relay-socket.ts';
+import { acceptsGzip, prepareRuntime, sendImmutable, type Addons, type RuntimeEntry } from './runtime-files.ts';
 
 const privateAddress = /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|169\.254\.|127\.)/;
 
@@ -55,7 +56,7 @@ const reserveSchema = z.strictObject({
  *  (network), and embedded by the editor on the host the device reached it by (editorOrigins by host name). */
 export type PlayerReach = { hosts: () => string[]; network: (address: string) => boolean };
 
-export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, Buffer>, addons: Addons, config: {
+export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, Buffer>, addons: Addons, client: RuntimeEntry, config: {
   port: number; bind: string; lan: boolean; editorOrigins?: string[] | ((host: string) => string[]); extraHosts?: string[];
   reach?: PlayerReach;
 }) {
@@ -84,6 +85,12 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
       const url = requestUrl(request, port, hosts());
       const [, route, roomId, ...parts] = url.pathname.split('/');
       if (request.method === 'GET' && url.pathname === '/health') { reply(response, { status: 'ok', role: 'player' }); return; }
+      if (request.method === 'GET' && url.pathname === '/zirbel-net.js') {
+        // Games import it as a module from their opaque origin: a CORS request.
+        response.setHeader('access-control-allow-origin', '*');
+        sendImmutable(request, response, 'text/javascript; charset=utf-8', client);
+        return;
+      }
       if (!roomId) throw new ZirbelError(404, 'Open the invitation link from the host.');
       const room = rooms.get(roomId);
       allows(room);
@@ -151,12 +158,14 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
   // 24 rooms with up to eight seats each, plus room for page loads and handshakes.
   player.maxConnections = 256;
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 16_384, perMessageDeflate: false, autoPong: false });
+  const relay = relaySockets(rooms, config.lan ? 'lan' : 'local');
   const handshakes = new Set<WebSocket>();
   const waitingForPong = new WeakSet<WebSocket>();
   player.on('upgrade', (request, stream, head) => {
     try {
       if (!isLocalNetwork(request)) throw new ZirbelError(403, 'LAN access requires a local network address.');
       const url = requestUrl(request, port, hosts());
+      if (url.pathname === '/mp') { relay.upgrade(request, stream, head); return; }
       const match = /^\/rooms\/([a-z0-9]+)\/socket$/.exec(url.pathname);
       if (!match?.[1]) throw new ZirbelError(404, 'Room socket does not exist.');
       checkOrigin(request, true);
@@ -228,6 +237,7 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
     port, server: player,
     close() {
       clearInterval(heartbeat);
+      relay.close();
       for (const socket of sockets.clients) socket.terminate();
       sockets.close();
       player.close();

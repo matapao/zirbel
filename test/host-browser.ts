@@ -60,6 +60,49 @@ for (const host of hosts) {
   });
 }
 
+// A game with its own netcode: zirbel-net from its host, the room and key from its address, the relay at /mp.
+const netGame = `<!doctype html><p id="out">waiting</p><script type="module">
+  const zn = await import('/zirbel-net.js');
+  const net = zn.connect(zn.launchParams());
+  const out = document.getElementById('out');
+  let heard = '';
+  const show = () => { out.textContent = (net.peers.size + 1) + ' players, heard ' + heard; };
+  net.on('open', () => { net.send(zn.ALL, 1, 'hi from ' + net.id); show(); });
+  net.on('peer', (id) => { net.send(id, 1, 'hi from ' + net.id); show(); });
+  net.on('message', (from, type, r) => { heard = r.text(); show(); });
+  net.on('close', (code, message) => { out.textContent = 'closed ' + code + ' ' + message; });
+</script>`;
+
+for (const host of hosts) {
+  test(host.name + ' host: two browsers play a game with its own netcode over the relay', async (t) => {
+    const root = tempDir(t, 'zirbel-host-net-');
+    const projects = new Projects(join(root, 'source'));
+    const project = importGameFolder(projects, { title: 'Relay', files: encoded({ 'index.html': netGame, 'zirbel.json': '{"players":{"max":2}}' }) });
+    const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
+    const file = join(root, 'release.json');
+    writeFileSync(file, JSON.stringify(release));
+    const link = await launch(t, host.command, ['--host-only', '--player-port', '0',
+      '--data', join(root, 'data'), '--import', file, '--release', release.manifest.releaseId],
+    (line) => typeof line.link === 'string' ? line.link : undefined).ready;
+    const browser = await chromium.launch();
+    t.after(() => browser.close());
+    const failures: string[] = [];
+    const pages = await Promise.all([1, 2].map(async () => (await browser.newContext()).newPage()));
+    for (const [index, page] of pages.entries()) {
+      page.on('pageerror', (error) => failures.push(error.message));
+      page.on('console', (message) => { if (/Content Security Policy|Refused to/.test(message.text())) failures.push(message.text()); });
+      await page.goto(link);
+      await page.locator('#join-form input[name="name"]').fill('Player ' + (index + 1));
+      await page.locator('#join-form button.primary').click();
+      await page.frameLocator('iframe').locator('#out').filter({ hasText: '1 players' }).or(page.frameLocator('iframe')
+        .locator('#out').filter({ hasText: '2 players' })).waitFor({ timeout: 15_000 });
+    }
+    for (const [index, page] of pages.entries())
+      await page.frameLocator('iframe').locator('#out').filter({ hasText: '2 players, heard hi from ' + (2 - index) }).waitFor({ timeout: 15_000 });
+    assert.deepEqual(failures, []);
+  });
+}
+
 // A built game in the sandbox: its stylesheet, a module importing a module, a fetch
 // and an image all load from beside its document, and a request elsewhere is refused.
 const dot = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';

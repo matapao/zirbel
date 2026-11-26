@@ -5,6 +5,7 @@
       "entry": [
         "packages/server/cli.ts",
         "packages/web/{workspace,player,game-sdk,garden-3d}.ts",
+        "packages/net/{index,internal}.ts",
         "test/*.{ts,mjs}"
       ],
       "ignore": ["deps/**"],
