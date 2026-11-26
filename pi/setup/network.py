@@ -154,10 +154,34 @@ class NetworkManager:
         return False
 
     def join(self, ssid: bytes, password: bytes, auth: str = "", timeout: float = 45.0) -> bool:
-        """Joins the network and saves it, replacing what was saved for the same name; nothing is kept if it fails."""
+        """Joins the network and saves it, replacing what was saved for the same name; nothing is kept if it fails.
+        Where the network also takes WPA2 and the box, joined, gets no traffic addressed to it back, it joins again
+        with WPA3 ruled out: a Raspberry Pi's Wi-Fi that settles on WPA3 there can take broadcasts and nothing else."""
+        before = [path for path, saved in self._saved() if bytes(saved["802-11-wireless"].get("ssid", b"")) == ssid]
+        path = self._join(ssid, password, auth, timeout)
+        if not path:
+            return False
+        if password and auth != "WPA3" and not reaches_out():
+            print("Joined, but no traffic addressed to the box comes back: joining again with WPA2 alone.", flush=True)
+            plain = self._join(ssid, password, auth, timeout, wpa2_only=True)
+            if plain and reaches_out():
+                self._delete(path)
+                path = plain
+                print("With WPA2 alone the box is reachable.", flush=True)
+            else:
+                # Neither got through (a network with no way out, say): the first, as the network offered it, stays.
+                if plain:
+                    self._delete(plain)
+                self._activate(path, timeout)
+        for old in before:
+            self._delete(old)
+        return True
+
+    def _join(self, ssid: bytes, password: bytes, auth: str, timeout: float, wpa2_only: bool = False) -> str | None:
+        """One connection to the network, saved and activated: its path, or None (and nothing saved) if it fails."""
         device = self.wifi_device()
         if not device:
-            return False
+            return None
         name = ssid.decode("utf-8", errors="replace")
         values = {
             "connection": _sv({"id": name, "type": "802-11-wireless", "autoconnect": True}),
@@ -166,21 +190,30 @@ class NetworkManager:
             "ipv6": _sv({"method": "auto"}),
         }
         if password:
-            # A network that takes WPA3 alone needs SAE; one that also takes WPA2 is joined with its pre-shared key.
-            values["802-11-wireless-security"] = _sv(
-                {"key-mgmt": "sae" if auth == "WPA3" else "wpa-psk", "psk": password.decode("utf-8")}
-            )
-        before = [path for path, saved in self._saved() if bytes(saved["802-11-wireless"].get("ssid", b"")) == ssid]
+            # A network that takes WPA3 alone needs SAE; one that also takes WPA2 is joined with its pre-shared key, and
+            # with management frame protection off (1) when WPA3, which requires it, is to be ruled out.
+            security = {"key-mgmt": "sae" if auth == "WPA3" else "wpa-psk", "psk": password.decode("utf-8")}
+            if wpa2_only:
+                security["pmf"] = dbus.Int32(1)
+            values["802-11-wireless-security"] = _sv(security)
         path, active, _result = self.nm.AddAndActivateConnection2(
             dbus.Dictionary(values, signature="sa{sv}"), dbus.ObjectPath(device), dbus.ObjectPath("/"),
             _sv({"persist": "disk"}),
         )
         if not self._wait(str(active), timeout):
             self._delete(str(path))
-            return False
-        for old in before:
-            self._delete(old)
-        return True
+            return None
+        return str(path)
+
+    def _activate(self, path: str, timeout: float) -> None:
+        device = self.wifi_device()
+        if not device:
+            return
+        try:
+            active = self.nm.ActivateConnection(dbus.ObjectPath(path), dbus.ObjectPath(device), dbus.ObjectPath("/"))
+            self._wait(str(active), timeout)
+        except dbus.DBusException:
+            pass
 
     def _delete(self, path: str) -> None:
         try:
@@ -245,6 +278,24 @@ RULES = """table inet zirbel_setup {{
   }}
 }}
 """
+
+
+def reaches_out(attempts: int = 3) -> bool:
+    """Whether traffic addressed to the box comes back: its router answers a ping, or the internet a request. Either
+    needs the Wi-Fi to take frames addressed to the box, which broadcasts alone don't show."""
+    import urllib.request
+
+    for _ in range(attempts):
+        route = subprocess.run(["ip", "-4", "route", "show", "default"], capture_output=True, text=True).stdout.split()
+        gateway = route[2] if len(route) > 2 and route[0] == "default" and route[1] == "via" else ""
+        if gateway and subprocess.run(["ping", "-c", "2", "-W", "2", gateway], capture_output=True).returncode == 0:
+            return True
+        try:
+            urllib.request.urlopen(urllib.request.Request("https://downloads.raspberrypi.com/", method="HEAD"), timeout=6)
+            return True
+        except OSError:
+            time.sleep(2)
+    return False
 
 
 def local_address() -> str | None:

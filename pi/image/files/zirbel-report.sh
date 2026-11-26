@@ -16,6 +16,13 @@ touch /run/zirbel-report
   echo "== reverse path filter: all $(sysctl -n net.ipv4.conf.all.rp_filter), wlan0 $(sysctl -n net.ipv4.conf.wlan0.rp_filter 2>/dev/null)"
   echo "== connections"; nmcli -t -f NAME,TYPE,DEVICE,STATE connection show --active; nmcli -t -f NAME,TYPE,AUTOCONNECT connection show
   echo "== Wi-Fi"; iw dev wlan0 link 2>&1; iw dev wlan0 get power_save 2>&1
+  # The security the connection negotiated (WPA2 or WPA3, its ciphers, management frame protection): never a key.
+  wpa_cli -i wlan0 status 2>&1 | grep -E "^(wpa_state|key_mgmt|pairwise_cipher|group_cipher|pmf|sae_group|freq)="
+  ip -s link show wlan0 2>&1 | sed -n '3,6p'
+  echo "== reaching out: traffic addressed to the box comes back only where unicast works"
+  gateway=$(ip route show default | awk '{ print $3; exit }')
+  [ -n "$gateway" ] && ping -c 3 -W 2 "$gateway" 2>&1 | tail -2
+  curl -s -o /dev/null -m 8 -w "internet: HTTP %{http_code} in %{time_total}s\n" https://downloads.raspberrypi.com/ 2>&1
   echo "== firewall tables"; nft list tables 2>&1
   echo "== radio switches"; rfkill list 2>&1
   echo "== Bluetooth"; bluetoothctl show 2>&1 | grep -E "Controller|Powered|Discoverable|Pairable|Alias|PowerState"
