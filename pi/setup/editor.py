@@ -19,6 +19,8 @@ from pathlib import Path
 from portal import Pairing
 
 EDITOR = os.environ.get("ZIRBEL_EDITOR_URL", "http://127.0.0.1").rstrip("/")
+if not EDITOR.startswith(("http://", "https://")):
+    raise ValueError("ZIRBEL_EDITOR_URL must be the editor's http:// address.")
 REQUEST = Path(os.environ.get("ZIRBEL_SETUP_REQUEST", "/run/zirbel-setup/request"))
 # Loopback is not behind a proxy, whatever the environment says.
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -27,7 +29,7 @@ REPLY_BYTES = 64 * 1024
 
 def _call(method: str, path: str, payload: object | None = None, timeout: float = 5.0) -> object:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(EDITOR + path, data=data, method=method)
+    request = urllib.request.Request(EDITOR + path, data=data, method=method)  # noqa: S310  # EDITOR is http(s), checked above
     if data is not None:
         request.add_header("Content-Type", "application/json")
     with _OPENER.open(request, timeout=timeout) as response:

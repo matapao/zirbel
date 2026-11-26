@@ -1,0 +1,11 @@
+# Python checks: ruff (`pnpm check:py`: `ruff check` and `ruff format --check`) for the box's Wi-Fi setup service in
+# pi/setup, which runs on the Pi image's Python (Raspberry Pi OS Lite on Debian 13, Python 3.13).
+target-version = "py313"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "PGH", "RUF"]
+
+[lint.per-file-ignores]
+# The tests open the setup page on loopback and hand it made-up tokens.
+"pi/setup/test_*.py" = ["S106", "S310"]

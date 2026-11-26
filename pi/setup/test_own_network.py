@@ -1,5 +1,6 @@
-"""The box's own Wi-Fi (own_network.py, network.py): a password made once and kept for the editor's group alone, the Wi-Fi
-following the editor's setting, the access point NetworkManager saves, and the setup hotspot's DNS kept to the hotspot."""
+"""The box's own Wi-Fi (own_network.py, network.py): a password made once and kept for the editor's group alone, the
+Wi-Fi following the editor's setting, the access point NetworkManager saves, and the setup hotspot's DNS kept to the
+hotspot."""
 
 import importlib
 import io

@@ -19,10 +19,10 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import editor  # noqa: E402 - the modules beside this one
-import own_network  # noqa: E402
-import policy  # noqa: E402
-from portal import Choice, Network, Portal  # noqa: E402
+import editor
+import own_network
+import policy
+from portal import Choice, Network, Portal
 
 TICK_SECONDS = 5
 # At boot NetworkManager may find the Wi-Fi radio a few seconds after this service starts: its address, for the name of
@@ -52,8 +52,8 @@ def mac_suffix(address: str) -> str:
 
 
 def box_suffix(nm, wait: float = 0.0) -> str:
-    """The end of the box's Wi-Fi address, which names it in setup and names its own Wi-Fi; at boot the radio may take up
-    to wait seconds to appear."""
+    """The end of the box's Wi-Fi address, which names it in setup and names its own Wi-Fi; at boot the radio may take
+    up to wait seconds to appear."""
     deadline = time.monotonic() + wait
     while True:
         iface = nm.interface()
@@ -170,7 +170,7 @@ class Setup:
         def run() -> None:
             try:
                 work(network.NetworkManager.own(), *args)
-            except Exception as error:  # noqa: BLE001 - a failure is reported, and setup goes on
+            except Exception as error:
                 log(f"Setup work failed: {error}")
                 self.GLib.idle_add(self._failed, b"", "Something went wrong there. Try again.")
 
@@ -231,7 +231,8 @@ class Setup:
         self.GLib.idle_add(self._failed, b"", "The box couldn't make its own Wi-Fi. Try again, or choose a network.")
 
     def _switch_own(self, nm) -> None:
-        """The editor's setting changed while setup runs: the Wi-Fi follows it, the hotspot giving way to the network."""
+        """The editor's setting changed while setup runs: the Wi-Fi follows it, the hotspot giving way to the
+        network."""
         step = follow_setting(nm, self.own, before_up=lambda: self._hotspot_down(nm))
         self.GLib.idle_add(self._made_own if step == own_network.UP else self._done)
 
@@ -282,7 +283,6 @@ def main() -> int:
     # Only now the D-Bus modules: a box with nothing to set up never loads them.
     import dbus
     import dbus.mainloop.glib
-
     import network
 
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)

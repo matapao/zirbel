@@ -14,7 +14,6 @@ import time
 from pathlib import Path
 
 import dbus
-
 from portal import Network
 
 NM = "org.freedesktop.NetworkManager"
@@ -45,8 +44,8 @@ PMF_DISABLE = 1
 
 # NetworkManager starts a dnsmasq for each shared connection, the hotspot and the box's own Wi-Fi alike, and has it read
 # this folder as it starts. The file is there only while the hotspot starts and runs: on the hotspot every name resolves
-# to the box, so a phone's captive-portal check opens the setup page, and on the box's own Wi-Fi no name resolves but the
-# box's own (zirbel.local, over mDNS), so a phone finds no internet there rather than the editor. No captive-portal
+# to the box, so a phone's captive-portal check opens the setup page, and on the box's own Wi-Fi no name resolves but
+# the box's own (zirbel.local, over mDNS), so a phone finds no internet there rather than the editor. No captive-portal
 # option (RFC 8910) goes out in DHCP: it names an HTTPS API (RFC 8908) the box doesn't have, and a phone that finds none
 # there may close its setup window. A file left by a power cut goes at boot (zirbel-setup.tmpfiles).
 DNS_FILE = Path("/etc/NetworkManager/dnsmasq-shared.d/zirbel-setup.conf")
@@ -100,7 +99,8 @@ def own_network_settings(name: str, password: str) -> dbus.Dictionary:
 
 
 def wildcard_dns(on: bool) -> None:
-    """Every name resolving to the box, for the setup hotspot alone (DNS_FILE): written before it starts, gone with it."""
+    """Every name resolving to the box, for the setup hotspot alone (DNS_FILE): written before it starts, gone with
+    it."""
     try:
         if on:
             DNS_FILE.write_text(WILDCARD)
@@ -133,7 +133,7 @@ class NetworkManager:
         self.props = dbus.Interface(bus.get_object(NM, NM_PATH), PROPS)
 
     @classmethod
-    def own(cls) -> "NetworkManager":
+    def own(cls) -> NetworkManager:
         """One with a connection of its own, without a main loop, for a worker thread's blocking calls."""
         import dbus.mainloop
 
@@ -424,9 +424,11 @@ def reaches_out(attempts: int = 3) -> bool:
     import urllib.request
 
     for _ in range(attempts):
-        route = subprocess.run(["ip", "-4", "route", "show", "default"], capture_output=True, text=True).stdout.split()
+        route = subprocess.run(["/usr/bin/ip", "-4", "route", "show", "default"], capture_output=True, text=True).stdout.split()
         gateway = route[2] if len(route) > 2 and route[0] == "default" and route[1] == "via" else ""
-        if gateway and subprocess.run(["ping", "-c", "2", "-W", "2", gateway], capture_output=True).returncode == 0:
+        # The gateway is the address `ip` gave for the default route, an argument of ping's alone (no shell).
+        ping = ["/usr/bin/ping", "-c", "2", "-W", "2", gateway]
+        if gateway and subprocess.run(ping, capture_output=True).returncode == 0:  # noqa: S603  # an address, as above
             return True
         try:
             urllib.request.urlopen(urllib.request.Request("https://downloads.raspberrypi.com/", method="HEAD"), timeout=6)
@@ -438,10 +440,10 @@ def reaches_out(attempts: int = 3) -> bool:
 
 def firewall(iface: str | None, port: int = 8081) -> None:
     """The hotspot's rules while it runs, on its interface alone; None takes them away."""
-    subprocess.run(["nft", "destroy", "table", "inet", "zirbel_setup"], capture_output=True, check=False)
-    if not iface and subprocess.run(["nft", "list", "table", "inet", "zirbel_setup"], capture_output=True).returncode == 0:
+    subprocess.run(["/usr/sbin/nft", "destroy", "table", "inet", "zirbel_setup"], capture_output=True, check=False)
+    if not iface and subprocess.run(["/usr/sbin/nft", "list", "table", "inet", "zirbel_setup"], capture_output=True).returncode == 0:
         print("The setup hotspot's firewall could not be taken away.", flush=True)
     if iface:
         if not iface.replace("-", "").replace("_", "").isalnum():
             raise ValueError("An unexpected interface name.")
-        subprocess.run(["nft", "-f", "-"], input=RULES.format(iface=iface, port=port), text=True, check=True)
+        subprocess.run(["/usr/sbin/nft", "-f", "-"], input=RULES.format(iface=iface, port=port), text=True, check=True)

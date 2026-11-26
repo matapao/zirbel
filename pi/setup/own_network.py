@@ -3,9 +3,9 @@ computers join to play, with no router and no internet.
 
 Its name and password are made once and kept in a state file outside the editor's data folder (STATE): root's, and
 readable by the editor's group and no one else, so the editor shows them to its paired devices. The editor's ownNetwork
-setting says whether the box makes it. This service is the only thing that changes the Wi-Fi: whenever it runs, the Wi-Fi
-follows the setting (apply), and the editor wakes it when the setting changes. NetworkManager keeps the network as a
-saved connection that comes back after a reboot, before any network the box joined.
+setting says whether the box makes it. This service is the only thing that changes the Wi-Fi: whenever it runs, the
+Wi-Fi follows the setting (apply), and the editor wakes it when the setting changes. NetworkManager keeps the network as
+a saved connection that comes back after a reboot, before any network the box joined.
 
 This module has no D-Bus code (network.py holds it), so it runs and is tested anywhere.
 """
@@ -15,13 +15,13 @@ from __future__ import annotations
 import json
 import os
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 STATE = Path(os.environ.get("ZIRBEL_OWN_NETWORK", "/var/lib/zirbel-setup/own-network.json"))
-# Lower-case letters and digits without the ones read as others (0 and o, 1, i and l): typed on a phone without its shift
-# key, and read aloud four at a time.
+# Lower-case letters and digits without the ones read as others (0 and o, 1, i and l): typed on a phone without its
+# shift key, and read aloud four at a time.
 ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"
 GROUPS = 3
 GROUP = 4
@@ -83,8 +83,8 @@ def credentials(suffix: str, path: Path | None = None) -> Credentials:
 
 
 def _write(path: Path, made: Credentials) -> None:
-    """Written beside the file and moved over it, so that the editor never reads half of one; mode 0640, in a folder whose
-    group (zirbel, setgid: zirbel-setup.tmpfiles) each new file takes."""
+    """Written beside the file and moved over it, so that the editor never reads half of one; mode 0640, in a folder
+    whose group (zirbel, setgid: zirbel-setup.tmpfiles) each new file takes."""
     partial = path.with_name(f".{path.name}.partial")
     descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o640)
     try:

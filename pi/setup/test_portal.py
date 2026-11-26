@@ -30,10 +30,10 @@ OWN = Credentials("Zirbel <3F2A>", "abcd-efgh-jkmn")
 
 class Forms(unittest.TestCase):
     def test_a_listed_network_comes_back_by_its_bytes_and_another_by_its_name(self):
-        ssid = "Café 5G".encode("utf-8") + b"\xff"  # not even UTF-8: still the same network
+        ssid = "Café 5G".encode() + b"\xff"  # not even UTF-8: still the same network
         choice = portal.parse(f"network={ssid.hex()}&password=correct+horse".encode())
         self.assertEqual((choice.ssid, choice.password), (ssid, b"correct horse"))
-        other = portal.parse("network=other&other=+Hidden+one+&password=".encode())
+        other = portal.parse(b"network=other&other=+Hidden+one+&password=")
         self.assertEqual((other.ssid, other.password), (b"Hidden one", b""))
 
     def test_what_a_network_cannot_take_is_refused_with_why(self):

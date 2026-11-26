@@ -14,9 +14,9 @@ import html
 import secrets
 import threading
 import urllib.parse
+from collections.abc import Callable
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable
 from urllib.parse import parse_qs
 
 from own_network import Credentials
@@ -30,7 +30,8 @@ OWN_ADDRESS = "10.42.0.1"
 
 STYLE = (
     "body{font:17px/1.4 system-ui,sans-serif;margin:0;padding:24px;background:#141717;color:#f2f2ef}"
-    "main{max-width:28em;margin:auto}h1{font-size:1.4em}h2{font-size:1.1em;margin-top:2em}label{display:block;margin:.6em 0}"
+    "main{max-width:28em;margin:auto}h1{font-size:1.4em}h2{font-size:1.1em;margin-top:2em}"
+    "label{display:block;margin:.6em 0}"
     "input[type=password],input[type=text]{width:100%;box-sizing:border-box;padding:.6em;font:inherit;border-radius:6px;"
     "border:1px solid #556;background:#1f2424;color:inherit}button{font:inherit;padding:.7em 1.2em;border-radius:6px;"
     "border:0;background:#7bc8a4;color:#102018;margin-top:1em}.error{color:#ffb4a8}.code{font-size:1.6em;"
@@ -113,7 +114,7 @@ def _page(title: str, body: str) -> bytes:
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
         f"<title>{html.escape(title)}</title><style>{STYLE}</style></head><body><main>{body}</main></body></html>"
-    ).encode("utf-8")
+    ).encode()
 
 
 def choose_page(box: str, networks: list[Network], error: str = "", own: bool = False) -> bytes:
@@ -150,7 +151,8 @@ def choose_page(box: str, networks: list[Network], error: str = "", own: bool = 
     )
 
 
-# A choice nobody confirms (the page closed, say) is joined after this long: the box doesn't wait on its hotspot for ever.
+# A choice nobody confirms (the page closed, say) is joined after this long: the box doesn't wait on its hotspot for
+# ever.
 CONFIRM_SECONDS = 5 * 60
 
 
@@ -297,7 +299,7 @@ class Portal:
             server_version = "Zirbel setup"
             sys_version = ""
 
-            def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - the base class's name
+            def log_message(self, format: str, *args: object) -> None:
                 return  # requests carry nothing worth keeping, and a password never reaches a log
 
             def _send(self, status: int, body: bytes) -> None:
@@ -311,11 +313,11 @@ class Portal:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def do_GET(self) -> None:  # noqa: N802 - the base class's name
+            def do_GET(self) -> None:
                 portal.used()
                 self._send(200, portal.choose())
 
-            def do_POST(self) -> None:  # noqa: N802 - the base class's name
+            def do_POST(self) -> None:
                 portal.used()
                 length = int(self.headers.get("Content-Length") or 0)
                 if self.path == "/go" and 0 < length <= FORM_BYTES:
