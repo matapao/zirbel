@@ -128,6 +128,9 @@ if (values.target === 'arm64') {
 } else {
   execFileSync(process.execPath, ['scripts/build-host.mjs', 'linux/arm/7'], { cwd: REPO, stdio: 'inherit' });
   app[path.join(REPO, 'host', 'bin', 'zirbel-host-linux-armv7')] = '/zirbel-host';
+  // The spaces kernel, which installs beside the host (the arm64 editor carries its own, beside server.mjs).
+  execFileSync(process.execPath, ['deps/skalet/scripts/build-binaries.mjs', 'linux/arm/7'], { cwd: REPO, stdio: 'inherit' });
+  app[path.join(REPO, 'deps', 'skalet', 'bin', 'skalet-linux-armv7')] = '/spaces-kernel';
 }
 // The games, each as the body of POST /api/projects/import-game, which chroot-app.sh sends to the installed program.
 const games = path.join(out, 'games');

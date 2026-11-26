@@ -85,4 +85,12 @@ export function stageEditor(editor, repo, { os, cpu }) {
   });
   fs.renameSync(modules, path.join(editor, 'node_modules'));
   fs.rmSync(install, { recursive: true, force: true });
+  // The spaces kernel, which games with their own netcode play over, beside server.mjs where the editor finds it
+  // (packages/server/spaces.ts): built from its submodule for the target, as its own build script names its binaries.
+  const arch = cpu === 'x64' ? 'amd64' : cpu;
+  execFileSync(process.execPath, [path.join(repo, 'deps', 'skalet', 'scripts', 'build-binaries.mjs'), `${os}/${arch}`], {
+    stdio: 'inherit',
+  });
+  fs.copyFileSync(path.join(repo, 'deps', 'skalet', 'bin', `skalet-${os}-${arch}`), path.join(editor, 'skalet'));
+  fs.chmodSync(path.join(editor, 'skalet'), 0o755);
 }

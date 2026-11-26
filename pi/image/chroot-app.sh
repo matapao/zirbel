@@ -12,6 +12,8 @@ if [ -d "$B/editor" ]; then
   program=(/usr/local/bin/node /opt/zirbel/server.mjs)
 else
   install -D -m 755 "$B/zirbel-host" /opt/zirbel/zirbel-host
+  # The spaces kernel, beside the host, where it finds it.
+  install -m 755 "$B/spaces-kernel" /opt/zirbel/skalet
   install -m 644 "$B/files/zirbel-go.service" /etc/systemd/system/zirbel.service
   program=(/opt/zirbel/zirbel-host)
 fi
