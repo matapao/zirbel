@@ -1,0 +1,20 @@
+{
+  "manifest": "app.v0",
+  "id": "zirbel",
+  "name": "Zirbel",
+  "version": "0.1.0",
+  "description": "A local web-game editor, player and host, with a lobby for the people on its network.",
+  "requires": { "skalet": ">=0.1.0" },
+  "run": { "service": [{ "node": { "entry": "dist/server.mjs", "engine": ">=24.0.0" } }] },
+  "listeners": {
+    "editor": { "audience": "owner", "health": "/api/health" },
+    "player": { "audience": "lan", "health": "/health" }
+  },
+  "open": "editor",
+  "spaces": {
+    "binary": true,
+    "open": ["owner"],
+    "join": { "player": "/join" },
+    "limits": { "participants": 16, "observers": 4, "binaryBytes": 1048576, "openSpaces": 32 }
+  }
+}

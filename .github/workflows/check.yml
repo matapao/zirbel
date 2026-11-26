@@ -83,6 +83,11 @@ jobs:
         with:
           node-version-file: zirbel/.nvmrc
       - run: corepack enable pnpm
+      # pnpm run deps builds the spaces kernel's binary from its submodule.
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: zirbel/go.mod
+          cache: false
       - name: Build the editor the app runs
         working-directory: zirbel
         run: |

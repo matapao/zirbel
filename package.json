@@ -8,7 +8,7 @@
     "node": ">=24.22.3 <25"
   },
   "scripts": {
-    "deps": "pnpm --dir deps/celler install --frozen-lockfile --pm-on-fail=ignore && pnpm --dir deps/celler run --pm-on-fail=ignore build && pnpm --dir deps/vindu install --frozen-lockfile && pnpm --dir deps/vindu run build",
+    "deps": "pnpm --dir deps/celler install --frozen-lockfile --pm-on-fail=ignore && pnpm --dir deps/celler run --pm-on-fail=ignore build && pnpm --dir deps/vindu install --frozen-lockfile && pnpm --dir deps/vindu run build && node deps/skalet/scripts/build-binaries.mjs",
     "build": "node scripts/build.mjs",
     "build:host": "node scripts/build-host.mjs",
     "contracts": "node --experimental-transform-types --disable-warning=ExperimentalWarning scripts/contracts.ts",

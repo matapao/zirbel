@@ -4,3 +4,6 @@
 [submodule "deps/vindu"]
 	path = deps/vindu
 	url = https://github.com/matapao/vindu.git
+[submodule "deps/skalet"]
+	path = deps/skalet
+	url = https://github.com/matapao/skalet.git
