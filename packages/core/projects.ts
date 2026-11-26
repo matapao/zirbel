@@ -259,7 +259,9 @@ export class Projects {
     const current = this.read(projectId);
     if (fork && Object.hasOwn(current.branches, fork)) throw new ZirbelError(409, 'A branch with that name already exists.');
     const branch = fork ?? proposal.branch;
-    const next: Revision = { ...preview, id: newId(), date: now(), label: proposal.label, parent: proposal.baseRevision };
+    // In the schema's order, as a revision is read back and the Go host writes one: apply_proposal answers with it as JSON text.
+    const { scene, game, assets } = preview;
+    const next: Revision = { id: newId(), parent: proposal.baseRevision, label: proposal.label, date: now(), scene, game, assets };
     this.save({ ...current, branches: { ...current.branches, [branch]: next.id }, revisions: [...current.revisions, next] });
     // Once the transaction commits the proposal is stale on that branch.
     rmSync(this.proposalPath(projectId, proposalId), { force: true });

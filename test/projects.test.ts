@@ -156,7 +156,7 @@ test('an empty project has no engine, scene, objects, or source until the author
 test('removing a project closes its rooms and disables its grants while keeping releases', (t) => {
   const { projects, releases, root } = install(t);
   const project = projects.createGame('Archive me', { html: '<canvas></canvas>', maxPlayers: 2 });
-  const mcp = new Mcp(projects);
+  const mcp = new Mcp(projects, new Map());
   const grant = mcp.create({ projectId: project.id, hours: 1, write: false });
   const rooms = new Rooms();
   t.after(() => rooms.dispose());

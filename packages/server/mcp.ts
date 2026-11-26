@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { hash, id, proposalInput } from '../sdk/contracts.ts';
 import { atomicWrite, digest, head, newId, readData, safeId, ZirbelError, type Projects } from '../core/projects.ts';
 import { secret } from '../core/rooms.ts';
+import { guideResources, instructions } from './mcp-guides.ts';
+import { readFileInput, readGameFile, stageFiles, writeFilesInput } from './mcp-files.ts';
 import { sceneDocument, sceneResource } from './scene-app.ts';
 
 const grantInput = z.strictObject({ projectId: id, write: z.boolean(), hours: z.number().int().min(1).max(168) });
@@ -41,7 +43,12 @@ const tools = [
     (projects, projectId, args) => head(projects.read(projectId), args.branch), sceneResource.uri),
   tool('list_revisions', 'List revision metadata.', 'read', empty, (projects, projectId) =>
     projects.read(projectId).revisions.map(({ id, parent, restoredFrom, label, date }) => ({ id, parent, restoredFrom, label, date }))),
-  tool('propose', 'Stage a revision. Use writeGame with a complete HTML document to implement any game or edit.', 'propose', z.strictObject({ proposal: proposalInput }),
+  tool('read_file', 'Read one of the game\'s files by its path: index.html or a file beside it, from a branch head or a revision. ' +
+    'UTF-8 text comes back as text, anything else as base64.', 'read', readFileInput, readGameFile),
+  tool('write_files', 'Stage a revision that writes or removes the game\'s files by path, each written as text or base64; ' +
+    'the other files stay as they are. Read zirbel://guide/files first.', 'propose', writeFilesInput, stageFiles),
+  tool('propose', 'Stage a revision. Use writeGame with a complete HTML document to implement any game or edit; a game with files ' +
+    'beside its index.html changes through write_files.', 'propose', z.strictObject({ proposal: proposalInput }),
     (projects, projectId, { proposal }) => {
       const additions = proposal.operations.filter((op) => op.op === 'addAsset');
       if (additions.length) {
@@ -65,7 +72,8 @@ const tools = [
 export const toolDescriptors = tools.map(({ access, descriptor }) => ({ access, descriptor }));
 
 export class Mcp {
-  constructor(private projects: Projects) {}
+  /** guides: each guide's text by its URI (readGuides). */
+  constructor(private projects: Projects, private guides: ReadonlyMap<string, string>) {}
   private get directory() { return join(this.projects.root, 'grants'); }
   private file(id: string) { return join(this.directory, safeId(id) + '.json'); }
 
@@ -116,13 +124,18 @@ export class Mcp {
       return { ...response, result: {
         protocolVersion: typeof requested === 'string' && supported.includes(requested) ? requested : supported[0],
         capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'zirbel', version: '0.1.0' },
+        instructions: grant.write ? instructions.write : instructions.propose,
       } };
     }
     if (method === 'ping') return { ...response, result: {} };
-    if (method === 'resources/list') return { ...response, result: { resources: [sceneResource] } };
+    if (method === 'resources/list') return { ...response, result: { resources: [...guideResources, sceneResource] } };
     if (method === 'resources/read') {
-      if (params?.uri !== sceneResource.uri) return { ...response, error: { code: -32002, message: 'Resource not found.' } };
-      return { ...response, result: { contents: [{ uri: sceneResource.uri, mimeType: sceneResource.mimeType, text: sceneDocument }] } };
+      const uri = params?.uri;
+      const guide = guideResources.find((item) => item.uri === uri);
+      const text = guide ? this.guides.get(guide.uri) : uri === sceneResource.uri ? sceneDocument : undefined;
+      if (text === undefined) return { ...response, error: { code: -32002, message: 'Resource not found.' } };
+      const { mimeType } = guide ?? sceneResource;
+      return { ...response, result: { contents: [{ uri, mimeType, text }] } };
     }
     if (method === 'tools/list') {
       const available = tools.filter((entry) => grant.write || entry.access !== 'write');

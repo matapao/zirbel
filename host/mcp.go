@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"zirbel/contracts"
+	"zirbel/host/webfiles"
 )
 
 // The project MCP endpoint, mirroring packages/server/mcp.ts. Grants live in
@@ -34,11 +35,23 @@ type mcpTool struct {
 	raw json.RawMessage
 }
 
+// mcpGuide is one of the guides for agents (packages/server/mcp-guides.ts):
+// its resource as resources/list gives it, and its text from the build.
+type mcpGuide struct {
+	URI      string `json:"uri"`
+	Name     string `json:"name"`
+	MimeType string `json:"mimeType"`
+	raw      json.RawMessage
+	text     string
+}
+
 type MCP struct {
-	projects *Projects
-	dir      string
-	tools    []mcpTool
-	resource json.RawMessage
+	projects     *Projects
+	dir          string
+	tools        []mcpTool
+	resource     json.RawMessage
+	guides       []mcpGuide
+	instructions struct{ Propose, Write string }
 }
 
 var credentialPattern = regexp.MustCompile(`^Bearer ([0-9a-f-]{36})\.([a-zA-Z0-9_-]{32})$`)
@@ -48,13 +61,28 @@ func NewMCP(projects *Projects) (*MCP, error) {
 		return nil, errors.New("the MCP endpoint needs the project store")
 	}
 	var catalogue struct {
-		Resource json.RawMessage   `json:"resource"`
-		Tools    []json.RawMessage `json:"tools"`
+		Instructions struct{ Propose, Write string } `json:"instructions"`
+		Guides       []json.RawMessage               `json:"guides"`
+		Resource     json.RawMessage                 `json:"resource"`
+		Tools        []json.RawMessage               `json:"tools"`
 	}
 	if err := json.Unmarshal(contracts.MCPTools, &catalogue); err != nil {
 		return nil, err
 	}
-	m := &MCP{projects: projects, dir: filepath.Join(projects.root, "grants"), resource: catalogue.Resource}
+	m := &MCP{projects: projects, dir: filepath.Join(projects.root, "grants"), resource: catalogue.Resource,
+		instructions: catalogue.Instructions}
+	for _, raw := range catalogue.Guides {
+		guide := mcpGuide{raw: raw}
+		if err := json.Unmarshal(raw, &guide); err != nil {
+			return nil, err
+		}
+		text := webfiles.Guide(guide.Name)
+		if text == nil {
+			return nil, errors.New("the editor is missing mcp-guides/" + guide.Name + ".md; run `pnpm build:host`")
+		}
+		guide.text = string(text)
+		m.guides = append(m.guides, guide)
+	}
 	for _, raw := range catalogue.Tools {
 		var tool mcpTool
 		if err := json.Unmarshal(raw, &tool); err != nil {
@@ -215,23 +243,30 @@ func (m *MCP) Handle(data []byte, credential string) (any, error) {
 		if json.Unmarshal(request.Params["protocolVersion"], &requested) == nil && contains(supported, requested) {
 			version = requested
 		}
+		instructions := m.instructions.Propose
+		if g.Write {
+			instructions = m.instructions.Write
+		}
 		reply.Result = map[string]any{"protocolVersion": version,
 			"capabilities": map[string]any{"tools": map[string]any{}, "resources": map[string]any{}},
-			"serverInfo":   map[string]string{"name": "zirbel", "version": "0.1.0"}}
+			"serverInfo":   map[string]string{"name": "zirbel", "version": "0.1.0"}, "instructions": instructions}
 	case "ping":
 		reply.Result = map[string]any{}
 	case "resources/list":
-		reply.Result = map[string]any{"resources": []json.RawMessage{m.resource}}
+		resources := []json.RawMessage{}
+		for _, guide := range m.guides {
+			resources = append(resources, guide.raw)
+		}
+		reply.Result = map[string]any{"resources": append(resources, m.resource)}
 	case "resources/read":
-		var resource struct{ URI, MimeType string }
-		_ = json.Unmarshal(m.resource, &resource)
 		var uri string
 		_ = json.Unmarshal(request.Params["uri"], &uri)
-		if uri != resource.URI {
+		contents, found := m.read(uri)
+		if !found {
 			reply.Error = &rpcError{-32002, "Resource not found."}
 			break
 		}
-		reply.Result = map[string]any{"contents": []map[string]string{{"uri": resource.URI, "mimeType": resource.MimeType, "text": contracts.MCPScene}}}
+		reply.Result = map[string]any{"contents": []map[string]string{contents}}
 	case "tools/list":
 		tools := []json.RawMessage{}
 		for _, tool := range m.tools {
@@ -246,6 +281,21 @@ func (m *MCP) Handle(data []byte, credential string) (any, error) {
 		reply.Error = &rpcError{-32601, "Method not found"}
 	}
 	return reply, nil
+}
+
+// read is a resource's contents by its URI: a guide, or the Scene app page.
+func (m *MCP) read(uri string) (map[string]string, bool) {
+	for _, guide := range m.guides {
+		if guide.URI == uri {
+			return map[string]string{"uri": uri, "mimeType": guide.MimeType, "text": guide.text}, true
+		}
+	}
+	var scene struct{ URI, MimeType string }
+	_ = json.Unmarshal(m.resource, &scene)
+	if uri != scene.URI {
+		return nil, false
+	}
+	return map[string]string{"uri": uri, "mimeType": scene.MimeType, "text": contracts.MCPScene}, true
 }
 
 func textResult(value any, isError bool) map[string]any {
@@ -355,6 +405,10 @@ func (m *MCP) run(g *grant, name string, raw json.RawMessage) (any, error) {
 			list = append(list, meta{r.ID, r.Parent, r.RestoredFrom, r.Label, r.Date})
 		}
 		return list, nil
+	case "read_file":
+		return m.readFile(g, raw)
+	case "write_files":
+		return m.writeFiles(g, raw)
 	case "propose":
 		args, err := strictArgs(raw, "proposal")
 		if err != nil {

@@ -26,6 +26,7 @@ import { importReleases, Players, readLanHost, readPort, stopOnSignal } from './
 import { localHarnesses } from './local-harnesses.ts';
 import { modelId, processorId, type Processors } from './processors.ts';
 import { Mcp, stdioMcp } from './mcp.ts';
+import { readGuides } from './mcp-guides.ts';
 import { Pairing } from './box-pairing.ts';
 import { boxDoor, boxHealth, boxHosts, boxRequest, onBoxNetwork, type Access, type BoxContext } from './box-routes.ts';
 import { boxCapabilities, BoxHarnesses, BoxSettings } from './box-settings.ts';
@@ -148,7 +149,7 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
     const views = new TurnServers({ projects, releases, rooms, playerPort: () => players.local?.port, renderer: chooseRenderer() },
       () => editorOrigin() + '/turn-mcp');
     const chatContext: ChatContext = { projects, harnesses, chat, activity, threads, tools: { readable }, links, views };
-    const mcp = new Mcp(projects);
+    const mcp = new Mcp(projects, readGuides(webRoot));
     importReleases(releases, values.import ?? []);
 
     const editorOrigin = () => 'http://127.0.0.1:' + editorPort;

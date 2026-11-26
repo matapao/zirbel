@@ -196,6 +196,20 @@ var Net = sync.OnceValue(func() *File { return hostFile("zirbel-net.js") })
 // nil when the build has none.
 var Skill = sync.OnceValue(func() *File { return hostFile("zirbel-net/SKILL.md") })
 
+// Guide is one of the guides the editor's MCP server gives agents as
+// resources (mcp-guides/<name>.md, put together by scripts/build.mjs), or nil
+// when the build has none.
+func Guide(name string) []byte {
+	if !fs.ValidPath(name) {
+		return nil
+	}
+	data, err := fs.ReadFile(embedded, "web/mcp-guides/"+name+".md")
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
 // hostFile is one of the host's own files, or nil when the build has none.
 func hostFile(name string) *File {
 	data, err := fs.ReadFile(embedded, "web/"+name)

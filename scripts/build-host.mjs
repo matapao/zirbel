@@ -17,6 +17,8 @@ for (const file of runtime) cpSync('dist/web/' + file, web + '/' + file);
 cpSync('dist/web/zirbel-net.js', web + '/zirbel-net.js');
 // And the skill that teaches agents to make a game multiplayer with it, served as /zirbel-net/SKILL.md.
 cpSync('dist/web/zirbel-net/SKILL.md', web + '/zirbel-net/SKILL.md');
+// The guides the editor's MCP server gives agents, served as resources (mcp.go).
+cpSync('dist/web/mcp-guides', web + '/mcp-guides', { recursive: true });
 // The lobby's page and files, which every player listener serves at / and beside it: the host's own too.
 for (const file of ['lobby.html', 'lobby.js', 'lobby.css']) cpSync('dist/web/' + file, web + '/' + file);
 for (const file of readdirSync('dist/web/chunks')) cpSync('dist/web/chunks/' + file, web + '/chunks/' + file);
