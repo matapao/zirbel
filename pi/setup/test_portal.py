@@ -2,6 +2,7 @@
 them, names escaped, the pairing code shown before the box leaves the hotspot, and a request that goes when setup does."""
 
 import json
+import re
 import tempfile
 import threading
 import time
@@ -75,7 +76,7 @@ class Forms(unittest.TestCase):
 
 
 class Server(unittest.TestCase):
-    def test_any_address_shows_the_page_and_a_join_starts_after_the_answer_went_out(self):
+    def test_the_page_stays_until_join_now_and_the_join_starts_after_the_answer_went_out(self):
         joined = threading.Event()
         chosen = []
         server = portal.Portal(
@@ -94,7 +95,20 @@ class Server(unittest.TestCase):
             request = urllib.request.Request(f"http://127.0.0.1:{port}/join",
                                              data=f"network={b'Home'.hex()}&password=password1".encode())
             with NO_PROXY.open(request) as answer:
-                self.assertIn("ABCD-EFGH", answer.read().decode())
+                ready = answer.read().decode()
+            # The page with what comes next stays: the box joins only on Join now, with that page's own token.
+            self.assertIn("ABCD-EFGH", ready)
+            self.assertIn("Join Home now", ready)
+            token = re.search(r"name=token value=([A-Za-z0-9_-]+)", ready).group(1)
+            time.sleep(2)
+            self.assertFalse(chosen, "nothing is joined before Join now")
+            with self.assertRaises(urllib.error.HTTPError) as wrong:
+                NO_PROXY.open(urllib.request.Request(f"http://127.0.0.1:{port}/go", data=b"token=nope"))
+            self.assertEqual(wrong.exception.code, 400)
+            wrong.exception.close()
+            started = time.monotonic()
+            with NO_PROXY.open(urllib.request.Request(f"http://127.0.0.1:{port}/go", data=f"token={token}".encode())) as answer:
+                self.assertIn("is joining Home", answer.read().decode())
             self.assertFalse(chosen, "the join waits until the page is out")
             self.assertTrue(joined.wait(5))
             self.assertGreater(time.monotonic() - started, 1)

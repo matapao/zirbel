@@ -60,10 +60,12 @@ def mac_suffix(address: str) -> str:
 
 
 class Setup:
-    def __init__(self, bus, nm, radios: policy.Radios, requested: bool):
+    def __init__(self, bus, nm, radios: policy.Radios, requested: bool, after_boot: bool = False):
         from gi.repository import GLib
 
         self.GLib, self.bus, self.nm, self.radios, self.requested = GLib, bus, nm, radios, requested
+        # A box with a network, in the minutes after power-on: Bluetooth setup only, so its network stays up.
+        self.after_boot = after_boot
         self.loop = GLib.MainLoop()
         self.started = self.last_use = self.last_retry = self.last_bluetooth = time.monotonic()
         self.busy = False  # joining, scanning or trying the saved networks: the radio is in use
@@ -103,7 +105,9 @@ class Setup:
             self.last_bluetooth = self.last_use
 
     def run(self) -> None:
-        log(f"Setting up as {self.box}" + (", as asked." if self.requested else ": the box has no network."))
+        log(f"Setting up as {self.box}" + (", as asked." if self.requested else
+                                           ", over Bluetooth, for the minutes after power-on." if self.after_boot else
+                                           ": the box has no network."))
         self.networks = self.nm.scan()
         self._start_bluetooth()
         self._hotspot_if_due()
@@ -143,6 +147,9 @@ class Setup:
         self.bluetooth_error = str(error)
 
     def _hotspot_if_due(self) -> None:
+        # The hotspot takes the box's one Wi-Fi radio: never while the box has a network the person didn't ask to leave.
+        if self.after_boot and not self.requested and self.nm.online():
+            return
         # Bluetooth starting counts as Bluetooth: on a board whose radio does one at a time, the hotspot waits for it.
         radios = policy.Radios(self.radios.wifi, self.bluetooth is not None or self.bluetooth_starting, self.radios.sharing)
         if self.busy or self.hotspot or not policy.hotspot_due(radios, quiet_for=time.monotonic() - self.last_bluetooth):
@@ -173,7 +180,9 @@ class Setup:
         online = self.nm.online()
         self.requested = self.requested or editor.REQUEST.exists()
         since_use = time.monotonic() - self.last_use
-        if policy.finished(online=online, requested=self.requested, provisioned=self.provisioned) or policy.abandoned(
+        after_boot = self.after_boot and policy.after_boot(time.monotonic()) and not self.provisioned
+        if policy.finished(online=online, requested=self.requested, provisioned=self.provisioned,
+                           after_boot=after_boot) or policy.abandoned(
             requested=self.requested, since_use=since_use
         ):
             return self._finish()
@@ -326,9 +335,10 @@ def main() -> int:
     nm = network.NetworkManager(bus)
     nm.enable_wifi()
     online, requested = wait_for_network(nm, editor.requested())
-    if online and not requested:
+    after_boot = online and not requested and radios.bluetooth and policy.after_boot(time.monotonic())
+    if online and not requested and not after_boot:
         return 0
-    Setup(bus, nm, radios, requested).run()
+    Setup(bus, nm, radios, requested, after_boot=after_boot).run()
     return 0
 
 

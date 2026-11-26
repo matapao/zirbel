@@ -10,6 +10,7 @@ SSID's bytes in hex, so any SSID comes back exactly.
 from __future__ import annotations
 
 import html
+import secrets
 import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -112,8 +113,13 @@ def choose_page(box: str, networks: list[Network], error: str = "") -> bytes:
     )
 
 
-def joining_page(box: str, network: str, pairing: Pairing | None) -> bytes:
-    """What to do next, shown before the box leaves the hotspot: the phone loses this page when it does."""
+# A choice nobody confirms (the page closed, say) is joined after this long: the box doesn't wait on its hotspot for ever.
+CONFIRM_SECONDS = 5 * 60
+
+
+def joining_page(box: str, network: str, pairing: Pairing | None, token: str = "") -> bytes:
+    """What to do next, shown while the box still runs its hotspot: the phone loses this page once the box leaves it,
+    so the box leaves only when the person taps Join now (token), after reading it, or after CONFIRM_SECONDS."""
     # Some phones can't open .local names: the box's plain name, which many home routers resolve, is the other way.
     plain = "<p><small>If it doesn't open, try <b>http://zirbel/pair</b>, or the box's address in your router's list " \
         "of devices.</small></p>"
@@ -133,11 +139,21 @@ def joining_page(box: str, network: str, pairing: Pairing | None) -> bytes:
         )
     else:
         finish = "<p>Then open <b>http://zirbel.local</b>.</p>" + plain
+    after = "<p><small>If the box can't join, the Zirbel setup network comes back with what went wrong.</small></p>"
+    if token:
+        return _page(
+            "Ready to join " + network,
+            f"<h1>{html.escape(box)} is ready to join {html.escape(network)}</h1>"
+            "<p>Note what comes next: when the box joins, this setup network and this page go away. Then join "
+            f"<b>{html.escape(network)}</b> on this phone again.</p>{finish}"
+            f"<form method=post action=/go><input type=hidden name=token value={html.escape(token, quote=True)}>"
+            f"<button type=submit>Join {html.escape(network)} now</button></form>"
+            "<p><a href=/>Choose another network</a></p>" + after,
+        )
     return _page(
         "Joining " + network,
         f"<h1>{html.escape(box)} is joining {html.escape(network)}</h1>"
-        f"<p>This hotspot goes away now. Join <b>{html.escape(network)}</b> on this phone again.</p>{finish}"
-        "<p><small>If the box can't join, the Zirbel setup network comes back with what went wrong.</small></p>",
+        f"<p>This setup network goes away now. Join <b>{html.escape(network)}</b> on this phone again.</p>{finish}" + after,
     )
 
 
@@ -156,6 +172,32 @@ class Portal:
         self.box, self.networks, self.pair, self.join, self.used = box, networks, pair, join, used
         self.error = ""
         self._server: ThreadingHTTPServer | None = None
+        # The network chosen and not yet joined: its choice, its page's link, the token Join now carries, its timer.
+        self._pending: tuple[Choice, Pairing | None, str, threading.Timer] | None = None
+        self._lock = threading.Lock()
+
+    def _hold(self, choice: Choice, pairing: Pairing | None) -> str:
+        token = secrets.token_urlsafe(16)
+        timer = threading.Timer(CONFIRM_SECONDS, self._go, args=(token,))
+        timer.daemon = True
+        with self._lock:
+            if self._pending:
+                self._pending[3].cancel()
+            self._pending = (choice, pairing, token, timer)
+        timer.start()
+        return token
+
+    def _go(self, token: str) -> tuple[Choice, Pairing | None] | None:
+        """The chosen network, joined once: for the token of the choice still held, by Join now or its timer."""
+        with self._lock:
+            if not self._pending or not secrets.compare_digest(self._pending[2], token):
+                return None
+            choice, pairing, _token, timer = self._pending
+            self._pending = None
+        timer.cancel()
+        self.error = ""
+        threading.Timer(1.5, self.join, args=(choice,)).start()
+        return choice, pairing
 
     def start(self, address: str, port: int = PORT) -> None:
         portal = self
@@ -185,6 +227,15 @@ class Portal:
             def do_POST(self) -> None:  # noqa: N802 - the base class's name
                 portal.used()
                 length = int(self.headers.get("Content-Length") or 0)
+                if self.path == "/go" and 0 < length <= FORM_BYTES:
+                    fields = parse_qs(self.rfile.read(length).decode("ascii", errors="replace"))
+                    held = portal._go((fields.get("token") or [""])[0])
+                    if not held:
+                        self._send(400, choose_page(portal.box, portal.networks(), "Choose the network again."))
+                        return
+                    choice, pairing = held
+                    self._send(200, joining_page(portal.box, choice.ssid.decode("utf-8", errors="replace"), pairing))
+                    return
                 if self.path != "/join" or not 0 < length <= FORM_BYTES:
                     self._send(400, choose_page(portal.box, portal.networks(), "That form could not be read."))
                     return
@@ -195,10 +246,8 @@ class Portal:
                     self._send(400, choose_page(portal.box, portal.networks(), message))
                     return
                 name = choice.ssid.decode("utf-8", errors="replace")
-                self._send(200, joining_page(portal.box, name, portal.pair()))
-                self.wfile.flush()
-                portal.error = ""
-                threading.Timer(1.5, portal.join, args=(choice,)).start()
+                pairing = portal.pair()
+                self._send(200, joining_page(portal.box, name, pairing, portal._hold(choice, pairing)))
 
         self._server = ThreadingHTTPServer((address, port), Handler)
         self._server.daemon_threads = True

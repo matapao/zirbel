@@ -36,14 +36,25 @@ class Radios:
     sharing: str = TOGETHER
 
 
+# For this long after power-on a box with a network still takes a new one over Bluetooth (never the hotspot then).
+AFTER_BOOT_SECONDS = 10 * 60
+
+
 def needed(*, online: bool, offline_for: float, requested: bool, grace: float = GRACE_SECONDS) -> bool:
     """Whether to set up: when the person asked, or when the box has been without a network for the grace period."""
     return requested or (not online and offline_for >= grace)
 
 
-def finished(*, online: bool, requested: bool, provisioned: bool) -> bool:
-    """Whether setup is over: Wi-Fi was given and joined, or a network came back that the person did not ask to change."""
-    return provisioned or (online and not requested)
+def after_boot(uptime: float) -> bool:
+    """Whether the box is in the minutes after power-on in which it takes a new network over Bluetooth even with one:
+    the way to move a box that is set up somewhere else, with no screen, card or SSH."""
+    return uptime < AFTER_BOOT_SECONDS
+
+
+def finished(*, online: bool, requested: bool, provisioned: bool, after_boot: bool = False) -> bool:
+    """Whether setup is over: Wi-Fi was given and joined, or a network came back that the person did not ask to change
+    and the minutes after power-on are over."""
+    return provisioned or (online and not requested and not after_boot)
 
 
 def abandoned(*, requested: bool, since_use: float) -> bool:

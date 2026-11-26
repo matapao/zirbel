@@ -43,6 +43,11 @@ class Decisions(unittest.TestCase):
         self.assertTrue(policy.finished(online=False, requested=True, provisioned=True))
         self.assertTrue(policy.finished(online=True, requested=False, provisioned=False))
         self.assertFalse(policy.finished(online=True, requested=True, provisioned=False))
+        # In the minutes after power-on a box with a network still takes a new one over Bluetooth.
+        self.assertFalse(policy.finished(online=True, requested=False, provisioned=False, after_boot=True))
+        self.assertTrue(policy.finished(online=True, requested=False, provisioned=True, after_boot=True))
+        self.assertTrue(policy.after_boot(0) and policy.after_boot(policy.AFTER_BOOT_SECONDS - 1))
+        self.assertFalse(policy.after_boot(policy.AFTER_BOOT_SECONDS))
         self.assertTrue(policy.abandoned(requested=True, since_use=policy.ABANDONED_SECONDS))
         self.assertFalse(policy.abandoned(requested=False, since_use=10_000))
 
