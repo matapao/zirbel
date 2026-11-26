@@ -180,6 +180,24 @@ export const lobbyOffer = z.strictObject({ release: id, offered: z.boolean() });
 export const lobbyFile = z.strictObject({ version: z.literal(1), offered: z.array(id).max(256) })
   .refine((file) => new Set(file.offered).size === file.offered.length, 'A release is offered once.');
 
+// The box's controllers (box mode): Box settings' requests, and the box's controllers service's view of its gamepads
+// and Bluetooth (pi/controllers/view.py), which reaches the host over the pads' local socket. Names are at most 64
+// characters there, which is at most 128 here.
+const bluetoothAddress = z.string().regex(/^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/);
+const controllerName = z.string().max(128);
+export const controllersScan = z.strictObject({ on: z.boolean() });
+export const controllersAddress = z.strictObject({ address: bluetoothAddress });
+export const controllersView = z.strictObject({
+  type: z.literal('controllers'),
+  devices: z.array(z.strictObject({
+    name: controllerName, kind: z.enum(['usb', 'bluetooth', 'other']), connected: z.boolean(),
+    device: z.number().int().min(0).max(15).optional(), address: bluetoothAddress.optional(),
+  })).max(32),
+  found: z.array(z.strictObject({ address: bluetoothAddress, name: controllerName })).max(32),
+  scanning: z.boolean(), bluetooth: z.boolean(), pairing: bluetoothAddress.nullable(), error: z.string().max(400).nullable(),
+});
+export type ControllersView = z.infer<typeof controllersView>;
+
 export type SceneObject = z.infer<typeof sceneObject>;
 export type Scene = z.infer<typeof scene>;
 export function legacyScene(value: { scene?: Scene }) {

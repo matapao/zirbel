@@ -1,0 +1,110 @@
+{
+  "$id": "https://zirbel.app/contracts/controllers-view.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "controllers"
+    },
+    "devices": {
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "usb",
+              "bluetooth",
+              "other"
+            ]
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "device": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 15
+          },
+          "address": {
+            "type": "string",
+            "pattern": "^[0-9A-F]{2}(:[0-9A-F]{2}){5}$"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "connected"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "found": {
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^[0-9A-F]{2}(:[0-9A-F]{2}){5}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "address",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "scanning": {
+      "type": "boolean"
+    },
+    "bluetooth": {
+      "type": "boolean"
+    },
+    "pairing": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9A-F]{2}(:[0-9A-F]{2}){5}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 400
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "type",
+    "devices",
+    "found",
+    "scanning",
+    "bluetooth",
+    "pairing",
+    "error"
+  ],
+  "additionalProperties": false
+}

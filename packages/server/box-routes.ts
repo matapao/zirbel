@@ -16,6 +16,7 @@ import { editRoute } from './box-edit-routes.ts';
 import { END_EDITOR, ENDED, editorToken, type Editors } from './box-editors.ts';
 import { escape, formBody, redirect, sendPage } from './box-page.ts';
 import { harnessesUnavailable, settingsChange, type BoxHarnesses, type BoxSettings, type Capabilities } from './box-settings.ts';
+import { controllersRequest, type BoxControllers } from './box-controllers.ts';
 
 export type BoxContext = {
   pairing: Pairing; editors: Editors; settings: BoxSettings; harnesses: BoxHarnesses; capabilities: Capabilities;
@@ -31,6 +32,9 @@ export type BoxContext = {
   setupRequest: string;
   /** The box's own Wi-Fi's name and password, as the setup service keeps them (box-network.ts). */
   ownNetwork: string;
+  /** The box's gamepads and Bluetooth, through its controllers service on the pads' local socket, where the host has
+   *  one (box-controllers.ts). */
+  controllers?: BoxControllers;
 };
 /** Who sent a request: the box itself, a paired device (an owner) by its id, or an editor of one game by its id and
  *  its game's, with the name they go by (a device's label, an editor's own); none of them for a project grant's /mcp
@@ -160,7 +164,8 @@ export function boxHealth(box: BoxContext) {
     memoryMB: capabilities.memoryMB, name: boxName() };
 }
 
-/** The box's own API: /api/pairing… and /api/box/…. Says whether it answered the request. */
+/** The box's own API: /api/pairing… and /api/box/… (its controllers: box-controllers.ts). Says whether it answered the
+ *  request. */
 export async function boxRequest(box: BoxContext, request: IncomingMessage, response: ServerResponse, access: Access,
   route: { resource?: string; pathID?: string; action?: string; tail?: string }) {
   const { resource, pathID, action, tail } = route;
@@ -180,6 +185,7 @@ export async function boxRequest(box: BoxContext, request: IncomingMessage, resp
     reply(response, {});
     return true;
   }
+  if (resource === 'box' && pathID === 'controllers' && !tail) return controllersRequest(box.controllers, request, response, action);
   if (resource !== 'box' || action || tail) return false;
   if (pathID === 'status' && method === 'GET') {
     if (!access.local) throw new ZirbelError(403, 'Only the box itself reads its status.');

@@ -40,6 +40,10 @@ type Box struct {
 	// ownNetwork is the box's own Wi-Fi's name and password, as the setup
 	// service keeps them (box_network.go).
 	ownNetwork string
+	// controllers is the box's gamepads and Bluetooth, through its
+	// controllers service on the pads' local socket, where the host has one
+	// (box_controllers.go).
+	controllers *boxControllers
 }
 
 func NewBox(account string, port func() int) (*Box, error) {
@@ -285,6 +289,8 @@ func (b *Box) serve(w http.ResponseWriter, r *http.Request, access boxAccess, re
 			return true, fail(http.StatusBadRequest, "Invalid string: must match pattern /^[a-z0-9-]{1,80}$/")
 		}
 		return true, send(w, http.StatusOK, map[string]any{}, b.pairing.Revoke(action))
+	case resource == "box" && pathID == "controllers" && tail == "":
+		return b.serveControllers(w, r, action)
 	case resource != "box" || action != "" || tail != "":
 		return false, nil
 	case pathID == "status" && method == http.MethodGet:

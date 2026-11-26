@@ -3,8 +3,9 @@
 // match: the door, the pairing page and its codes and claim, the paired devices, the switches, the setup flag, the
 // box's own Wi-Fi, external MCP access, the lobby a device that isn't paired is sent to, and its address for other
 // devices; and in a second session, the editors of one game: its edit code, the edit page, what an editor may and may
-// not do, and its session's end. What the hosts differ in by design is compared by its form only: harnesses
-// run in the Node editor alone, and only it draws a QR code, for a pairing link or for joining the box's own Wi-Fi.
+// not do, and its session's end; and in a third, the box's controllers in Box settings. What the hosts differ in by
+// design is compared by its form only: harnesses run in the Node editor alone, and only it draws a QR code, for a
+// pairing link or for joining the box's own Wi-Fi.
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
@@ -298,6 +299,7 @@ async function editorsSession({ editor: base, account }: Started) {
     ['POST', '/api/projects/' + meadow.id + '/remove'], ['POST', '/api/projects/' + meadow.id + '/release'],
     ['POST', '/api/projects/' + meadow.id + '/edit-code'], ['GET', '/api/projects/' + meadow.id + '/editors'],
     ['GET', '/api/box/settings'], ['PUT', '/api/box/settings'], ['GET', '/api/box/network'], ['POST', '/api/box/setup'],
+    ['GET', '/api/box/controllers'], ['POST', '/api/box/controllers/scan'], ['POST', '/api/box/controllers/forget'],
     ['GET', '/api/pairing/devices'], ['POST', '/api/pairing'], ['GET', '/api/processors'], ['POST', '/api/chat'],
     ['POST', '/api/projects/' + meadow.id + '/prompt'], ['GET', '/api/projects/' + meadow.id + '/thread'],
     ['GET', '/api/releases'], ['POST', '/api/releases/import'], ['POST', '/api/lobby/offer'], ['POST', '/api/rooms']] as const)
@@ -367,21 +369,44 @@ async function editorsSession({ editor: base, account }: Started) {
   return steps;
 }
 
+/** The box's controllers (box-controllers.ts), which owners list and pair in Box settings: with no controllers service
+ *  on the box, there are none to list or pair (503), and a request is checked first. */
+async function controllersSession({ editor: base }: Started) {
+  const steps: Step[] = [];
+  const box = client(base);
+  const record = async (step: Promise<Step>) => { const result = await step; steps.push(result); return result; };
+  const none = await record(box('GET', '/api/box/controllers'));
+  assert.deepEqual(none.body, { error: 'The box’s controller service isn’t running.' });
+  await record(box('POST', '/api/box/controllers/scan', { json: { on: true }, origin: true }));
+  await record(box('POST', '/api/box/controllers/pair', { json: { address: 'A0:B1:C2:D3:E4:F5' }, origin: true }));
+  await record(box('POST', '/api/box/controllers/forget', { json: { address: 'a0:b1:c2:d3:e4:f5' }, origin: true }));
+  await record(box('POST', '/api/box/controllers/scan', { json: { on: 'yes' }, origin: true }));
+  await record(box('POST', '/api/box/controllers/pair', { raw: '{"address":"A0:B1:C2:D3:E4:F5","more":1}', origin: true }));
+  await record(box('GET', '/api/box/controllers/scan'));
+  await record(box('POST', '/api/box/controllers/connect', { json: {}, origin: true }));
+  return steps;
+}
+
 const results = new Map<string, Step[]>();
 const editing = new Map<string, Step[]>();
+const controlling = new Map<string, Step[]>();
+const SESSIONS = [['session', session, results], ['editors session', editorsSession, editing],
+  ['controllers session', controllersSession, controlling]] as const;
 
 for (const host of hosts) {
-  for (const [name, run, kept] of [['session', session, results], ['editors session', editorsSession, editing]] as const) {
+  for (const [name, run, kept] of SESSIONS) {
     test(host.name + ' box runs the scripted ' + name, async (t) => {
       const steps = await run(await startBox(t, host.command));
-      for (const [index, step] of steps.entries()) assert.ok(step.status < 500, 'step ' + index + ': ' + step.status + ' ' + JSON.stringify(step.body));
+      // No controllers service runs beside these hosts: its routes say so.
+      for (const [index, step] of steps.entries()) assert.ok(step.status < 500 || (step.status === 503 && kept === controlling),
+        'step ' + index + ': ' + step.status + ' ' + JSON.stringify(step.body));
       kept.set(host.name, steps);
     });
   }
 }
 
 if (hosts.length > 1) {
-  for (const [name, kept] of [['session', results], ['editors session', editing]] as const) {
+  for (const [name, , kept] of SESSIONS) {
     test('both boxes answer the ' + name + ' identically', (t) => {
       const node = kept.get('node')!.map(normalizer());
       const go = kept.get('go')!.map(normalizer());
