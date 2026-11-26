@@ -24,3 +24,9 @@ description = "Addresses with credentials in them, which the tests check are ref
 condition = "AND"
 paths = ['''^test/improv\.test\.ts$''', '''^desktop/test/routes\.test\.ts$''']
 regexes = ['''^(pass|secret)$''']
+
+[[allowlists]]
+description = "The box secret the git tokens fuzz test makes up"
+condition = "AND"
+paths = ['''^host/git_tokens_test\.go$''']
+regexes = ['''^00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff$''']
