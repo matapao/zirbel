@@ -2,7 +2,7 @@
 // stored by its content hash and listed in the document's files.
 import { z } from 'zod';
 import { PORTABLE_FILE_LIMIT } from '../sdk/contracts.ts';
-import { gameDocument, gameFilePath, MAX_GAME_FILES, NET_PLAYERS } from '../sdk/game.ts';
+import { adapterPath, gameDocument, gameFilePath, MAX_GAME_FILES, NET_PLAYERS, type GameDocument } from '../sdk/game.ts';
 import { ZirbelError, type Projects } from './projects.ts';
 
 const base64 = z.string().max(PORTABLE_FILE_LIMIT).regex(/^[A-Za-z0-9+/]*={0,2}$/);
@@ -15,14 +15,21 @@ export const gameFolder = z.strictObject({
 
 // A built folder can carry zirbel.json, the earlier Zirbel's description of a game. players.max above
 // 1 there says the game brings its own netcode (zirbel-net): it plays over the host's relay, with up to
-// 16 players. A file that says otherwise, can't be read or is over 64 KB leaves a game for one.
+// 16 players. A file that says otherwise, can't be read or is over 64 KB leaves a game for one. Such a
+// game's multiplayer.adapter names its adapter, one of the folder's .js or .mjs files (has): anything
+// else leaves it without one.
 const MANIFEST_BASE64 = Math.ceil(65_536 / 3) * 4;
-function netPlayers(manifest: string | undefined): number {
-  if (manifest === undefined || manifest.length > MANIFEST_BASE64) return 1;
-  let max: unknown;
-  try { max = (JSON.parse(Buffer.from(manifest, 'base64').toString('utf8')) as { players?: { max?: unknown } } | null)?.players?.max; }
-  catch { return 1; }
-  return typeof max === 'number' && Number.isInteger(max) && max > 1 ? Math.min(max, NET_PLAYERS) : 1;
+type Described = { players?: { max?: unknown }; multiplayer?: { adapter?: unknown } } | null;
+export function describedGame(manifest: string | undefined, has: (path: string) => boolean):
+  Pick<GameDocument, 'maxPlayers' | 'net' | 'adapter'> {
+  if (manifest === undefined || manifest.length > MANIFEST_BASE64) return { maxPlayers: 1 };
+  let described: Described;
+  try { described = JSON.parse(Buffer.from(manifest, 'base64').toString('utf8')) as Described; }
+  catch { return { maxPlayers: 1 }; }
+  const max = described?.players?.max, adapter = described?.multiplayer?.adapter;
+  if (typeof max !== 'number' || !Number.isInteger(max) || max <= 1) return { maxPlayers: 1 };
+  return { maxPlayers: Math.min(max, NET_PLAYERS), net: true,
+    ...(adapterPath.safeParse(adapter).success && has(adapter as string) ? { adapter: adapter as string } : {}) };
 }
 
 export function importGameFolder(projects: Projects, raw: unknown) {
@@ -40,8 +47,8 @@ export function importGameFolder(projects: Projects, raw: unknown) {
   for (const path of Object.keys(files).sort()) {
     if (path !== 'index.html') stored[path] = projects.storeAsset(Buffer.from(files[path]!, 'base64'));
   }
-  const players = netPlayers(files['zirbel.json']);
   return projects.createRevision(title ?? 'Imported game', {
-    game: { html, maxPlayers: players, ...(players > 1 ? { net: true as const } : {}), files: stored }, assets: [], label: 'Imported game folder',
+    game: { html, ...describedGame(files['zirbel.json'], (path) => Object.hasOwn(stored, path)), files: stored }, assets: [],
+    label: 'Imported game folder',
   });
 }

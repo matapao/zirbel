@@ -84,7 +84,8 @@ type Scene struct {
 type Game struct {
 	HTML            string            `json:"html"`
 	MaxPlayers      int               `json:"maxPlayers"`
-	Net             bool              `json:"net,omitempty"` // only true: the game brings its own netcode (zirbel-net)
+	Net             bool              `json:"net,omitempty"`     // only true: the game brings its own netcode (zirbel-net)
+	Adapter         string            `json:"adapter,omitempty"` // with net: one of its files, which its game page loads
 	RegisterObjects *bool             `json:"registerObjects,omitempty"`
 	Files           map[string]string `json:"files,omitempty"` // a built game's files by path, beside index.html
 }
@@ -159,6 +160,9 @@ func ParseRelease(data []byte) (*Release, error) {
 			return nil, fail(http.StatusBadRequest, "game.files · Provide up to 1000 files besides index.html.")
 		}
 		if err := withinPlayers(game); err != nil {
+			return nil, err
+		}
+		if err := ownAdapter(game); err != nil {
 			return nil, err
 		}
 	}

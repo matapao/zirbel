@@ -23,8 +23,12 @@ export const GAME_FILE_TYPES: Readonly<Record<string, string>> = {
 };
 const segment = '[A-Za-z0-9_][A-Za-z0-9._-]*';
 // Relative, at most 8 deep, no segment starting with a dot, and an extension from the table.
-export const gameFilePath = z.string().max(240)
-  .regex(new RegExp('^(?:' + segment + '/){0,7}' + segment + '\\.(?:' + Object.keys(GAME_FILE_TYPES).join('|') + ')$'));
+const pathWith = (extensions: string[]) => z.string().max(240)
+  .regex(new RegExp('^(?:' + segment + '/){0,7}' + segment + '\\.(?:' + extensions.join('|') + ')$'));
+export const gameFilePath = pathWith(Object.keys(GAME_FILE_TYPES));
+// A game with net may name its adapter, the module that connects it to zirbel-net: one of its own scripts, which the
+// game page loads after the game's document, so the game itself carries nothing of Zirbel's.
+export const adapterPath = pathWith(['js', 'mjs']);
 export const MAX_GAME_FILES = 1000;
 const gameFiles = z.record(gameFilePath, z.string().regex(/^[a-f0-9]{64}$/)).refine(
   (files) => Object.keys(files).length <= MAX_GAME_FILES && !Object.hasOwn(files, 'index.html'),
@@ -42,15 +46,20 @@ const gameFields = z.strictObject({
   html: z.string().trim().min(1).max(400_000),
   maxPlayers: z.number().int().min(1).max(NET_PLAYERS).default(1),
   net: z.literal(true).optional(),
+  adapter: adapterPath.optional(),
   registerObjects: z.boolean().optional(),
   files: gameFiles.optional(),
 });
 const withinPlayers = (game: { maxPlayers: number; net?: true }) => game.maxPlayers <= SHARED_PLAYERS || game.net === true;
 const playersError = { message: 'A game for more than 4 players needs net.', path: ['maxPlayers'] };
-export const gameDocument = gameFields.refine(withinPlayers, playersError);
+const ownAdapter = (game: { net?: true; adapter?: string; files?: Record<string, string> }) =>
+  game.adapter === undefined || (game.net === true && game.files !== undefined && Object.hasOwn(game.files, game.adapter));
+const adapterError = { message: 'An adapter is one of the game’s own files, in a game with net.', path: ['adapter'] };
+export const gameDocument = gameFields.refine(withinPlayers, playersError).refine(ownAdapter, adapterError);
 export type GameDocument = z.infer<typeof gameDocument>;
-// What a proposal or a harness writes: files only arrive with their bytes, from an import.
-export const editableGame = gameFields.omit({ files: true }).refine(withinPlayers, playersError);
+// What a proposal or a harness writes: files only arrive with their bytes, from an import, and so does the adapter
+// among them.
+export const editableGame = gameFields.omit({ files: true, adapter: true }).refine(withinPlayers, playersError);
 
 const registeredObject = z.strictObject({
   id: z.string().min(1).max(120),

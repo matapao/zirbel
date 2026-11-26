@@ -79,7 +79,12 @@ func gamePage(release *Release, runtime, ancestors, base string) (policy, html s
 		`<script type="importmap">` + scriptJSON(map[string]any{"imports": imports}) + `</script>` +
 		`<script type="application/json" id="zirbel-assets"` + registration + `>` + scriptJSON(assets) + `</script>` +
 		`<script crossorigin="anonymous" src="` + runtime + `game-sdk.js"></script>`
-	return policy, "<!doctype html>" + bootstrap + doctype.ReplaceAllString(release.Game.HTML, "")
+	// A net game's adapter, one of its files (which base allows), loads as a module after the game's own document.
+	adapter := ""
+	if isNet(release.Manifest.Simulation) && release.Game.Adapter != "" {
+		adapter = `<script type="module" src="` + base + release.Game.Adapter + `"></script>`
+	}
+	return policy, "<!doctype html>" + bootstrap + doctype.ReplaceAllString(release.Game.HTML, "") + adapter
 }
 
 // netOrigins are the origin of the game page's base and that origin's

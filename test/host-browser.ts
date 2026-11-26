@@ -173,6 +173,68 @@ for (const host of hosts) {
   });
 }
 
+// A game that knows nothing of any host: hooks for who this screen is, who else plays and what they say. Its
+// zirbel.json names the adapter beside it, which the game page loads after the game, and which alone talks to zirbel-net.
+const hookedGame = {
+  'index.html': '<!doctype html><p id="out">waiting</p><script type="module" src="./game.js"></script>',
+  'game.js': `const out = document.getElementById('out');
+    const others = new Set();
+    let me = 1, heard = 'nothing';
+    const draw = () => { out.textContent = (others.size + 1) + ' players, me ' + me + ', heard ' + heard; };
+    globalThis.gameHooks = {
+      me: (id) => { me = id; draw(); },
+      join: (id) => { if (id !== me) others.add(id); draw(); },
+      leave: (id) => { others.delete(id); draw(); },
+      input: () => 'hello from ' + me,
+      control: (id, input) => { heard = input; draw(); },
+    };
+    draw();`,
+};
+const tinyAdapter = `const game = globalThis.gameHooks;
+  const zn = await import('/zirbel-net.js');
+  const net = zn.connect(zn.launchParams());
+  net.on('open', () => { game.me(net.id); for (const id of net.peers.keys()) game.join(id); net.send(zn.ALL, 1, game.input()); });
+  net.on('peer', (id) => { game.join(id); net.send(id, 1, game.input()); });
+  net.on('leave', (id) => game.leave(id));
+  net.on('message', (from, type, r) => game.control(from, r.text()));`;
+
+for (const host of hosts) {
+  test(host.name + ' host: two browsers play a game with no line about Zirbel, through the adapter its zirbel.json names', async (t) => {
+    assert.doesNotMatch(Object.values(hookedGame).join('\n'), /zirbel|location|import/i);
+    const root = tempDir(t, 'zirbel-host-adapter-');
+    const projects = new Projects(join(root, 'source'));
+    const project = importGameFolder(projects, { title: 'Hooks', files: encoded({ ...hookedGame, 'net/adapter.js': tinyAdapter,
+      'zirbel.json': JSON.stringify({ players: { max: 2 }, multiplayer: { adapter: 'net/adapter.js' } }) }) });
+    const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
+    const file = join(root, 'release.json');
+    writeFileSync(file, JSON.stringify(release));
+    const link = await launch(t, host.command, ['--host-only', '--player-port', '0',
+      '--data', join(root, 'data'), '--import', file, '--release', release.manifest.releaseId],
+    (line) => typeof line.link === 'string' ? line.link : undefined).ready;
+    const browser = await chromium.launch();
+    t.after(() => browser.close());
+    const failures: string[] = [];
+    const pages = await Promise.all([1, 2].map(async () => (await browser.newContext()).newPage()));
+    for (const [index, page] of pages.entries()) {
+      page.on('pageerror', (error) => failures.push(error.message));
+      page.on('console', (message) => { if (/Content Security Policy|Refused to/.test(message.text())) failures.push(message.text()); });
+      await page.goto(link);
+      await page.locator('#join-form input[name="name"]').fill('Player ' + (index + 1));
+      await page.locator('#join-form button.primary').click();
+    }
+    // Two seats, each screen its own, and each heard the other.
+    const seen: string[] = [];
+    for (const page of pages) {
+      const out = page.frameLocator('iframe').locator('#out').filter({ hasText: /^2 players, me \d, heard hello from \d$/ });
+      await out.waitFor({ timeout: 15_000 });
+      const [, me, from] = /me (\d), heard hello from (\d)/.exec(await out.textContent() ?? '')!;
+      seen.push(me + '<' + from);
+    }
+    assert.deepEqual(seen.sort(), ['1<2', '2<1']);
+    assert.deepEqual(failures, []);
+  });
+}
+
 // A built game in the sandbox: its stylesheet, a module importing a module, a fetch
 // and an image all load from beside its document, and a request elsewhere is refused.
 const dot = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';

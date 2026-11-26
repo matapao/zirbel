@@ -58,39 +58,55 @@ func withinPlayers(game *Game) error {
 	return nil
 }
 
-// manifestBase64 is the longest zirbel.json netPlayers reads: 64 KB as base64.
+// ownAdapter is gameDocument's refinement on an adapter: one of the game's
+// files, in a game with net (the schema checks its path).
+func ownAdapter(game *Game) error {
+	if _, ok := game.Files[game.Adapter]; game.Adapter != "" && (!game.Net || !ok) {
+		return fail(http.StatusBadRequest, "game.adapter · An adapter is one of the game’s own files, in a game with net.")
+	}
+	return nil
+}
+
+// manifestBase64 is the longest zirbel.json describedGame reads: 64 KB as base64.
 const manifestBase64 = (65_536 + 2) / 3 * 4
 
-// netPlayers mirrors netPlayers in packages/core/game-files.ts. A built folder
-// can carry zirbel.json, the earlier Zirbel's description of a game: an integer
-// players.max above 1 there says the game brings its own netcode, for up to 16
-// players. Anything else (missing, too long, not JSON, not an integer) leaves a
-// game for one.
-func netPlayers(encoded string, present bool) int {
+// describedGame mirrors describedGame in packages/core/game-files.ts. A built
+// folder can carry zirbel.json, the earlier Zirbel's description of a game: an
+// integer players.max above 1 there says the game brings its own netcode, for
+// up to 16 players. Anything else (missing, too long, not JSON, not an integer)
+// leaves a game for one. Such a game's multiplayer.adapter names its adapter,
+// one of the folder's .js or .mjs files: anything else leaves it without one.
+func describedGame(encoded string, present bool, files map[string]string) (players int, adapter string) {
 	if !present || len(encoded) > manifestBase64 {
-		return 1
+		return 1, ""
 	}
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return 1
+		return 1, ""
 	}
 	// Decode keeps the last of duplicate keys, as JSON.parse does.
 	parsed, err := contracts.Decode(data)
 	if err != nil {
-		return 1
+		return 1, ""
 	}
 	manifest, _ := parsed.(map[string]any)
-	players, _ := manifest["players"].(map[string]any)
-	number, ok := players["max"].(json.Number)
+	described, _ := manifest["players"].(map[string]any)
+	number, ok := described["max"].(json.Number)
 	if !ok {
-		return 1
+		return 1, ""
 	}
 	// JSON.parse reads every number as a double: 3.0 is 3, and 1e400 is Infinity.
 	max, err := strconv.ParseFloat(string(number), 64)
 	if err != nil || math.IsInf(max, 0) || max != math.Trunc(max) || max <= 1 {
-		return 1
+		return 1, ""
 	}
-	return int(math.Min(max, netPlayersMax))
+	multiplayer, _ := manifest["multiplayer"].(map[string]any)
+	adapter, _ = multiplayer["adapter"].(string)
+	// Every path in files is a game file path already, so its extension is what is left to check.
+	if _, ok := files[adapter]; !ok || !strings.HasSuffix(adapter, ".js") && !strings.HasSuffix(adapter, ".mjs") {
+		adapter = ""
+	}
+	return int(math.Min(max, netPlayersMax)), adapter
 }
 
 func gameFileType(name string) string {
@@ -187,7 +203,7 @@ func (s *Projects) ImportGameFolder(data []byte) (*Project, error) {
 		}
 	}
 	manifest, described := input.Files["zirbel.json"]
-	players := netPlayers(manifest, described)
-	game := &Game{HTML: html, MaxPlayers: players, Net: players > 1, Files: stored}
+	players, adapter := describedGame(manifest, described, stored)
+	game := &Game{HTML: html, MaxPlayers: players, Net: players > 1, Adapter: adapter, Files: stored}
 	return s.createRevision(title, initialRevision{game: game, label: "Imported game folder"})
 }

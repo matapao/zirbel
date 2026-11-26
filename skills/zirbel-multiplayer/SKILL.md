@@ -21,19 +21,17 @@ Put `zirbel.json` beside `index.html` in the built folder. A `players.max` above
 { "players": { "min": 1, "max": 8 } }
 ```
 
-Today Zirbel reads `players.max` and nothing else from this file.
+Zirbel reads `players.max` and `multiplayer.adapter` (below) from this file, and nothing else.
 
-## 2. The one line the game carries
+## 2. Name the adapter in zirbel.json
 
-In the game's entry module, after it has set up its hooks:
-
-```js
-if (new URLSearchParams(location.search).has('room')) import('./zirbel-adapter.js');
+```json
+{ "players": { "min": 1, "max": 8 }, "multiplayer": { "adapter": "zirbel-adapter.js" } }
 ```
 
-Zirbel opens a net game's page with `?room=<room>&key=<key>`. Hosted anywhere else, the page has no `?room=`, the adapter never loads, and the game is the single-player game it always was. A later Zirbel will load the adapter named in zirbel.json itself, and then even this line goes.
+In a multiplayer room, Zirbel's game page loads the adapter as a module after the game's own document, opened with `?room=<room>&key=<key>`. The game's own code carries no line about Zirbel; hosted anywhere else, nothing loads the adapter. The path is relative to `index.html`, without `./`, to a `.js` or `.mjs` file in the folder; anything else leaves the game without an adapter. The adapter runs after the game's module scripts start, so set `globalThis.gameHooks` before the entry's first `await`. Ship `zirbel-adapter.js` as it is, so no bundler renames it (for Vite, in `public/`).
 
-If a bundler builds the entry into a subfolder, resolve the adapter beside `index.html` instead, so no bundler rewrites it: `import(/* @vite-ignore */ new URL('zirbel-adapter.js', document.baseURI).href)`. Ship `zirbel-adapter.js` as it is (for Vite, in `public/`).
+Only for a host that doesn't load the adapter itself does the game's entry carry one line, after it has set up its hooks: `if (new URLSearchParams(location.search).has('room')) import('./zirbel-adapter.js');`
 
 ## 3. The hooks
 
