@@ -71,6 +71,8 @@ export class Room {
   space: { readonly id: string; readonly invite: string } | null = null;
   /** The space's participants and whether any is connected, as the kernel last listed them. */
   members = { participants: 0, connected: false };
+  /** When the space was opened, on the monotonic clock. */
+  spaceOpened = 0;
   readonly seats = new Map<string, Seat>();
   private pending = new Map<string, { name: string; role: SeatInfo['role']; expires: number }>();
   private tickNumber = 0;
@@ -305,6 +307,7 @@ export class Rooms {
         if (opened.code && tries < 3 && this.open().some((other) => other.code === opened.code)) { kernel.close(opened.space); continue; }
         if (!this.rooms.has(room.id)) { kernel.close(opened.space); throw new ZirbelError(404, 'This room has closed.'); }
         room.space = { id: opened.space, invite: opened.invite };
+        room.spaceOpened = performance.now();
         room.code = opened.code ?? null;
         return room;
       }
@@ -351,10 +354,11 @@ export class Rooms {
   }
 
   /** The spaces kernel listed its spaces (Players' sweep): a room's members as it counts them, and the end of every room
-   *  whose space it no longer has. gone: the kernel went, with every space. */
-  spaces(listed: ReadonlyMap<string, { participants: number; connected: boolean }> | 'gone') {
+   *  whose space it no longer has. gone: the kernel went, with every space. since: when the list was asked for, so a
+   *  space opened while it was on its way, which it can't have, stays. */
+  spaces(listed: ReadonlyMap<string, { participants: number; connected: boolean }> | 'gone', since = Infinity) {
     for (const room of this.open()) {
-      if (!room.space) continue;
+      if (!room.space || (listed !== 'gone' && room.spaceOpened >= since)) continue;
       const members = listed === 'gone' ? undefined : listed.get(room.space.id);
       if (members) room.members = members;
       else this.close(room.id);

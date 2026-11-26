@@ -120,7 +120,8 @@ export class Players {
 
   private async listSpaces() {
     if (!this.spaces.available || !this.rooms.open().some((room) => room.space)) return;
-    try { this.rooms.spaces(await this.spaces.list()); } catch { /* listed again on the next sweep */ }
+    const since = performance.now();
+    try { this.rooms.spaces(await this.spaces.list(), since); } catch { /* listed again on the next sweep */ }
   }
 
   /** The LAN listener's port, once it runs. */

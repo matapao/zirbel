@@ -19,7 +19,7 @@ const spacesSweep = 2 * time.Second
 // while it runs, and lists its spaces until ctx's rooms are disposed.
 func (rs *Rooms) UseSpaces(kernel *Spaces) {
 	rs.kernel = kernel
-	kernel.OnReset(func() { rs.sweepSpaces(nil) })
+	kernel.OnReset(func() { rs.sweepSpaces(nil, time.Time{}) })
 	rs.done.Add(1)
 	go func() {
 		defer rs.done.Done()
@@ -33,8 +33,9 @@ func (rs *Rooms) UseSpaces(kernel *Spaces) {
 				if !kernel.Available() || !rs.anySpace() {
 					continue
 				}
+				since := time.Now()
 				if listed, err := kernel.List(); err == nil {
-					rs.sweepSpaces(listed)
+					rs.sweepSpaces(listed, since)
 				}
 			}
 		}
@@ -58,11 +59,14 @@ func (r *Room) spaceOf() *roomSpace {
 
 // sweepSpaces takes the kernel's list: a room's members as it counts them, and
 // the end of every room whose space it no longer has; nil: the kernel went,
-// with every space.
-func (rs *Rooms) sweepSpaces(listed map[string]spaceMembers) {
+// with every space. since is when the list was asked for: a space opened while
+// it was on its way, which it can't have, stays.
+func (rs *Rooms) sweepSpaces(listed map[string]spaceMembers, since time.Time) {
 	for _, room := range rs.list() {
-		space := room.spaceOf()
-		if space == nil {
+		room.mu.Lock()
+		space, opened := room.space, room.spaceOpened
+		room.mu.Unlock()
+		if space == nil || (listed != nil && !opened.Before(since)) {
 			continue
 		}
 		members, ok := listed[space.ID]
@@ -104,7 +108,7 @@ func (rs *Rooms) WithSpace(room *Room) (*Room, error) {
 		open := rs.rooms[room.ID] == room
 		if open && (!taken || tries >= 3) {
 			room.mu.Lock()
-			room.space, room.Code = &roomSpace{ID: opened.Space, Invite: opened.Invite}, opened.Code
+			room.space, room.Code, room.spaceOpened = &roomSpace{ID: opened.Space, Invite: opened.Invite}, opened.Code, time.Now()
 			room.mu.Unlock()
 		}
 		rs.mu.Unlock()

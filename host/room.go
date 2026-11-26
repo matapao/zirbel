@@ -36,8 +36,9 @@ type Room struct {
 	// members of and its own netcode plays over (none alone, or without the
 	// kernel), and members its participants and whether any is connected, as
 	// the kernel last listed them (rooms_spaces.go).
-	space   *roomSpace
-	members spaceMembers
+	space       *roomSpace
+	spaceOpened time.Time // when the space was opened
+	members     spaceMembers
 }
 
 // roomSpace is a room's space: its id, and the invitation in its link.
