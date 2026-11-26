@@ -129,6 +129,9 @@ for (const host of hosts) {
     assert.notEqual(new URL(link).port, new URL(editor).port);
     const page = await fetch(link.replace('games.lan', '127.0.0.1'));
     assert.deepEqual([page.status, await page.text()], [200, readFileSync('dist/web/lobby.html', 'utf8')]);
+    // The lobby there names the same address, for its pages' QR codes, even to a device that reached it by loopback.
+    const state = await fetch(link.replace('games.lan', '127.0.0.1') + 'lobby/state');
+    assert.equal((await state.json() as { link: string }).link, link);
   });
 
   test(host.name + ' host offers games in its lobby, starts sessions and seats players by their code', async (t) => {
@@ -165,7 +168,7 @@ for (const host of hosts) {
     assert.deepEqual(empty.body, { games: [
       { release: data.alone.id, title: 'Alone', players: { min: 1, max: 1 }, multiplayer: false },
       { release: data.shared.id, title: 'Shared', players: { min: 1, max: 2 }, multiplayer: true },
-    ], sessions: [], pair: null, edit: null });
+    ], sessions: [], pair: null, edit: null, link: null });
 
     // Starting a session: from this listener's own page, of an offered game, for a name.
     const start = { release: data.shared.id, name: 'Ada' };

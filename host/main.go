@@ -322,6 +322,7 @@ func run() error {
 		return err
 	}
 	players = &Players{rooms: rooms, runtime: runtimeFiles, local: local, lanHost: o.lanHost, lanPort: o.playerPort, lobby: lobby}
+	lobby.link = players.LobbyLink
 	if box != nil {
 		// A box's lobby is on its LAN player port from the start: its door
 		// sends the devices that aren't paired there.
