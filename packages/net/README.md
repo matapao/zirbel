@@ -4,7 +4,51 @@ zirbel-net, the earlier Zirbel's multiplayer client (MIT, see LICENSE). A Zirbel
 
 Every player listener serves the client as `/zirbel-net.js`, an ES module. The relay is a WebSocket at `/mp` on the same listener. The game page's policy allows exactly these two addresses, and only for net-v2 games. The page itself is at `/game/@<room>/<key>/`, in the shape zirbel-net gives a game's folder on its host (`/<game>/@<version>/`), with the game's files beside it; `net.data('rules.json')` reads its `data/rules.json`.
 
-To make a game multiplayer with a small adapter beside it, and leave the game itself free of network code, follow the skill `skills/zirbel-multiplayer/SKILL.md`. Every player listener serves it to agents as `/zirbel-net/SKILL.md`.
+To make a game multiplayer with a small adapter beside it, and leave the game itself free of network code, use `play()` (below) and follow the skill `skills/zirbel-multiplayer/SKILL.md`. Every player listener serves it to agents as `/zirbel-net/SKILL.md`. The rest of this guide, from Connecting on, is the raw client underneath, for games with netcode of their own.
+
+## play()
+
+```js
+import { play } from '/zirbel-net.js';
+const session = play(globalThis.gameHooks, { mode: 'predict' });
+```
+
+`play(hooks, options)` starts the game alone at once. When the page's address has `?room=` (or `options.connect.room` is set), it connects with `launchParams()`, waits up to `timeout` for a seat, and runs a mode against the game's hooks. It falls back to playing alone when there is no room, the relay refuses it, no seat comes in time, or the room ends.
+
+| Mode | For | How |
+| --- | --- | --- |
+| `snapshot` (default) | arcade, casual, physics | The host steps the game and sends each seat the entities that changed since the state that seat last confirmed (all of them on join and every `full` ms); others send inputs and draw the state, blended a little in the past. |
+| `predict` | shooters, racing | `snapshot`, and each screen applies its own numbered inputs at once; the host applies one per tick and says which it reached, and the screen replays the rest on the host's state. |
+| `actions` | turn-based, cards, board | Actions go reliably to the host, which checks them and numbers them; every seat applies them in that order. Joins and leaves are entries too. |
+| `lockstep` | deterministic simulations, strategy | Each tick's inputs reach every seat `delay` ticks ahead; every seat steps the same game; the host decides joins and leaves at ticks nobody has reached; a checksum every `check` ticks finds drift. |
+| `events` | big or destructible worlds | `actions`, with the host running the world: its changes are actions too, and a newcomer gets the world in chunks within the relay's message limit, then the entries since. |
+
+The hooks each mode uses (a hook a mode doesn't use is never called; alone, the game's own player is 1):
+
+| Hook | snapshot | predict | actions | events | lockstep |
+| --- | --- | --- | --- | --- | --- |
+| `me(id)` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `join(id)`, `leave(id)` | host; leave everywhere | host; leave everywhere | every seat, in order | every seat, in order | every seat, at a tick |
+| `simulate(on)` | ✓ | ✓ | | ✓ | |
+| `snapshot()`, `restore(state)` | entities by key | entities by key | the state, for newcomers | the world (also bytes) | the state, for newcomers |
+| `input()`, `control(id, input)` | ✓ | ✓ | | | ✓ |
+| `step(dt)` | optional: play() steps | ✓ | | | ✓ |
+| `predict(input, dt)`, `player(id)` | | ✓ | | | |
+| `blend(a, b, t, key)`, `interest(seat, key, entity)` | optional | optional | | | |
+| `validate(id, action)`, `apply(id, action)` | | | ✓ | ✓ | |
+| `checksum()` | | | | | optional |
+
+Options: `mode`; `rate` (states a second, 20); `tick` (ticks a second: 30, predict 60, lockstep 20); `smooth` (ms in the past others are drawn); `full` (ms between full states, 10000); `delay` (lockstep's input delay in ticks, 2); `check` (ticks between checksums); `json` (JSON text instead of binary); `codecs` (`{ state, input, action }`, each `{ write(w, v), read(r) }`); `channels` (the game's own message names); `timeout` (ms, 10000); `net` (the simulator and overlay, as in `?net=`); `connect` (what `connect()` gets over `launchParams()`).
+
+The session: `id`, `net` (null alone), `ready` (true once seated), `isHost()`, `act(action)` (actions and events), `send(channel, value, to?)` and `stream(…)` on the game's channels, `leave()` (plays on alone), `stop()`, and the events `online`, `offline`, `host`, `away`, `back`, `drift`, `message (channel, value, from)`. play() uses app message types 0 to 15; the game's channels start at 16.
+
+### Named channels, codecs
+
+`channels(net, ['shot', 'chat'], { first, codec })` maps names to app message types in the order they are declared, so every seat agrees without numbers chosen by hand: `ch.send('shot', { x, y })`, `ch.stream(…)`, `ch.on('shot', (value, from, reliable) => …)`, `ch.close()`. Values go through a codec: `pack` (the default: binary and exact, one byte for whole numbers below 240, keys as UTF-8, `Uint8Array` as it is) or `json`.
+
+### The network simulator and the stats overlay
+
+`?net=lag:120,jitter:30,loss:5,kbps:256,stats` in a game page's address, or `play(hooks, { net: 'lag:120,stats' })`, puts a simulated link under play()'s connection: `lag` adds that many ms to the round trip (half each way), `jitter` up to that many ms more each way at random, `loss` drops that percent of unreliable app messages each way (reliable ones and the client's pings never), and `kbps` caps each way, so frames queue and the client drops stale unreliable data behind the queue as it would on a slow link. Frames keep their order, as on a WebSocket. Nothing is simulated unless asked. `stats` shows a small overlay in the page's corner: the mode and seat, the round trip, jitter, kB/s each way and drops. With the raw client: `connect({ ...launchParams(), WebSocket: netsim({ lag: 120 }) })` and `overlay(net)`.
 
 ## Connecting
 

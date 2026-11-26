@@ -195,8 +195,11 @@ async function showGame() {
     authoredFrame.sandbox.add('allow-scripts', 'allow-pointer-lock');
     authoredFrame.referrerPolicy = 'no-referrer';
     // A game with its own netcode finds its room on the relay from the address: zirbel-net's launchParams().
+    // A simulated network for testing (zirbel-net's ?net=lag:120,…) goes from the player's address to the game's.
+    const simulated = new URLSearchParams(location.search).get('net');
     authoredFrame.src = info.manifest.simulation === 'net-v2'
       ? info.gameUrl + '?room=' + encodeURIComponent(room) + '&key=' + encodeURIComponent(info.gameUrl.split('/')[3] ?? '')
+        + (simulated ? '&net=' + encodeURIComponent(simulated) : '')
       : info.gameUrl;
     game.prepend(authoredFrame);
     return;
