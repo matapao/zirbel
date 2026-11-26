@@ -1,5 +1,5 @@
-import { activityKey, activityTurns, chatBusy, chatSettings, chatSettingsKey, lastProjectKey, markedObjects, MAX_SUGGESTIONS,
-  objectPreferenceKey, promptDrafts, recentProjectsKey, threadKey, ws, type Preview, type ProjectCard } from './state.ts';
+import { activityKey, activityTurns, chatBusy, chatSettings, chatSettingsKey, editorOf, lastProjectKey, markedObjects, MAX_SUGGESTIONS,
+  objectPreferenceKey, promptDrafts, recentProjectsKey, threadKey, ws, type Me, type Preview, type ProjectCard } from './state.ts';
 import { legacyScene, type Operation, type Project, type Revision } from '../sdk/contracts.ts';
 import { objectRegistry } from '../sdk/game.ts';
 import { $, api, attempt, inform } from './editor-ui.ts';
@@ -315,15 +315,19 @@ document.addEventListener('keydown', (event) => {
 
 try {
   [ws.health] = await Promise.all([api<typeof ws.health>('health'), listProjects()]);
-  $('host-status-text').textContent = 'Local workspace';
-  await restoreProject().catch((error: Error) => inform(error.message, true));
+  // On a box, an editor of one game opens that game, and has no harness chat of the box's.
+  if (ws.health.box) ws.me = await api<Me>('me');
+  const only = editorOf();
+  if (only) ws.health.chat = false;
+  $('host-status-text').textContent = only ? 'Editing one game on this box' : 'Local workspace';
+  await (only ? loadProject(only) : restoreProject()).catch((error: Error) => inform(error.message, true));
   render();
   if (!ws.project) await syncThread().catch((error: Error) => inform(error.message, true));
   await refreshProcessors();
   window.addEventListener('focus', () => { if (!chatBusy()) void refreshProcessors(); });
   setBoxHooks({ openHarnesses, refreshProcessors });
-  // A box opened before its first-run choice was made asks how to use it.
-  if (ws.health.box && !ws.health.box.onboarded) openOnboarding();
+  // A box opened before its first-run choice was made asks its owners how to use it.
+  if (ws.health.box && !ws.health.box.onboarded && !only) openOnboarding();
 } catch (error) {
   $('host-status-text').textContent = 'Workspace unavailable';
   $('host-status').classList.add('failed');

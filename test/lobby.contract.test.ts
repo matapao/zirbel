@@ -142,14 +142,14 @@ for (const host of hosts) {
       { release: data.shared.id, offered: true, extra: 1 }]) assert.equal((await owner('POST', 'lobby/offer', input)).status, 400);
     assert.deepEqual(JSON.parse(readFileSync(join(data.data, 'lobby.json'), 'utf8')), { version: 1, offered: [data.shared.id, data.alone.id] });
 
-    // The lobby: games by title, no sessions yet, and no pairing link outside a box.
+    // The lobby: games by title, no sessions yet, and no pairing or edit link outside a box.
     const empty = await lobby('state');
     assert.deepEqual([empty.headers.get('content-type'), empty.headers.get('cache-control'), empty.headers.get('x-content-type-options'),
       empty.headers.get('referrer-policy')], ['application/json; charset=utf-8', 'no-store', 'nosniff', 'no-referrer']);
     assert.deepEqual(empty.body, { games: [
       { release: data.alone.id, title: 'Alone', players: { min: 1, max: 1 }, multiplayer: false },
       { release: data.shared.id, title: 'Shared', players: { min: 1, max: 2 }, multiplayer: true },
-    ], sessions: [], pair: null });
+    ], sessions: [], pair: null, edit: null });
 
     // Starting a session: from this listener's own page, of an offered game, for a name.
     const start = { release: data.shared.id, name: 'Ada' };

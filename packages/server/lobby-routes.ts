@@ -12,8 +12,9 @@ import { sendImmutable, type LobbyFiles } from './runtime-files.ts';
 const PAGE_POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
-/** pair: on a box, the pairing page's address on the host name a device reached the lobby by. */
-export type LobbyContext = { lobby: Lobby; files: LobbyFiles; pair?: (host: string) => string };
+/** pair and edit: on a box, the addresses of the pairing page and of the page that redeems a game's edit code, on the
+ *  host name a device reached the lobby by. */
+export type LobbyContext = { lobby: Lobby; files: LobbyFiles; pair?: (host: string) => string; edit?: (host: string) => string };
 
 /** The player page in a room, holding a seat's one-time ticket: it goes straight in. */
 const seatLink = (origin: string, room: { id: string }, ticket: string) => origin + '/join/' + room.id + '#seat=' + ticket;
@@ -33,7 +34,8 @@ export async function lobbyRequest(context: LobbyContext, access: 'local' | 'lan
   if (!pathname.startsWith('/lobby/')) return false;
   const address = request.socket.remoteAddress ?? '';
   if (pathname === '/lobby/state' && method === 'GET') {
-    reply(response, { ...context.lobby.state(access), pair: context.pair?.(url.hostname) ?? null });
+    reply(response, { ...context.lobby.state(access), pair: context.pair?.(url.hostname) ?? null,
+      edit: context.edit?.(url.hostname) ?? null });
     return true;
   }
   if (pathname === '/lobby/sessions' && method === 'POST') {

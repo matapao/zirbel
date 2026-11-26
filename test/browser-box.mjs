@@ -1,12 +1,13 @@
 // A Zirbel box in the browser: the first-run choice, agent access over MCP, Box settings with its switches, pairing
 // another device with a one-time code, the claim the pairing page offers while no device has paired, the lobby's
-// address for players, and the box's own Wi-Fi with its name, password and QR code.
+// address for players, the box's own Wi-Fi with its name, password and QR code, and a game's edit code, with which
+// another device edits that game alone.
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { networkInterfaces, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { openEditor } from './browser-editor.mjs';
+import { controls, openEditor } from './browser-editor.mjs';
 
 // Where the box's setup service would keep its own Wi-Fi's name and password, and the files that wake it.
 const setup = mkdtempSync(join(tmpdir(), 'zirbel-browser-setup-'));
@@ -120,4 +121,97 @@ test('a box makes its own Wi-Fi only after showing its name and password, then s
   assert.equal(await own.isChecked(), false);
   assert.ok(existsSync(woken), 'switching it off wakes the setup service too');
   assert.deepEqual(errors, []);
+});
+
+// Another device reaches the box on this computer's network address, as a phone on the box's network would: loopback
+// is the box itself, which owns it.
+const networkAddress = Object.values(networkInterfaces()).flat().some((item) => item && !item.internal && item.family === 'IPv4' &&
+  /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|169\.254\.)/.test(item.address));
+
+test('an edit code lets another device edit that one game, until the owner removes it', { timeout: 90_000, skip: !networkAddress }, async (t) => {
+  const { page, browser, errors } = await openEditor(t, async (_context, res) => res.end('{}'), ['--box', '--player-port', '0']);
+  const ui = controls(page);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'Not now' }).click();
+  const secret = await page.evaluate(async () => {
+    const post = async (path, body) => (await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body) })).json();
+    const meadow = await post('/api/projects', { title: 'Meadow' });
+    const staged = await post('/api/projects/' + meadow.id + '/proposals', { baseRevision: meadow.branches.main, branch: 'main',
+      label: 'Start', operations: [{ op: 'writeGame', game: { html: '<p id="word">Meadow</p>' } }] });
+    await post('/api/projects/' + meadow.id + '/apply/' + staged.proposal.id, {});
+    return (await post('/api/projects', { title: 'Secret' })).id;
+  });
+  await page.reload();
+  await page.locator('#prompt').waitFor();
+  await ui.choose('Meadow');
+  await ui.game.locator('#word').filter({ hasText: 'Meadow' }).waitFor();
+
+  // The owner opens the game's code: big, with its link and its QR code.
+  await ui.more('Invite editors…');
+  await dialog.getByRole('heading', { name: 'Invite editors · Meadow' }).waitFor();
+  await dialog.getByText('No edit code is open.', { exact: false }).waitFor();
+  await dialog.getByRole('button', { name: 'New code' }).click();
+  await dialog.locator('.edit-code').waitFor();
+  const code = (await dialog.locator('.edit-code').textContent()) ?? '';
+  assert.match(code, /^[2-9A-HJ-NP-Z]{3}-[2-9A-HJ-NP-Z]{3}$/);
+  const link = (await dialog.getByRole('link', { name: /\/edit\?code=/ }).textContent()) ?? '';
+  assert.match(link, new RegExp('^http://[\\d.]+:\\d+/edit\\?code=' + code.replace('-', '') + '$'));
+  assert.ok(await dialog.getByRole('img', { name: 'QR code that opens ' + link }).isVisible());
+  await page.keyboard.press('Escape');
+
+  // A device that isn't paired finds the edit page from the lobby too.
+  const origin = new URL(link).origin;
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(origin + '/');
+  const toEdit = visitor.getByRole('link', { name: 'Have an edit code?' });
+  await toEdit.waitFor();
+  assert.equal(await toEdit.getAttribute('href'), origin + '/edit');
+
+  // Another device opens the link, gives its name, and edits that game.
+  const other = await (await browser.newContext()).newPage();
+  const otherErrors = [];
+  other.on('pageerror', (error) => otherErrors.push(error.message));
+  await other.goto(link);
+  assert.equal(await other.getByRole('textbox', { name: /^Edit code/ }).inputValue(), code);
+  await other.getByRole('textbox', { name: /^Your name/ }).fill('Ada');
+  await other.getByRole('button', { name: 'Start editing' }).click();
+  await other.locator('#game-title').filter({ hasText: 'Meadow' }).waitFor();
+  const theirs = controls(other);
+  await theirs.game.locator('#word').filter({ hasText: 'Meadow' }).waitFor();
+  await other.getByText('The AI on this box is its owner’s.', { exact: false }).waitFor();
+  assert.ok(await other.getByText(/Its owner can turn on agent access/).isVisible());
+  assert.equal(await other.locator('#prompt-form').isVisible(), false);
+  // Its menus have its game alone, and nothing of the box's.
+  await theirs.switcher.click();
+  const games = other.getByRole('menu', { name: 'Games' });
+  assert.deepEqual(await games.getByRole('menuitemradio').allTextContents(), ['Meadow']);
+  assert.deepEqual(await games.getByRole('menuitem').allTextContents(), ['Lobby…']);
+  await other.keyboard.press('Escape');
+  await other.getByRole('button', { name: 'More', exact: true }).click();
+  const more = await other.getByRole('menu', { name: 'More' }).getByRole('menuitem').allTextContents();
+  assert.ok(more.includes('History') && !more.some((item) => /Box settings|Invite editors|Harnesses|Set up a Zirbel box/.test(item)), more.join(', '));
+  await other.keyboard.press('Escape');
+  await other.getByRole('button', { name: 'Share', exact: true }).click();
+  await other.getByRole('dialog').getByText('Development multiplayer').waitFor();
+  assert.equal(await other.getByText('Publish a release').count(), 0);
+  await other.keyboard.press('Escape');
+  // Its change to the source becomes a revision of the game, which the owner sees.
+  await theirs.edit.click();
+  await other.getByRole('button', { name: 'Source', exact: true }).click();
+  await other.getByRole('textbox', { name: 'Game source' }).fill('<p id="word">Ada was here</p>');
+  await other.getByRole('button', { name: 'Save source' }).click();
+  await theirs.game.locator('#word').filter({ hasText: 'Ada was here' }).waitFor();
+  const labels = await page.evaluate(async (id) => (await (await fetch('/api/projects/' + id)).json()).revisions.map(({ label }) => label),
+    await ui.projectId('Meadow'));
+  assert.equal(labels.at(-1), 'Edit game source');
+  assert.equal(await other.evaluate((id) => fetch('/api/projects/' + id).then((response) => response.status), secret), 403);
+
+  // The owner sees who edits, and removes them: their next request is refused.
+  await ui.more('Invite editors…');
+  await dialog.getByText('Ada', { exact: true }).waitFor();
+  await dialog.getByRole('button', { name: 'Remove' }).click();
+  await dialog.getByText('Nobody is editing this game with a code.').waitFor();
+  assert.equal(await other.evaluate(() => fetch('/api/projects').then((response) => response.status)), 401);
+  assert.deepEqual([...errors, ...otherErrors], []);
 });

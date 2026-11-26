@@ -10,6 +10,8 @@ export type BoxHealth = {
   harnesses: boolean; externalMcp: boolean; onboarded: boolean; setupRequested: boolean; ownNetwork: boolean;
   canRunHarnesses: boolean; harnessesUnavailable?: string; memoryMB: number; name: string;
 };
+/** Who this page is, as /api/me says on a box: the box itself, an owner, or an editor of one game. */
+export type Me = { role: 'box' | 'owner' | 'editor'; game?: string };
 
 export type Proposal = { id: string; label: string; baseRevision: string };
 export type Preview = { proposal: Proposal; preview: { scene?: Scene; game?: GameDocument; assets: Asset[] } };
@@ -53,6 +55,8 @@ export const ws = {
   modelControl: undefined as ReturnType<typeof modelPicker> | undefined,
   registerObjects: true,
   health: { mcp: false } as { mcp: boolean; chat?: boolean; box?: BoxHealth },
+  /** On a box, who this page is. An editor works on its one game alone, with no harness of the box's. */
+  me: { role: 'owner' } as Me,
   view: { x: 0, y: 0, zoom: 1, grid: false, tool: 'select' as 'select' | 'pan' },
   playtest: undefined as { id: string; link: string } | undefined,
   playtestKey: undefined as string | undefined,
@@ -67,6 +71,8 @@ export const threadKey = (id: string | undefined, name: string) => id ? id + '/'
 export const activityKey = () => threadKey(ws.project?.id, ws.branch);
 export const visibleTurn = () => activityTurns.get(activityKey());
 export const chatBusy = () => visibleTurn()?.pending === true;
+/** The one game this page edits, when it is an editor's on a box. */
+export const editorOf = () => ws.me.role === 'editor' ? ws.me.game : undefined;
 export const lastProjectKey = 'zirbel-last-project-v1';
 export const workspaceThreadKey = 'zirbel-workspace-thread-v1';
 export const recentProjectsKey = 'zirbel-recent-projects-v1';

@@ -1,7 +1,7 @@
 // Split from workspace.ts; shares state through ws in state.ts.
 // The top bar: the game switcher on the left, with the library and the lobby; Edit, Assets and Share on the right, and the ⋯ menu for the rest.
 import { $, action, attempt, el } from './editor-ui.ts';
-import { ws } from './state.ts';
+import { editorOf, ws } from './state.ts';
 import { current, edit, hasContent, leaveProject, library, loadProject, recentCards, route } from './workspace.ts';
 import { menuButton, panelButton, type MenuItem } from './menu.ts';
 import { agentAccessDialog, assetDialog, historyDialog, sharingDialog } from './dialogs.ts';
@@ -11,6 +11,7 @@ import { openHarnesses } from './chat.ts';
 import { openBoxSettings } from './box.ts';
 import { boxSetupDialog } from './box-setup.ts';
 import { lobbyDialog } from './lobby-address.ts';
+import { inviteEditorsDialog, ownAgentDialog } from './editors.ts';
 
 let assets: { readonly open: boolean } | undefined;
 
@@ -20,6 +21,8 @@ function gameMenu(): MenuItem[] {
     checked: card.id === ws.project?.id,
     run: () => attempt(() => loadProject(card.id)),
   }));
+  // An editor of one game on a box has that game alone, and the lobby.
+  if (editorOf()) return [...recent, 'separator', { label: 'Lobby…', run: () => attempt(lobbyDialog) }];
   return [
     ...recent,
     ...(recent.length ? ['separator' as const] : []),
@@ -53,9 +56,16 @@ function moreMenu(): MenuItem[] {
         label: 'Open game in a new window',
         run: () => openGame(route('playtest'), { branch: ws.branch, proposalId: ws.candidate?.proposal.id }),
       });
+    if (editorOf()) {
+      // Its own agent, while the box's owner lets agents in over MCP.
+      if (ws.health.mcp) items.push({ label: 'Use your own Claude Code or Codex…', run: () => ownAgentDialog(project.id, project.title) });
+      return items;
+    }
     if (ws.health.mcp)
       items.push({ label: 'Agent access…', run: () => attempt(() => agentAccessDialog(project.id, project.title)) });
+    if (ws.health.box) items.push({ label: 'Invite editors…', run: () => attempt(() => inviteEditorsDialog(project.id, project.title)) });
   }
+  if (editorOf()) return items;
   if (ws.health.chat) items.push({ label: 'Harnesses', run: () => attempt(openHarnesses) });
   if (ws.health.box) items.push({ label: 'Box settings…', run: () => attempt(openBoxSettings) });
   items.push({ label: 'Set up a Zirbel box…', run: boxSetupDialog }, { label: 'Settings', run: openChatSettings });
