@@ -13,7 +13,7 @@ const guide = (name: string, title: string, description: string) =>
 /** The guides, in the order to read them. */
 export const guideResources = [
   guide('overview', 'Zirbel overview', 'What Zirbel is: games, revisions, the editor, the lobby and its sessions, a box, and what this grant allows.'),
-  guide('game-format', 'Game format', 'A game as a folder: index.html and the files beside it, zirbel.json, players, the sandbox it runs in and window.zirbel.'),
+  guide('game-format', 'Game format', 'A game as a folder: index.html and the files beside it, zirbel.json, players, controllers and keys, the sandbox it runs in and window.zirbel.'),
   guide('files', 'Reading and writing files', 'How to download the game’s files and stage changes to them with read_file and write_files.'),
   guide('revisions', 'Revisions and proposals', 'History, branches, proposals and changes applied straight in, and what to do when the branch has moved on.'),
   guide('multiplayer', 'Multiplayer', 'The skill for making a game multiplayer with a thin adapter over zirbel-net, and how to do it over this connection.'),
