@@ -1,6 +1,6 @@
 // The lobby on both hosts: `node dist/server.mjs` and the Go host (host/bin/zirbel-host). The owner offers releases in
-// the editor; anyone who reaches a player listener opens the lobby page at /, starts a session of an offered game and
-// joins one by its code. Every check runs against each host, with the same answers.
+// the editor; anyone who reaches a player listener opens the lobby page at / (or the TV page at /tv), starts a session
+// of an offered game and joins one by its code. Every check runs against each host, with the same answers.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -101,6 +101,24 @@ for (const host of hosts) {
       assert.equal((await fetch(player + path)).status, 404, path);
     assert.deepEqual(error(await call(player, 'GET', '/lobby/sessions')), [404, 'Lobby route does not exist.']);
     assert.deepEqual(error(await call(player, 'POST', '/lobby/state', {})), [404, 'Lobby route does not exist.']);
+  });
+
+  test(host.name + ' host serves the TV page and its files on the player listener', async (t) => {
+    const data = fixtures(t);
+    const { player } = await startEditor(t, host.command, data.data, []);
+    const page = await fetch(player + '/tv');
+    // The lobby page's policy, and the pads socket on this host for the screen it is.
+    const policy = PAGE_POLICY.replace("connect-src 'self'", "connect-src 'self' ws://" + new URL(player).host);
+    assert.deepEqual([page.status, page.headers.get('content-type'), page.headers.get('cache-control'), page.headers.get('content-security-policy')],
+      [200, 'text/html; charset=utf-8', 'no-cache', policy]);
+    assert.equal(await page.text(), readFileSync('dist/web/tv.html', 'utf8'));
+    for (const [file, type] of [['tv.js', 'application/javascript; charset=utf-8'], ['tv.css', 'text/css; charset=utf-8']]) {
+      const served = await fetch(player + '/' + file);
+      assert.deepEqual([served.status, served.headers.get('content-type'), served.headers.get('cache-control')], [200, type, 'no-cache'], file);
+      assert.equal(await served.text(), readFileSync('dist/web/' + file!, 'utf8'));
+    }
+    for (const path of ['/tv.html', '/tv/', '/tv/more']) assert.equal((await fetch(player + path)).status, 404, path);
+    assert.equal((await fetch(player + '/tv', { method: 'POST' })).status, 404);
   });
 
   test(host.name + ' host serves agents the skill that makes a game multiplayer, beside zirbel-net\'s client', async (t) => {

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Zirbel · TV</title>
+  <link rel="stylesheet" href="/tv.css">
+  <script type="module" src="/tv.js"></script>
+</head>
+<body>
+  <main class="tv">
+    <div class="stage">
+      <header>
+        <span class="mark" aria-hidden="true">✦</span> <strong>Zirbel</strong> <span class="quiet">TV</span>
+        <button id="full" type="button" data-nav data-key="full" hidden>Full screen</button>
+      </header>
+      <p id="cannot" class="note" hidden>This screen shows the lobby, but its browser can’t play the games here. Play them on
+        a phone or a laptop: scan the code for the lobby there.</p>
+      <section id="home" aria-label="Lobby">
+        <h2>Games</h2>
+        <ul id="games" class="tiles"></ul>
+        <p id="no-games" hidden>No games are in the lobby yet.</p>
+        <h2>Playing now</h2>
+        <ul id="sessions" class="tiles"></ul>
+      </section>
+      <section id="code" hidden aria-labelledby="code-title">
+        <h1 id="code-title">Join a session</h1>
+        <p>Its code, from whoever started it:</p>
+        <p id="slots" class="slots" aria-live="polite"></p>
+        <div id="letters" class="letters" role="group" aria-label="Letters"></div>
+        <div class="row">
+          <button id="delete" type="button" data-nav data-key="delete">Delete</button>
+          <button id="code-back" type="button" data-nav data-key="code-back">Back</button>
+        </div>
+      </section>
+      <section id="started" hidden aria-labelledby="started-title">
+        <h1 id="started-title">Your session is ready</h1>
+        <p>The others join it from the lobby with this code, or scan this with a phone:</p>
+        <div class="invite"><p id="session-code" class="code"></p><span id="session-qr" class="qr-frame"></span></div>
+        <div class="row">
+          <button id="go-in" type="button" class="primary" data-nav data-key="go-in">Go in</button>
+          <button id="started-back" type="button" data-nav data-key="started-back">Back to the lobby</button>
+        </div>
+      </section>
+      <section id="elsewhere" hidden aria-labelledby="elsewhere-title">
+        <h1 id="elsewhere-title">Play on a phone or a laptop</h1>
+        <p>Scan this to open the lobby there:</p>
+        <div class="invite"><span id="elsewhere-qr" class="qr-frame"></span><p id="elsewhere-link" class="address"></p></div>
+        <div class="row"><button id="elsewhere-back" type="button" data-nav data-key="elsewhere-back">Back</button></div>
+      </section>
+      <p id="error" class="error" role="alert"></p>
+    </div>
+    <aside id="places" class="corner" aria-label="Players"></aside>
+  </main>
+</body>
+</html>

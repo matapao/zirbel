@@ -33,7 +33,7 @@ export type Capabilities = { arch: string; memoryMB: number; model?: string; har
 /** Under this much memory (a 2 GB board reports a little less), harnesses start off: a turn may run the box out of it.
  *  So does the TV, whose browser needs room beside the editor; and it starts on only on a 64-bit box (docs/box-tv.md). */
 const ROOMY_MB = 1536;
-export const tvByDefault = (capabilities: Capabilities) => capabilities.arch === 'arm64' && capabilities.memoryMB >= ROOMY_MB;
+const tvByDefault = (capabilities: Capabilities) => capabilities.arch === 'arm64' && capabilities.memoryMB >= ROOMY_MB;
 
 export function boxCapabilities(): Capabilities {
   let model: string | undefined;

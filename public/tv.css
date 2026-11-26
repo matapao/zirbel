@@ -1,0 +1,54 @@
+/* The TV page (tv.html): read from across a room, moved around by focus. It keeps to what a TV's browser as old as
+   Chromium 80 lays out: grid gaps, no flex gaps, no dvh, aspect-ratio, :has or color-mix. */
+:root{color-scheme:dark;--page:#0e1510;--panel:#18241b;--line:#2f4235;--ink:#f1f3e4;--quiet:#b6c4b1;--accent:#d6f697;--focus:#ffffff;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif;font-size:clamp(15px,1.15vw,36px)}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;min-height:100vh;background:var(--page);color:var(--ink)}
+body{line-height:1.35;overflow-x:hidden}
+button{font:inherit;color:inherit}
+.tv{display:grid;grid-template-columns:minmax(0,1fr) minmax(17em,28%);grid-gap:2em;min-height:100vh;padding:1.4em 2.2em}
+.stage{min-width:0}
+header{display:flex;align-items:center;font-size:1.25em;margin-bottom:.8em}
+header .mark{color:var(--accent);margin-right:.35em}
+header .quiet{color:var(--quiet);margin-left:.35em}
+header button{margin-left:auto}
+h1{font-size:1.9em;margin:.2em 0 .4em}
+h2{font-size:1.15em;margin:1em 0 .5em;color:var(--quiet);font-weight:650;letter-spacing:.02em}
+p{margin:.3em 0;color:var(--quiet)}
+.note{background:#2c2a17;color:#f3e7b4;border-radius:.6em;padding:.6em .9em;margin:0 0 .6em}
+.tiles{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));grid-gap:1em}
+button{cursor:pointer;border:.12em solid var(--line);background:var(--panel);border-radius:.7em;padding:.55em 1em;transition:transform .12s ease,border-color .12s ease}
+button:focus{outline:.18em solid var(--focus);outline-offset:.18em;border-color:var(--accent);transform:scale(1.04);position:relative;z-index:1}
+.primary{background:var(--accent);color:#1b2b17;font-weight:700;border-color:var(--accent)}
+.tile{display:block;width:100%;min-height:7.2em;text-align:left;padding:.9em 1em}
+.tile strong{display:block;font-size:1.25em;overflow-wrap:anywhere}
+.tile small{display:block;color:var(--quiet);font-size:.8em;margin-top:.2em}
+.tile .action{display:inline-block;margin-top:.7em;font-weight:700;color:var(--accent)}
+.row{display:grid;grid-auto-flow:column;grid-auto-columns:max-content;grid-gap:.8em;margin-top:1em}
+.slots{display:grid;grid-template-columns:repeat(4,1.6em);grid-gap:.35em;font-size:2.6em;font-weight:800;margin:.3em 0 .6em}
+.slots span{display:block;height:1.35em;line-height:1.35em;text-align:center;border-bottom:.08em solid var(--accent);color:var(--accent)}
+.letters{display:grid;grid-template-columns:repeat(8,3.1em);grid-gap:.5em}
+.letters button{height:2.6em;font-size:1.1em;font-weight:700;padding:0}
+.invite{display:grid;grid-template-columns:auto auto;justify-content:start;align-items:center;grid-gap:1.6em;margin:.6em 0}
+.code{font-size:3.6em;font-weight:800;letter-spacing:.16em;color:var(--accent);margin:0;font-variant-numeric:tabular-nums}
+.qr-frame{display:block;width:9em;height:9em}
+.qr{display:block;width:100%;height:100%;background:#fff;border-radius:.4em}
+.address{color:var(--accent);font-weight:650;overflow-wrap:anywhere}
+.error{color:#ffc9a9;min-height:1.4em;margin-top:1em}
+.corner{background:var(--panel);border:.08em solid var(--line);border-radius:1em;padding:1em 1.1em;align-self:start;position:-webkit-sticky;position:sticky;top:1.6em}
+.corner h2{margin-top:0}
+.join{display:grid;grid-template-columns:7em minmax(0,1fr);grid-gap:.9em;align-items:center;margin-bottom:.9em}
+.join .qr-frame{width:7em;height:7em}
+.join .code{font-size:1.7em;letter-spacing:.1em;display:block}
+.join small{display:block;color:var(--quiet);font-size:.7em;overflow-wrap:anywhere}
+.places{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;grid-gap:.5em}
+.place{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-column-gap:.45em;align-items:center;width:100%;min-height:3.9em;text-align:left;padding:.35em .45em .35em .55em;border-left:.4em solid var(--place)}
+.place .tag{font-weight:800;color:var(--place)}
+.place .who{font-size:.72em;overflow-wrap:anywhere}
+.place .qr-frame{width:3.1em;height:3.1em}
+.place.empty{background:transparent}
+.place.moving{border-color:var(--accent);border-style:dashed}
+.menu{display:grid;grid-gap:.5em;margin-top:.8em}
+.menu button{text-align:left;font-size:.85em}
+.menu p{font-size:.85em}
+@media (max-width:900px){.tv{grid-template-columns:1fr;padding:1em}.corner{position:static}}

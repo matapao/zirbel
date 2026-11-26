@@ -7,14 +7,20 @@ import (
 	"zirbel/contracts"
 )
 
-// The lobby's routes, mirroring packages/server/lobby-routes.ts: its page and
-// API on every player listener, public on that listener's network, and the
-// owner's side in the editor API.
+// The lobby's routes, mirroring packages/server/lobby-routes.ts: its page,
+// the TV page at /tv and the API on every player listener, public on that
+// listener's network, and the owner's side in the editor API.
 
 // lobbyPolicy is the lobby page's: it runs its own script and style alone,
 // and talks only to its listener.
 const lobbyPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
 	"base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+
+// tvPolicy is the TV page's: the lobby's, and the pads socket on this host
+// for the screen it is.
+func tvPolicy(host string) string {
+	return strings.Replace(lobbyPolicy, "connect-src 'self'", "connect-src 'self' ws://"+host, 1)
+}
 
 // seatLink is the player page in a room, holding a seat's one-time ticket: it
 // goes straight in.
@@ -27,12 +33,20 @@ func seatLink(base string, room *Room, ticket string) string {
 func (l *Listener) serveLobby(w http.ResponseWriter, r *http.Request, pathname string) (bool, error) {
 	get, post := r.Method == http.MethodGet, r.Method == http.MethodPost
 	name := strings.TrimPrefix(pathname, "/")
-	if pathname == "/" {
+	switch pathname {
+	case "/":
 		name = "lobby.html"
+	case "/tv":
+		name = "tv.html"
+	case "/lobby.html", "/tv.html":
+		name = ""
 	}
-	if file := l.lobbyFiles[name]; get && file != nil && (pathname == "/" || name != "lobby.html") {
-		if name == "lobby.html" {
+	if file := l.lobbyFiles[name]; get && file != nil {
+		switch name {
+		case "lobby.html":
 			w.Header().Set("content-security-policy", lobbyPolicy)
+		case "tv.html":
+			w.Header().Set("content-security-policy", tvPolicy(r.Host))
 		}
 		sendFile(w, r, typeFor(name), "no-cache", file)
 		return true, nil
