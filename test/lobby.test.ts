@@ -178,8 +178,9 @@ test('the lobby’s address for other devices is on the LAN listener, by a name 
   assert.equal(players.lobbyLink('192.168.1.2'), null);
   await players.startLan();
   const port = players.lanPort!;
-  // On a box, the name the editor was reached by, unless only the box itself reaches it by that; else the player host.
-  for (const [reached, address] of [['192.168.1.2', '192.168.1.2'], ['zirbel.local', 'zirbel.local'], ['[fd00::2]', '[fd00::2]'],
+  // On a box, the address the editor was reached by, unless only the box itself reaches it by that, or it is a name
+  // (a .local name a phone may not resolve); else the player host.
+  for (const [reached, address] of [['192.168.1.2', '192.168.1.2'], ['zirbel.local', 'games.lan'], ['[fd00::2]', '[fd00::2]'],
     [undefined, 'games.lan'], ['127.0.0.1', 'games.lan'], ['127.1.2.3', 'games.lan'], ['localhost', 'games.lan'], ['[::1]', 'games.lan']])
     assert.equal(players.lobbyLink(reached), 'http://' + address + ':' + port + '/', String(reached));
 });

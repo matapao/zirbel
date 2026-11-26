@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"net"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -90,8 +92,10 @@ func (p *Players) LobbyLink(host string) *string {
 	if port == 0 {
 		return nil
 	}
+	// An address another device can open as it is: a name, even one this device resolved (a box's .local name),
+	// is often one a phone or an office network can't.
 	address := host
-	if address == "" || loopbackName(address) {
+	if address == "" || loopbackName(address) || net.ParseIP(strings.TrimSuffix(strings.TrimPrefix(address, "["), "]")) == nil {
 		address = p.lanAddress()
 	}
 	if address == "" {

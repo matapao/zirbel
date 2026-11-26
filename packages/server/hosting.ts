@@ -1,4 +1,5 @@
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { PORTABLE_FILE_LIMIT, type Release } from '../sdk/contracts.ts';
 import { Lobby } from '../core/lobby.ts';
 import { ZirbelError } from '../core/projects.ts';
@@ -64,6 +65,9 @@ export async function stopOnSignal(stop: () => Promise<void>) {
 
 /** A host name only the device it is on reaches itself by. */
 const loopbackName = (host: string) => host === 'localhost' || host === '[::1]' || /^127\.\d+\.\d+\.\d+$/.test(host);
+// An address another device can open as it is: a name, even one this device resolved (a box's .local name), is often
+// one a phone or an office network can't.
+const sharedAddress = (host: string) => !loopbackName(host) && isIP(host.replace(/^\[(.*)\]$/, '$1')) !== 0;
 
 /** A box's player side: the LAN listener on every interface for the box's own network (reach), and the address of the
  *  pairing page the lobby links to, on the host name a device reached it by. */
@@ -133,7 +137,7 @@ export class Players {
    *  runs, or while it has no address. */
   lobbyLink(host?: string) {
     if (!this.lan) return null;
-    const address = host && !loopbackName(host) ? host : this.options.lanHost ?? lanAddresses()[0];
+    const address = host && sharedAddress(host) ? host : this.options.lanHost ?? lanAddresses()[0];
     return address ? 'http://' + address + ':' + this.lan.port + '/' : null;
   }
 

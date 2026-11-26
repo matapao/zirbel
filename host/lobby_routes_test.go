@@ -214,8 +214,9 @@ func TestTheOwnerOffersReleasesAndSeesSessionCodes(t *testing.T) {
 	if got := call(t, s, http.MethodGet, host, "/api/lobby", owner, "", nil); got.body != `{"offered":["shared"],"link":"http://games.lan:`+lanPort+`/"}`+"\n" {
 		t.Fatalf("the lobby's address: %+v", got)
 	}
-	// On a box, on the name the editor was reached by, unless only the box itself reaches it by that.
-	for reached, want := range map[string]string{"192.168.1.2": "192.168.1.2", "zirbel.local": "zirbel.local", "[fd00::2]": "[fd00::2]",
+	// On a box, on the address the editor was reached by, unless only the box itself reaches it by that, or it is a
+	// name (a .local name a phone may not resolve).
+	for reached, want := range map[string]string{"192.168.1.2": "192.168.1.2", "zirbel.local": "games.lan", "[fd00::2]": "[fd00::2]",
 		"": "games.lan", "127.0.0.1": "games.lan", "127.1.2.3": "games.lan", "localhost": "games.lan", "[::1]": "games.lan"} {
 		if got := players.LobbyLink(reached); got == nil || *got != "http://"+want+":"+lanPort+"/" {
 			t.Errorf("the lobby reached by %q: %v", reached, got)
