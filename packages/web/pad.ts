@@ -6,7 +6,7 @@
 // and comes back at its place when the connection drops. Nothing here needs a secure page: a box serves it over http.
 import { MAX_PLACES, type PlaceLabel } from '../sdk/controls.ts';
 import { padLink, readPad, type LinkState } from './pad-link.ts';
-import { restingPad, slotColour, type Pad } from './pad-state.ts';
+import { inkOn, restingPad, slotColour, type Pad } from './pad-state.ts';
 
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const join = byId('join'), pad = byId('pad'), form = byId<HTMLFormElement>('code-form'), input = byId<HTMLInputElement>('code');
@@ -110,8 +110,9 @@ function showPlace(at: number, label: PlaceLabel | null) {
   place = at;
   const colour = label?.color ?? slotColour(at);
   document.documentElement.style.setProperty('--place', colour);
+  document.documentElement.style.setProperty('--place-ink', inkOn(colour));
   placeButton.textContent = 'P' + (at + 1) + (label?.name ? ' · ' + label.name : '');
-  placeButton.setAttribute('aria-label', 'You are P' + (at + 1) + (label?.name ? ', ' + label.name : '') + '. Move to another place');
+  placeButton.setAttribute('aria-label', placeButton.textContent + ': move to another place');
   for (const button of placeList.querySelectorAll<HTMLButtonElement>('button')) button.setAttribute('aria-pressed', String(Number(button.dataset.place) === at));
 }
 function onState(code: string, state: LinkState) {

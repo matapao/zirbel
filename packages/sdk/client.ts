@@ -58,10 +58,11 @@ export class RoomClient {
     this.socket.send(JSON.stringify({ type: 'action', sequence: ++this.ack, action }));
   }
 
-  stop() {
+  /** Stops for good: leaving the seat, or (leave false) keeping it for whoever has its credential, as a TV does. */
+  stop(leave = true) {
     this.stopped = true;
     if (this.retry !== undefined) window.clearTimeout(this.retry);
-    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: 'leave' }));
+    if (leave && this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: 'leave' }));
     this.socket?.close();
   }
 }

@@ -7,14 +7,22 @@ import { MAX_AXES, MAX_BUTTONS, type PadState } from '../sdk/pads.ts';
  *  and 4 axes (the left stick's x and y, the right stick's). */
 export const STANDARD_BUTTONS = 17;
 export const STANDARD_AXES = 4;
-export const MAX_SLOTS = 8;
+const MAX_SLOTS = 8;
 export type Pad = Omit<PadState, 'slot'>;
 /** A screen's controller as its host lists it, and what the game's frame hears of it. */
 export type PadEntry = { slot: number; kind: 'phone' | 'box'; name: string; connected: boolean };
 
 /** Each slot's colour, which the pad page, the screen's panel and its list show alike. */
-export const SLOT_COLOURS = ['#f2c14e', '#5ab4f0', '#f0706a', '#79d48a', '#c595ee', '#f39c4a', '#4ccfc4', '#e9e4d0'] as const;
+const SLOT_COLOURS = ['#f2c14e', '#5ab4f0', '#f0706a', '#79d48a', '#c595ee', '#f39c4a', '#4ccfc4', '#e9e4d0'] as const;
 export const slotColour = (slot: number) => SLOT_COLOURS[slot % SLOT_COLOURS.length]!;
+/** Text that reads on a place's colour (#rrggbb, which the game may choose): dark on a light colour, white on a dark one. */
+export function inkOn(colour: string) {
+  const [red, green, blue] = [1, 3, 5].map((at) => {
+    const channel = parseInt(colour.slice(at, at + 2), 16) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue > 0.18 ? '#111812' : '#ffffff';
+}
 
 export const restingPad = (): Pad =>
   ({ standard: true, pressed: 0, values: Array<number>(STANDARD_BUTTONS).fill(0), axes: Array<number>(STANDARD_AXES).fill(0) });

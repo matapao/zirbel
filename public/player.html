@@ -11,7 +11,7 @@
   <main class="player">
     <header>
       <div><span class="mark">✦</span> <strong id="game-title">Zirbel</strong> <small id="badge"></small></div>
-      <div class="tools"><span id="connection" role="status"></span><button id="full" type="button" title="Full screen" aria-label="Full screen">⛶</button><button id="leave" type="button" hidden>Leave</button></div>
+      <div class="tools"><span id="connection" role="status"></span><button id="controllers" type="button" aria-expanded="false" aria-controls="controllers-panel" hidden>Controllers</button><button id="full" type="button" title="Full screen" aria-label="Full screen">⛶</button><button id="leave" type="button" hidden>Leave</button></div>
     </header>
     <section id="lobby" class="lobby">
       <form id="join-form" hidden>
@@ -45,6 +45,14 @@
       </section>
       <footer><span id="instructions"></span><strong id="score" role="status"></strong><button id="reset" type="button" hidden>New round</button></footer>
     </section>
+    <section id="tv-pad" class="tv-pad" aria-labelledby="tv-pad-title" hidden>
+      <h1 id="tv-pad-title">Your game is on the TV</h1>
+      <p>This page is its controller now.</p>
+      <p id="tv-pad-place" class="tv-place"></p>
+      <p id="tv-pad-status" role="status"></p>
+      <a href="/">Back to the lobby</a>
+    </section>
+    <aside id="controllers-panel" class="controllers" aria-labelledby="controllers-title" hidden></aside>
     <p id="error" class="error" role="status"></p>
   </main>
 </body>

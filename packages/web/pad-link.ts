@@ -17,7 +17,7 @@ const SOONEST = 1000 / 120;
 const STILL = 250;
 
 /** Why a controller's connection ended, by its close code, or nothing when it only dropped. */
-export function ending(code: number, screen: string): Extract<LinkState, { state: 'ended' }> | undefined {
+function ending(code: number, screen: string): Extract<LinkState, { state: 'ended' }> | undefined {
   switch (code) {
     case 4404: return { state: 'ended', message: 'No screen has the code ' + screen + '. Check the code on the screen.', retry: false };
     case 4409: return { state: 'ended', message: 'That screen has eight controllers already.', retry: true };
@@ -29,7 +29,7 @@ export function ending(code: number, screen: string): Extract<LinkState, { state
 }
 
 /** A device's own gamepad: the first connected one, if any. Some browsers have none, or none outside a secure page. */
-export function ownGamepad(): Gamepad | undefined {
+function ownGamepad(): Gamepad | undefined {
   try { return [...navigator.getGamepads?.() ?? []].find((pad): pad is Gamepad => Boolean(pad?.connected)); }
   catch { return undefined; }
 }
