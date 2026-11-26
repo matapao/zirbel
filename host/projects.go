@@ -1,15 +1,24 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
 	"zirbel/contracts"
 )
+
+// The project store, mirroring packages/core/projects.ts. A project is its
+// metadata (projects/<id>.json: title, notes, attachments, where it came from)
+// and a bare git repository (git/<id>.git) whose commits are its revisions and
+// whose branches are its branches. Every save is a commit: a proposal is one on
+// refs/zirbel/proposals/<id> until it is applied (proposals.go), and applying
+// moves the branch to it, compare-and-swap. docs/git-store.md is the design.
 
 // validContract decodes JSON and validates it against a contract.
 func validContract(name string, data []byte) (any, error) {
@@ -48,7 +57,7 @@ func safeID(id string) error {
 	return nil
 }
 
-// revision finds a revision of the project by ID.
+// revision finds a revision of the project's history by ID.
 func (p *Project) revision(id string) *Revision {
 	for i := range p.Revisions {
 		if p.Revisions[i].ID == id {
@@ -57,9 +66,11 @@ func (p *Project) revision(id string) *Revision {
 	}
 	return nil
 }
+
+// head is a branch's head, which a project lists with its content.
 func head(p *Project, branch string) (*Revision, error) {
 	if id, ok := p.Branches[branch]; ok {
-		if revision := p.revision(id); revision != nil {
+		if revision := p.revision(id); revision != nil && revision.Assets != nil {
 			return revision, nil
 		}
 	}
@@ -71,24 +82,50 @@ func assertCurrent(p *Project, branch, base string) (*Revision, error) {
 		return nil, err
 	}
 	if current.ID != base {
-		return nil, fail(http.StatusConflict, "The branch has changed. Request a new proposal against its current revision.")
+		return nil, errBranchChanged
 	}
 	return current, nil
 }
 
-// Projects is the project store in <data>/projects, proposals, assets and media.
+var errBranchChanged = fail(http.StatusConflict, "The branch has changed. Request a new proposal against its current revision.")
+
+// storedProject is projects/<id>.json: what of a project isn't its game's
+// content. Its branches and revisions are its repository's.
+type storedProject struct {
+	Version     int          `json:"version"`
+	ID          string       `json:"id"`
+	Title       string       `json:"title"`
+	Template    string       `json:"template,omitempty"`
+	Notes       []Note       `json:"notes"`
+	Attachments []Attachment `json:"attachments"`
+	Upstream    string       `json:"upstream,omitempty"`
+	Imported    bool         `json:"imported,omitempty"`
+	Source      *gitSource   `json:"source,omitempty"`
+}
+
+// projectMeta is what a new project's file starts with besides its id.
+type projectMeta struct {
+	title, template, upstream string
+	imported                  bool
+	source                    *gitSource
+}
+
+// Projects is the project store in <data>/projects, git, proposals, assets and media.
 type Projects struct {
-	root string
-	mu   sync.Mutex // Node runs each operation without yielding; serialize them here
+	root    string
+	mu      sync.Mutex // Node runs each operation without yielding; serialize them here
+	history *History
 }
 
 func NewProjects(root string) (*Projects, error) {
-	for _, name := range []string{"projects", "proposals", "assets", "media", "releases", "grants"} {
+	for _, name := range []string{"projects", "proposals", "assets", "media", "releases", "grants", "git"} {
 		if err := os.MkdirAll(filepath.Join(root, name), 0o700); err != nil {
 			return nil, err
 		}
 	}
-	return &Projects{root: root}, nil
+	s := &Projects{root: root}
+	s.history = newHistory(s)
+	return s, nil
 }
 func (s *Projects) path(id string) (string, error) {
 	if err := safeID(id); err != nil {
@@ -105,6 +142,15 @@ func (s *Projects) proposalPath(projectID, proposalID string) (string, error) {
 	}
 	return filepath.Join(s.root, "proposals", projectID+"."+proposalID+".json"), nil
 }
+
+// repository is a project's bare repository; id is one the caller checked.
+func (s *Projects) repository(id string) string { return filepath.Join(s.root, "git", id+".git") }
+
+func (s *Projects) hasAsset(hash string) bool {
+	_, err := os.Stat(filepath.Join(s.root, "assets", hash))
+	return hashPattern.MatchString(hash) && err == nil
+}
+
 func readFile(path string) ([]byte, error) {
 	data, err := os.ReadFile(path) // #nosec G304 G703 -- every caller builds path from the data directory and a validated ID
 	if errors.Is(err, os.ErrNotExist) {
@@ -112,7 +158,32 @@ func readFile(path string) ([]byte, error) {
 	}
 	return data, err
 }
-func (s *Projects) read(id string) (*Project, error) {
+
+// ids are the projects the store keeps, by their files.
+func (s *Projects) ids() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(s.root, "projects"))
+	if err != nil {
+		return nil, err
+	}
+	ids := []string{}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".json") {
+			ids = append(ids, strings.TrimSuffix(entry.Name(), ".json"))
+		}
+	}
+	return ids, nil
+}
+
+// fileVersion is the version a project's file says it is.
+func fileVersion(data []byte) any {
+	var raw struct {
+		Version any `json:"version"`
+	}
+	_ = json.Unmarshal(data, &raw)
+	return raw.Version
+}
+
+func (s *Projects) stored(id string) (*storedProject, error) {
 	path, err := s.path(id)
 	if err != nil {
 		return nil, err
@@ -121,36 +192,106 @@ func (s *Projects) read(id string) (*Project, error) {
 	if err != nil {
 		return nil, err
 	}
-	var p Project
-	if err := decodeContract("project", data, &p); err != nil {
+	if version, ok := fileVersion(data).(float64); ok && version == 1 {
+		return nil, fail(http.StatusServiceUnavailable, "This project is still to be migrated. Start the editor again.")
+	}
+	var saved storedProject
+	if err := decodeContract("stored-project", data, &saved); err != nil {
 		return nil, err
 	}
-	if err := normalizeProject(&p); err != nil {
+	if err := normalizeStored(&saved); err != nil {
 		return nil, err
 	}
-	if p.ID != id {
+	if saved.ID != id {
 		return nil, fail(http.StatusUnprocessableEntity, "The stored project ID does not match its filename.")
 	}
-	return &p, nil
+	return &saved, nil
 }
-func (s *Projects) save(p *Project) (*Project, error) {
-	if err := normalizeProject(p); err != nil {
-		return nil, err
+
+// normalizeStored applies what storedProject.parse does beyond the JSON Schema.
+func normalizeStored(p *storedProject) error {
+	title, err := trimmed("title", p.Title, 80)
+	if err != nil {
+		return err
+	}
+	p.Title = title
+	if p.Notes, err = normalizeNotes(p.Notes); err != nil {
+		return err
+	}
+	if p.Attachments == nil {
+		p.Attachments = []Attachment{}
+	}
+	return nil
+}
+
+// save writes a project's metadata.
+func (s *Projects) save(p *storedProject) error {
+	if err := normalizeStored(p); err != nil {
+		return err
 	}
 	data, err := jsJSON(p)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	// project.parse(value) before every write in Node.
-	if err := checkContract("project", data); err != nil {
-		return nil, err
+	// storedProject.parse(value) before every write in Node.
+	if err := checkContract("stored-project", data); err != nil {
+		return err
 	}
 	path, err := s.path(p.ID)
 	if err != nil {
+		return err
+	}
+	return atomicWrite(path, data)
+}
+
+// update changes a project's metadata.
+func (s *Projects) update(id string, change func(*storedProject) error) error {
+	current, err := s.stored(id)
+	if err != nil {
+		return err
+	}
+	if err := change(current); err != nil {
+		return err
+	}
+	return s.save(current)
+}
+
+// read is a project as the API answers it: its history from its repository,
+// the branch heads in full.
+func (s *Projects) read(id string) (*Project, error) {
+	saved, err := s.stored(id)
+	if err != nil {
 		return nil, err
 	}
-	return p, atomicWrite(path, data)
+	repo := s.repository(id)
+	branches, err := readBranches(repo)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := branches["main"]; !ok {
+		return nil, fail(http.StatusUnprocessableEntity, "The project’s repository has no main branch.")
+	}
+	listed, err := s.history.revisions(repo, branches)
+	if err != nil {
+		return nil, err
+	}
+	heads := branchHeads(branches)
+	revisions := make([]Revision, 0, len(listed))
+	for _, meta := range listed {
+		if slices.Contains(heads, meta.ID) {
+			content, err := s.history.content(repo, meta.ID)
+			if err != nil {
+				return nil, err
+			}
+			meta.Scene, meta.Game, meta.Assets = content.Scene, content.Game, content.Assets
+		}
+		revisions = append(revisions, meta)
+	}
+	return &Project{Version: 1, ID: saved.ID, Title: saved.Title, Template: saved.Template, Branches: branches,
+		Revisions: revisions, Notes: saved.Notes, Attachments: saved.Attachments, Upstream: saved.Upstream,
+		Imported: saved.Imported, Source: saved.Source}, nil
 }
+
 func (s *Projects) Read(id string) (*Project, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -161,7 +302,7 @@ func (s *Projects) Has(id string) bool {
 	if err != nil {
 		return false
 	}
-	_, err = os.Stat(path)
+	_, err = os.Stat(path) // #nosec G703 -- path joins the data directory and a checked ID
 	return err == nil
 }
 
@@ -175,75 +316,48 @@ type ProjectSummary struct {
 func (s *Projects) Summaries() ([]ProjectSummary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	entries, err := os.ReadDir(filepath.Join(s.root, "projects"))
+	ids, err := s.ids()
 	if err != nil {
 		return nil, err
 	}
 	list := []ProjectSummary{}
-	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		p, err := s.read(strings.TrimSuffix(entry.Name(), ".json"))
+	for _, id := range ids {
+		p, err := s.stored(id)
 		if err != nil {
 			return nil, err
 		}
-		list = append(list, ProjectSummary{p.ID, p.Title, p.Template, p.Branches})
+		branches, err := readBranches(s.repository(id))
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, ProjectSummary{p.ID, p.Title, p.Template, branches})
 	}
 	return list, nil
 }
 func (s *Projects) Remove(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.read(id); err != nil {
+	if _, err := s.stored(id); err != nil {
 		return err
 	}
-	dir := filepath.Join(s.root, "removed-projects")
+	return s.moveAside(id, filepath.Join(s.root, "removed-projects"))
+}
+
+// moveAside moves a project's file and repository into another folder.
+func (s *Projects) moveAside(id, dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	target := filepath.Join(dir, id+".json")
-	if _, err := os.Stat(target); err == nil {
-		target = filepath.Join(dir, id+"."+newID()+".json")
+	name := id
+	if _, err := os.Stat(filepath.Join(dir, id+".json")); err == nil {
+		name = id + "." + newID()
 	}
 	path, _ := s.path(id)
-	return os.Rename(path, target)
-}
-
-type initialRevision struct {
-	scene    *Scene
-	game     *Game
-	assets   []Asset
-	template string
-	upstream string
-	label    string
-}
-
-func (s *Projects) createRevision(title string, initial initialRevision) (*Project, error) {
-	assets := initial.assets
-	if assets == nil {
-		assets = []Asset{}
+	if err := os.Rename(path, filepath.Join(dir, name+".json")); err != nil { // #nosec G703 -- path is the data directory's own file for a checked id
+		return err
 	}
-	first := Revision{ID: newID(), Label: initial.label, Date: now(), Game: initial.game, Scene: initial.scene, Assets: assets}
-	return s.save(&Project{Version: 1, ID: newID(), Title: title, Template: initial.template,
-		Branches: map[string]string{"main": first.ID}, Revisions: []Revision{first}, Upstream: initial.upstream})
-}
-func (s *Projects) CreateGame(title string, game *Game) (*Project, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	label := "Created project"
-	if game != nil {
-		label = "Created with harness"
+	if _, err := os.Stat(s.repository(id)); err == nil {
+		return os.Rename(s.repository(id), filepath.Join(dir, name+".git"))
 	}
-	return s.createRevision(title, initialRevision{game: game, label: label})
-}
-func (s *Projects) Rename(id, title string) (*Project, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	p, err := s.read(id)
-	if err != nil {
-		return nil, err
-	}
-	p.Title = title
-	return s.save(p)
+	return nil
 }

@@ -296,6 +296,22 @@ func (e *Editors) Session(cookie string) (editor gameEditor, editing bool, err e
 	return store.Editors[found], true, nil
 }
 
+// Editor is an editor by its id, while its session lasts.
+func (e *Editors) Editor(id string) (editor gameEditor, found bool, err error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	store, err := e.read()
+	if err != nil {
+		return editor, false, err
+	}
+	for _, known := range store.Editors {
+		if known.ID == id {
+			return known, true, nil
+		}
+	}
+	return editor, false, nil
+}
+
 // End ends the editor's session a Cookie header carries, if it carries one.
 func (e *Editors) End(cookie string) error {
 	token := editorToken(cookie)

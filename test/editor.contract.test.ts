@@ -99,6 +99,9 @@ async function session(editor: string) {
 
   // Bodies are read as Zod reads them: a missing key takes its default; null, "" or a wrong type is refused.
   for (const title of [null, '', '\ufeff', 5]) await record(post('/api/projects', { title }));
+  // A new project's first commit is named by what it holds and the second it is made in (docs/git-store.md), like
+  // the first project's: the next ones start a second of their own, so on either host they are commits of their own.
+  await new Promise((done) => setTimeout(done, 1005 - (Date.now() % 1000)));
   await record(post('/api/projects', {}));
   // Zod counts code points: 41 emoji are 82 UTF-16 units but fit 80.
   const emoji = body<{ id: string }>(await record(post('/api/projects', { title: '😀'.repeat(41) })));

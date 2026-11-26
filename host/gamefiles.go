@@ -158,7 +158,7 @@ func gameFileBytes(hash string, encoded map[string]string) ([]byte, error) {
 }
 
 // ImportGameFolder mirrors importGameFolder in packages/core/game-files.ts.
-func (s *Projects) ImportGameFolder(data []byte) (*Project, error) {
+func (s *Projects) ImportGameFolder(data []byte, author ident) (*Project, error) {
 	var input struct {
 		Title *string           `json:"title"`
 		Files map[string]string `json:"files"`
@@ -205,5 +205,5 @@ func (s *Projects) ImportGameFolder(data []byte) (*Project, error) {
 	manifest, described := input.Files["zirbel.json"]
 	players, adapter := describedGame(manifest, described, stored)
 	game := &Game{HTML: html, MaxPlayers: players, Net: players > 1, Adapter: adapter, Files: stored}
-	return s.createRevision(title, initialRevision{game: game, label: "Imported game folder"})
+	return s.createRevision(title, initialRevision{game: game, assets: []Asset{}, label: "Imported game folder"}, author)
 }

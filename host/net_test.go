@@ -28,7 +28,7 @@ func TestABuiltFolderForSeveralPlayersImportsAsANetGame(t *testing.T) {
 			files["zirbel.json"] = encoded(*manifest)
 		}
 		data, _ := json.Marshal(map[string]any{"title": "Derby", "files": files})
-		project, err := store.ImportGameFolder(data)
+		project, err := store.ImportGameFolder(data, ownerIdent)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,13 +89,13 @@ func TestABuiltFolderForSeveralPlayersImportsAsANetGame(t *testing.T) {
 	propose := func(project *Project, game string) error {
 		revision, _ := head(project, "main")
 		_, err := store.Submit(project.ID, []byte(`{"baseRevision":"`+revision.ID+`","branch":"main","label":"Edit",`+
-			`"operations":[{"op":"writeGame","game":`+game+`}]}`), nil)
+			`"operations":[{"op":"writeGame","game":`+game+`}]}`), ownerIdent, nil)
 		return err
 	}
 	if err := propose(project, `{"html":"<canvas></canvas>","maxPlayers":8}`); err == nil || !strings.Contains(err.Error(), "needs net") {
 		t.Fatalf("eight players without net: %v", err)
 	}
-	document, err := store.CreateGame("Document", &Game{HTML: "<canvas></canvas>", MaxPlayers: 1})
+	document, err := store.CreateGame("Document", &Game{HTML: "<canvas></canvas>", MaxPlayers: 1}, ownerIdent)
 	if err != nil {
 		t.Fatal(err)
 	}

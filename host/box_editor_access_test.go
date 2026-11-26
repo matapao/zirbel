@@ -31,10 +31,10 @@ func testBoxEditor(t *testing.T) (s *EditorServer, garden, walk *Project) {
 	s = &EditorServer{Editor: &Editor{projects: projects, releases: releases}, rooms: rooms, box: box, port: 4173,
 		players: &Players{rooms: rooms, local: &Listener{port: 4174}, lanHost: "games.lan"},
 		files:   map[string][]byte{"index.html": []byte("<!doctype html><title>Zirbel</title>")}}
-	if garden, err = projects.CreateGame("Garden", &Game{HTML: "<canvas></canvas>", MaxPlayers: 1}); err != nil {
+	if garden, err = projects.CreateGame("Garden", &Game{HTML: "<canvas></canvas>", MaxPlayers: 1}, ownerIdent); err != nil {
 		t.Fatal(err)
 	}
-	if walk, err = projects.CreateGame("Walk", &Game{HTML: "<canvas></canvas>", MaxPlayers: 1}); err != nil {
+	if walk, err = projects.CreateGame("Walk", &Game{HTML: "<canvas></canvas>", MaxPlayers: 1}, ownerIdent); err != nil {
 		t.Fatal(err)
 	}
 	return s, garden, walk

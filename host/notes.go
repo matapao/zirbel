@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-// referencesFor mirrors referencesFor in packages/core/projects.ts.
+// referencesFor mirrors referencesFor in packages/core/operations.ts.
 func referencesFor(base *Revision, references []Reference) ([]Reference, error) {
 	result := []Reference{}
 	for _, reference := range references {
@@ -71,8 +71,8 @@ func (s *Projects) AddNote(projectID string, data []byte) (*Note, error) {
 	}
 	references := []Reference{}
 	for _, reference := range input.References {
-		revision := p.revision(reference.Revision)
-		if revision == nil {
+		revision, err := s.revision(projectID, reference.Revision)
+		if err != nil {
 			return nil, fail(http.StatusNotFound, "Note refers to a missing revision.")
 		}
 		resolved, err := referencesFor(revision, []Reference{reference})
@@ -94,8 +94,10 @@ func (s *Projects) AddNote(projectID string, data []byte) (*Note, error) {
 	if input.Attachments == nil {
 		input.Attachments = []string{}
 	}
-	p.Notes = append(p.Notes, input)
-	if _, err := s.save(p); err != nil {
+	if err := s.update(projectID, func(current *storedProject) error {
+		current.Notes = append(current.Notes, input)
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	return &input, nil
@@ -127,7 +129,7 @@ func (s *Projects) AddMedia(projectID string, data []byte) (*Attachment, error) 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p, err := s.read(projectID)
+	p, err := s.stored(projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +150,7 @@ func (s *Projects) AddMedia(projectID string, data []byte) (*Attachment, error) 
 		return nil, err
 	}
 	p.Attachments = append(p.Attachments, item)
-	if _, err := s.save(p); err != nil {
+	if err := s.save(p); err != nil {
 		return nil, err
 	}
 	return &item, nil
@@ -163,7 +165,7 @@ func (s *Projects) EditTranscript(projectID, attachmentID string, data []byte) (
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p, err := s.read(projectID)
+	p, err := s.stored(projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +173,7 @@ func (s *Projects) EditTranscript(projectID, attachmentID string, data []byte) (
 		if p.Attachments[i].ID == attachmentID {
 			p.Attachments[i].Transcript, p.Attachments[i].Intent = input.Transcript, input.Intent
 			next := p.Attachments[i]
-			if _, err := s.save(p); err != nil {
+			if err := s.save(p); err != nil {
 				return nil, err
 			}
 			return &next, nil
@@ -182,7 +184,7 @@ func (s *Projects) EditTranscript(projectID, attachmentID string, data []byte) (
 func (s *Projects) ReadMedia(projectID, attachmentID string) (*Attachment, []byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p, err := s.read(projectID)
+	p, err := s.stored(projectID)
 	if err != nil {
 		return nil, nil, err
 	}

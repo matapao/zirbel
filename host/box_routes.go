@@ -62,12 +62,16 @@ func NewBox(account string, port func() int) (*Box, error) {
 }
 
 // boxAccess is who sent a request: the box itself, a paired device (an owner)
-// by its id, or an editor by the one game it edits (none of them for a project
-// grant's /mcp request).
+// by its id, or an editor by its id and the one game it edits, with the name
+// they go by (a device's label, an editor's own); none of them for a project
+// grant's /mcp request, or a git request without a session, which brings its
+// own credentials (git_http.go).
 type boxAccess struct {
 	local  bool
 	device string
+	editor string
 	game   string
+	name   string
 }
 
 // boxName is the box's name on its network: its host name, in mDNS's .local.
@@ -201,14 +205,17 @@ func (b *Box) door(w http.ResponseWriter, r *http.Request) (access boxAccess, ha
 		return access, false, err
 	}
 	if paired {
-		return boxAccess{device: device.ID}, false, nil
+		return boxAccess{device: device.ID, name: device.Label}, false, nil
 	}
 	editor, editing, err := b.editors.Session(r.Header.Get("cookie"))
 	if err != nil {
 		return access, false, err
 	}
 	if editing {
-		return boxAccess{game: editor.Project}, false, nil
+		return boxAccess{editor: editor.ID, game: editor.Project, name: editor.Name}, false, nil
+	}
+	if strings.HasPrefix(pathname, "/git/") {
+		return access, false, nil
 	}
 	if r.Method == http.MethodGet && pathname == "/" && b.lobbyPort != nil && b.lobbyPort() != 0 {
 		// Players never pair: the box's front door is the lobby, on the name the device asked by.

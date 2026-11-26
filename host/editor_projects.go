@@ -5,7 +5,11 @@ import (
 	"net/http"
 )
 
-func (s *EditorServer) serveProjects(w http.ResponseWriter, r *http.Request, pathID, action, tail string) error {
+func (s *EditorServer) serveProjects(w http.ResponseWriter, r *http.Request, access boxAccess, pathID, action, tail string) error {
+	if handled, err := s.serveGitRoutes(w, r, access, pathID, action, tail); handled || err != nil {
+		return err
+	}
+	author := authorOf(access)
 	get, post := r.Method == http.MethodGet, r.Method == http.MethodPost
 	if pathID == "" && get {
 		list, err := s.projects.Summaries()
@@ -27,7 +31,7 @@ func (s *EditorServer) serveProjects(w http.ResponseWriter, r *http.Request, pat
 		if !present {
 			title = "Untitled project"
 		}
-		p, err := s.projects.CreateGame(title, nil)
+		p, err := s.projects.CreateGame(title, nil, author)
 		return send(w, http.StatusCreated, p, err)
 	}
 	if pathID == "import-game" && post {
@@ -35,7 +39,7 @@ func (s *EditorServer) serveProjects(w http.ResponseWriter, r *http.Request, pat
 		if err != nil {
 			return err
 		}
-		p, err := s.projects.ImportGameFolder(data)
+		p, err := s.projects.ImportGameFolder(data, author)
 		return send(w, http.StatusCreated, p, err)
 	}
 	if pathID == "import" && post {
@@ -43,7 +47,7 @@ func (s *EditorServer) serveProjects(w http.ResponseWriter, r *http.Request, pat
 		if err != nil {
 			return err
 		}
-		p, err := s.projects.Import(data)
+		p, err := s.projects.Import(data, author)
 		return send(w, http.StatusCreated, p, err)
 	}
 	if err := safeID(pathID); err != nil {
@@ -101,7 +105,7 @@ func (s *EditorServer) serveProjects(w http.ResponseWriter, r *http.Request, pat
 		if err != nil {
 			return err
 		}
-		staged, err := s.projects.Submit(projectID, data, nil)
+		staged, err := s.projects.Submit(projectID, data, author, nil)
 		return send(w, http.StatusCreated, staged, err)
 	case action == "discard" && post:
 		if err := safeID(tail); err != nil {
@@ -137,7 +141,7 @@ func (s *EditorServer) serveProjects(w http.ResponseWriter, r *http.Request, pat
 		if err := errors.Join(err, targetErr); err != nil {
 			return err
 		}
-		p, err := s.projects.Restore(projectID, branch, base, target)
+		p, err := s.projects.Restore(projectID, branch, base, target, author)
 		return send(w, http.StatusOK, p, err)
 	case action == "notes" && post:
 		data, err := readBody(r, 512_000)
@@ -178,7 +182,7 @@ func (s *EditorServer) serveProjects(w http.ResponseWriter, r *http.Request, pat
 		if err != nil {
 			return err
 		}
-		staged, err := s.projects.UploadAsset(projectID, data)
+		staged, err := s.projects.UploadAsset(projectID, data, author)
 		return send(w, http.StatusCreated, staged, err)
 	case action == "export" && get:
 		data, err := s.projects.Export(projectID)

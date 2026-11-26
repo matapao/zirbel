@@ -12,16 +12,61 @@ import (
 
 // The project model mirrors packages/sdk/contracts.ts, with fields in schema
 // order. Files written here are read by the Node editor and the other way round.
+//
+// A revision's id is its commit's hash (docs/git-store.md). A project lists its
+// history with only the branch heads in full: a revision without its content
+// has nil Assets, and JSON leaves its scene, game and assets out.
 type Revision struct {
-	ID           string  `json:"id"`
-	Parent       *string `json:"parent"`
-	RestoredFrom string  `json:"restoredFrom,omitempty"`
-	Label        string  `json:"label"`
-	Date         string  `json:"date"`
-	Scene        *Scene  `json:"scene,omitempty"`
-	Game         *Game   `json:"game,omitempty"`
-	Assets       []Asset `json:"assets"`
+	ID           string
+	Parent       *string
+	RestoredFrom string
+	Label        string
+	Date         string
+	Author       string
+	Scene        *Scene
+	Game         *Game
+	Assets       []Asset
 }
+
+// revisionJSON is a revision in the key order the Node host writes it.
+type revisionJSON struct {
+	ID           string   `json:"id"`
+	Parent       *string  `json:"parent"`
+	RestoredFrom string   `json:"restoredFrom,omitempty"`
+	Label        string   `json:"label"`
+	Date         string   `json:"date"`
+	Author       string   `json:"author,omitempty"`
+	Scene        *Scene   `json:"scene,omitempty"`
+	Game         *Game    `json:"game,omitempty"`
+	Assets       *[]Asset `json:"assets,omitempty"`
+}
+
+func (r Revision) MarshalJSON() ([]byte, error) {
+	out := revisionJSON{r.ID, r.Parent, r.RestoredFrom, r.Label, r.Date, r.Author, r.Scene, r.Game, nil}
+	if r.Assets != nil {
+		out.Assets = &r.Assets
+	}
+	return jsJSON(out)
+}
+
+func (r *Revision) UnmarshalJSON(data []byte) error {
+	var in revisionJSON
+	if err := json.Unmarshal(data, &in); err != nil {
+		return err
+	}
+	*r = Revision{in.ID, in.Parent, in.RestoredFrom, in.Label, in.Date, in.Author, in.Scene, in.Game, nil}
+	if in.Assets != nil {
+		r.Assets = *in.Assets
+		if r.Assets == nil {
+			r.Assets = []Asset{}
+		}
+	}
+	return nil
+}
+
+// content is what a revision holds.
+func (r *Revision) content() Content { return Content{r.Scene, r.Game, r.Assets} }
+
 type Attachment struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
@@ -92,6 +137,13 @@ type Project struct {
 	Attachments []Attachment      `json:"attachments"`
 	Upstream    string            `json:"upstream,omitempty"`
 	Imported    bool              `json:"imported,omitempty"`
+	Source      *gitSource        `json:"source,omitempty"`
+}
+
+// gitSource is where a game imported from a git URL came from, which Update from source fetches again.
+type gitSource struct {
+	URL string `json:"url"`
+	Ref string `json:"ref,omitempty"`
 }
 type Operation struct {
 	Op      string                     `json:"op"`
@@ -116,18 +168,11 @@ type Proposal struct {
 // them as JSON text, so the order is part of the response.
 type proposalResult struct {
 	Proposal *Proposal `json:"proposal"`
-	Preview  *Preview  `json:"preview"`
+	Preview  *Content  `json:"preview"`
 }
 type commitResult struct {
 	Revision *Revision `json:"revision"`
 	Branch   string    `json:"branch"`
-}
-
-// Preview is the candidate revision content of a proposal.
-type Preview struct {
-	Game   *Game   `json:"game,omitempty"`
-	Scene  *Scene  `json:"scene,omitempty"`
-	Assets []Asset `json:"assets"`
 }
 
 func now() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000Z") }
@@ -208,8 +253,8 @@ func normalizeProject(p *Project) error {
 		return err
 	}
 	p.Title = title
-	if p.Notes == nil {
-		p.Notes = []Note{}
+	if p.Notes, err = normalizeNotes(p.Notes); err != nil {
+		return err
 	}
 	if p.Attachments == nil {
 		p.Attachments = []Attachment{}
@@ -229,19 +274,27 @@ func normalizeProject(p *Project) error {
 			return err
 		}
 	}
-	for i := range p.Notes {
-		note := &p.Notes[i]
+	return nil
+}
+
+// normalizeNotes applies what note.parse does beyond the JSON Schema.
+func normalizeNotes(notes []Note) ([]Note, error) {
+	if notes == nil {
+		return []Note{}, nil
+	}
+	for i := range notes {
+		note := &notes[i]
 		if note.References == nil {
 			note.References = []Reference{}
 		}
 		for _, reference := range note.References {
 			if err := insideWorld(reference); err != nil {
-				return err
+				return nil, err
 			}
 		}
 		if note.Attachments == nil {
 			note.Attachments = []string{}
 		}
 	}
-	return nil
+	return notes, nil
 }

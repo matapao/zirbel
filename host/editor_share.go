@@ -37,7 +37,7 @@ func (s *EditorServer) developmentRoom(w http.ResponseWriter, r *http.Request, p
 	if err != nil {
 		return err
 	}
-	release, err := s.Package(projectID, branch, "", Permissions{Play: true}, false, false, "")
+	release, err := s.Package(projectID, branch, "", Permissions{Play: true}, false, false, "") //nolint:contextcheck // the store's git runs to its end whatever becomes of the request (gitContext)
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func (s *EditorServer) developmentRoom(w http.ResponseWriter, r *http.Request, p
 	if _, err := s.players.StartLAN(r.Context()); err != nil {
 		return err
 	}
-	if _, err := s.projects.Read(projectID); err != nil {
+	if _, err := s.projects.Read(projectID); err != nil { //nolint:contextcheck // the store's git runs to its end whatever becomes of the request (gitContext)
 		return err
 	}
 	room, err := s.rooms.Open(release, false, "lan", true)
@@ -90,7 +90,7 @@ func (s *EditorServer) serveGrants(w http.ResponseWriter, r *http.Request, proje
 	}
 	return fail(http.StatusNotFound, "Editor route does not exist.")
 }
-func (s *EditorServer) serveReleases(w http.ResponseWriter, r *http.Request, pathID, action string) error {
+func (s *EditorServer) serveReleases(w http.ResponseWriter, r *http.Request, access boxAccess, pathID, action string) error {
 	get, post := r.Method == http.MethodGet, r.Method == http.MethodPost
 	switch {
 	case get && pathID == "":
@@ -127,7 +127,7 @@ func (s *EditorServer) serveReleases(w http.ResponseWriter, r *http.Request, pat
 		bytesReply(w, release.canonical, "application/json; charset=utf-8", map[string]string{"content-disposition": `attachment; filename="zirbel-release.json"`})
 		return nil
 	case post && pathID != "" && action == "remix":
-		p, err := s.Remix(pathID)
+		p, err := s.Remix(pathID, authorOf(access))
 		return send(w, http.StatusCreated, p, err)
 	}
 	return fail(http.StatusNotFound, "Editor route does not exist.")

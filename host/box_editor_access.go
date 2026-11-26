@@ -22,9 +22,9 @@ func editorProjectRoute(method, action string) bool {
 		return get
 	case "proposals", "media", "grants": // its changes, history, imported media and its MCP grants
 		return get || post
-	case "apply", "discard", "restore", "title", "notes", "asset", "playtest", "development-room":
+	case "apply", "discard", "restore", "title", "notes", "asset", "playtest", "development-room", "update-from-source":
 		return post
-	case "export":
+	case "export", "revisions", "clone": // a revision in full, and the clone command with its git token
 		return get
 	}
 	return false
