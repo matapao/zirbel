@@ -8,7 +8,8 @@ export const THREE_ADDONS = 'three/addons/';
 // base is the document's own address (/game/<room>/<key>/, a net game's /game/@<room>/<key>/): a game imported as a built folder
 // loads its files from beside it, and only those. Every game gets the same policy: WebAssembly,
 // workers and loaders reading data: and blob: URLs, and no other origin anywhere. A game with its own netcode
-// (net-v2) also imports zirbel-net's client from its host and opens the host's relay socket, /mp.
+// (net-v2) also imports zirbel-net's client from its host and opens the host's relay socket, /mp; one that names an
+// adapter (one of its files, so base allows it) loads it as a module after its own document, which is otherwise as it is.
 export function gamePage(release: Release, runtime: string, ancestors: string, base: string) {
   const assets = Object.fromEntries(release.manifest.assets.map((asset) =>
     [asset.id, 'data:' + asset.media + ';base64,' + release.assets[asset.hash]]));
@@ -34,5 +35,6 @@ export function gamePage(release: Release, runtime: string, ancestors: string, b
     '<script type="application/json" id="zirbel-assets"' + (release.game?.registerObjects === false ? ' data-registration="off"' : '') + '>' + json(assets) + '</script>' +
     '<script crossorigin="anonymous" src="' + runtime + 'game-sdk.js"></script>';
   const source = release.game!.html.replace(/^\s*<!doctype\s+html\s*>/i, '');
-  return { policy, html: '<!doctype html>' + bootstrap + source };
+  const adapter = net && release.game!.adapter ? '<script type="module" src="' + base + release.game!.adapter + '"></script>' : '';
+  return { policy, html: '<!doctype html>' + bootstrap + source + adapter };
 }

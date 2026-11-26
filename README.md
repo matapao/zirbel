@@ -52,7 +52,7 @@ A revision is one HTML document, or a built web folder imported with its files. 
 | `zirbel.send(state)` | Share this player's JSON state |
 | `zirbel.onRoom(cb)` | Get seat, room seats and state per seat. Returns an unsubscribe function |
 
-A game can bring its own netcode instead, for up to 16 players: its document says `net: true`, or the built folder it was imported from has a `zirbel.json` whose `players.max` is above 1. It plays through the host's relay with zirbel-net, the earlier Zirbel's client, which it imports from `/zirbel-net.js`; its sandbox may reach that file and the relay at `/mp`, and nothing else on the network. [`packages/net/README.md`](packages/net/README.md) describes the API.
+A game can bring its own netcode instead, for up to 16 players: its document says `net: true`, or the built folder it was imported from has a `zirbel.json` whose `players.max` is above 1. It plays through the host's relay with zirbel-net, the earlier Zirbel's client, which it imports from `/zirbel-net.js`; its sandbox may reach that file and the relay at `/mp`, and nothing else on the network. Its `zirbel.json` can also name an adapter, `"multiplayer": { "adapter": "zirbel-adapter.js" }`, one of the folder's `.js` or `.mjs` files: the game page loads it as a module after the game's own document, so the game itself carries nothing of Zirbel's. [`packages/net/README.md`](packages/net/README.md) describes the API.
 
 ## Host
 

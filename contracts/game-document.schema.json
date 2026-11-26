@@ -19,6 +19,11 @@
       "type": "boolean",
       "const": true
     },
+    "adapter": {
+      "type": "string",
+      "maxLength": 240,
+      "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\\/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.(?:js|mjs)$"
+    },
     "registerObjects": {
       "type": "boolean"
     },

@@ -197,6 +197,17 @@ async function session(editor: string) {
     operations: [{ op: 'writeGame', game: { html: '<p>replaced</p>' } }] }));
   const builtManifest = body<{ releaseId: string }>(await record(post('/api/projects/' + built.id + '/release', { branch: 'main', permissions: rights })));
   const builtRelease = await record(get('/api/releases/' + builtManifest.releaseId + '/download'));
+  // A net game's zirbel.json names its adapter, one of its scripts; anything else leaves it without one, and a proposal can't name one.
+  const described = (multiplayer: unknown) => ({ ...folder, 'net/adapter.mjs': encode('export {}'),
+    'zirbel.json': encode(JSON.stringify({ players: { max: 3 }, multiplayer })) });
+  for (const multiplayer of [{ adapter: 'net/missing.js' }, { adapter: 'fonts/face.woff2' }, { adapter: 5 }, 'net/adapter.mjs'])
+    await record(post('/api/projects/import-game', { files: described(multiplayer) }));
+  const net = body<{ id: string; branches: { main: string } }>(await record(post('/api/projects/import-game',
+    { title: 'Net', files: described({ adapter: 'net/adapter.mjs' }) })));
+  await record(post('/api/projects/' + net.id + '/proposals', { baseRevision: net.branches.main, branch: 'main', label: 'Adapter',
+    operations: [{ op: 'writeGame', game: { html: '<p>net</p>', maxPlayers: 3, net: true, adapter: 'net/adapter.mjs' } }] }));
+  const netManifest = body<{ releaseId: string }>(await record(post('/api/projects/' + net.id + '/release', { branch: 'main', permissions: rights })));
+  const netRelease = await record(get('/api/releases/' + netManifest.releaseId + '/download'));
 
   // Refusals.
   await record(call('POST', '/api/projects', {}, { origin: 'http://evil.example' }));
@@ -205,7 +216,7 @@ async function session(editor: string) {
   await record(get('/api/projects/no-such-project'));
   await record(post('/api/projects/' + id + '/remove'));
   await record(get('/api/projects/' + id));
-  return { steps, release: release.body, templateRelease: templateRelease.body, builtRelease: builtRelease.body };
+  return { steps, release: release.body, templateRelease: templateRelease.body, builtRelease: builtRelease.body, netRelease: netRelease.body };
 }
 
 const results = new Map<string, Awaited<ReturnType<typeof session>>>();
@@ -233,10 +244,10 @@ if (editors.length > 1) {
   test('a release published by either editor imports into the other', async (t) => {
     const start = async (name: string) => startEditor(t, editors.find((item) => item.name === name)!.command, join(tempDir(t, 'zirbel-cross-'), 'data'));
     for (const [from, to] of [['node', 'go'], ['go', 'node']] as const) {
-      const { release, templateRelease, builtRelease } = results.get(from)!;
+      const { release, templateRelease, builtRelease, netRelease } = results.get(from)!;
       const target = await start(to);
       const api = client(target.editor);
-      for (const item of [release, templateRelease, builtRelease]) {
+      for (const item of [release, templateRelease, builtRelease, netRelease]) {
         const imported = await api.post('/api/releases/import', item);
         assert.equal(imported.status, 201, from + ' -> ' + to + ': ' + JSON.stringify(imported.body));
       }

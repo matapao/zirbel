@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { importGameFolder } from '../packages/core/game-files.ts';
 import { head } from '../packages/core/projects.ts';
-import { GAME_FILE_TYPES, gameFilePath } from '../packages/sdk/game.ts';
+import { GAME_FILE_TYPES, gameDocument, gameFilePath } from '../packages/sdk/game.ts';
 import { gamePage } from '../packages/server/game-page.ts';
-import { importMap, install, rights, sandboxPolicy } from './helpers.ts';
+import { fakeHarnesses } from './fake-harnesses.ts';
+import { importMap, install, rights, sandboxPolicy, tempDir } from './helpers.ts';
 
 const base64 = (text: string | Uint8Array) => Buffer.from(text).toString('base64');
 const folder = {
@@ -119,4 +121,71 @@ test('a built folder whose zirbel.json is for several players imports as a net g
   const revision = head(project, 'main');
   assert.throws(() => projects.submit(project.id, { baseRevision: revision.id, branch: 'main', label: 'Edit',
     operations: [{ op: 'writeGame', game: { html: revision.game!.html, maxPlayers: 8 } }] }), /needs net/);
+});
+
+test('a net game names its adapter in zirbel.json, one of its own scripts, and only its game page loads it', (t) => {
+  const { projects, releases } = install(t);
+  const described = (multiplayer: unknown, players = 4) => ({ ...folder, 'net/adapter.js': base64('export {}'),
+    'net/adapter.mjs': base64('export {}'), 'zirbel.json': base64(JSON.stringify({ players: { max: players }, multiplayer })) });
+  const game = (files: Record<string, string>) => head(importGameFolder(projects, { files }), 'main').game!;
+  for (const adapter of ['net/adapter.js', 'net/adapter.mjs', 'assets/main.js']) assert.equal(game(described({ adapter })).adapter, adapter);
+  // A file the folder lacks, another type, a path no game file has or no string: the game keeps its net, without an adapter.
+  for (const multiplayer of [{ adapter: 'net/missing.js' }, { adapter: 'models/hero.glb' }, { adapter: './net/adapter.js' },
+    { adapter: 'index.html' }, { adapter: 'net/adapter.js/' }, { adapter: 7 }, { adapter: ['net/adapter.js'] }, 'net/adapter.js', null]) {
+    const imported = game(described(multiplayer));
+    assert.deepEqual([imported.net, imported.adapter], [true, undefined], JSON.stringify(multiplayer));
+  }
+  // A game for one has none.
+  const single = game(described({ adapter: 'net/adapter.js' }, 1));
+  assert.deepEqual([single.net, single.adapter], [undefined, undefined]);
+
+  // A game document holds one only with net, among its files; a proposal, which carries none, can't name one.
+  const hash = 'a'.repeat(64);
+  const parses = (more: object) => gameDocument.safeParse({ html: '<p>x</p>', maxPlayers: 2, ...more }).success;
+  assert.equal(parses({ net: true, adapter: 'a.js', files: { 'a.js': hash } }), true);
+  for (const more of [{ adapter: 'a.js', files: { 'a.js': hash } }, { net: true, adapter: 'b.js', files: { 'a.js': hash } },
+    { net: true, adapter: 'a.js' }, { net: true, adapter: 'a.css', files: { 'a.css': hash } }]) assert.equal(parses(more), false, JSON.stringify(more));
+  const project = importGameFolder(projects, { title: 'Net', files: described({ adapter: 'net/adapter.js' }) });
+  const revision = head(project, 'main');
+  const write = (more: object, withFiles = false) => projects.submit(project.id, { baseRevision: revision.id, branch: 'main', label: 'Adapter',
+    operations: [{ op: 'writeGame', game: { html: '<p>x</p>', maxPlayers: 4, net: true, ...more } }] }, withFiles);
+  assert.throws(() => write({ adapter: 'net/adapter.js' }), /adapter/);
+  assert.throws(() => write({ adapter: 'net/gone.js', files: revision.game!.files }, true), /adapter is one of the game’s own files/);
+
+  // Its release keeps it, in the order both hosts hash; its page loads it last, and is otherwise the page without it.
+  const release = releases.package(project.id, 'main', rights, false);
+  assert.deepEqual(Object.keys(release.game!), ['html', 'maxPlayers', 'net', 'adapter', 'files']);
+  const runtime = 'http://h/runtime/r/', base = 'http://h/game/@r/key/';
+  const page = gamePage(release, runtime, "'self'", base);
+  const without = structuredClone(release);
+  delete without.game!.adapter;
+  const plain = gamePage(without, runtime, "'self'", base);
+  assert.equal(page.html, plain.html + '<script type="module" src="http://h/game/@r/key/net/adapter.js"></script>');
+  assert.ok(plain.html.endsWith(release.game!.html.replace(/^<!doctype html>/, '')));
+  assert.deepEqual([page.policy, plain.policy], [sandboxPolicy(runtime, base, "'self'", 'http://h'), sandboxPolicy(runtime, base, "'self'", 'http://h')]);
+});
+
+test('a harness edit of a net game keeps the adapter its game/zirbel.json names, while that file is there', async (t) => {
+  const { runHarnessChat } = await import('../packages/server/harness-chat.ts');
+  const { projects } = install(t);
+  const manifest = JSON.stringify({ players: { max: 4 }, multiplayer: { adapter: 'net/adapter.js' } });
+  const project = importGameFolder(projects, { files: { 'index.html': base64('<p>net</p>'), 'zirbel.json': base64(manifest),
+    'net/adapter.js': base64('export {}') } });
+  const folder = tempDir(t, 'zirbel-turn-');
+  mkdirSync(join(folder, 'game', 'net'), { recursive: true });
+  writeFileSync(join(folder, 'game', 'index.html'), '<p>edited</p>');
+  writeFileSync(join(folder, 'game', 'zirbel.json'), manifest);
+  writeFileSync(join(folder, 'game', 'net', 'adapter.js'), 'export {}');
+  const harnesses = fakeHarnesses([{ id: 'codex', name: 'Codex' }], async () =>
+    ({ task: 'one', stopReason: 'end_turn', text: JSON.stringify({ action: 'edit', message: 'Edited.' }) }));
+  const edit = async () => {
+    const current = projects.read(project.id);
+    await runHarnessChat(harnesses, 'codex', projects, current, head(current, 'main'), { text: 'Edit it.', branch: 'main', folder }, []);
+    return head(projects.read(project.id), 'main').game!;
+  };
+  const edited = await edit();
+  assert.deepEqual([edited.html, edited.net, edited.adapter], ['<p>edited</p>', true, 'net/adapter.js']);
+  rmSync(join(folder, 'game', 'net'), { recursive: true });
+  const unwired = await edit();
+  assert.deepEqual([unwired.net, unwired.adapter], [true, undefined]);
 });

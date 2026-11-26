@@ -4,6 +4,7 @@ import { chatControl } from '../sdk/chat-control.ts';
 import { SHARED_PLAYERS, type GameDocument, type RegisteredObject } from '../sdk/game.ts';
 import { head, ZirbelError, type Projects } from '../core/projects.ts';
 import { applyChatControl, finishChatEdit, startFromChat, type ChatReply } from '../core/chat.ts';
+import { describedGame } from '../core/game-files.ts';
 import type { ProcessorRun, Processors } from './processors.ts';
 import { readGameFolder } from './turn-folder.ts';
 
@@ -40,7 +41,10 @@ function folderGame(projects: Projects, folder: string | undefined, output: Excl
   const stored: Record<string, string> = {};
   for (const [path, bytes] of files) stored[path] = projects.storeAsset(bytes);
   const kept = output.action === 'edit' ? current : undefined;
+  // A net game keeps its net, and the adapter its game/zirbel.json names, read as an import reads it.
+  const adapter = kept?.net ? describedGame(files.get('zirbel.json')?.toString('base64'), (path) => files.has(path)).adapter : undefined;
   return { html, maxPlayers: output.maxPlayers ?? kept?.maxPlayers ?? 1, ...(kept?.net ? { net: true as const } : {}),
+    ...(adapter ? { adapter } : {}),
     ...(registerObjects ? {} : { registerObjects: false }), ...(files.size ? { files: stored } : {}) };
 }
 
