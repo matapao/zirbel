@@ -22,9 +22,7 @@ const spacesSweep = 2 * time.Second
 func (rs *Rooms) UseSpaces(kernel *Spaces) {
 	rs.kernel = kernel
 	kernel.OnReset(func() { rs.sweepSpaces(nil, time.Time{}) })
-	rs.done.Add(1)
-	go func() {
-		defer rs.done.Done()
+	rs.done.Go(func() {
 		ticker := time.NewTicker(spacesSweep)
 		defer ticker.Stop()
 		for {
@@ -41,7 +39,7 @@ func (rs *Rooms) UseSpaces(kernel *Spaces) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 func (rs *Rooms) anySpace() bool {
@@ -129,8 +127,7 @@ func (rs *Rooms) WithSpace(room *Room) (*Room, error) {
 			continue
 		}
 		rs.Close(room.ID)
-		var known *HTTPError
-		if errors.As(err, &known) {
+		if _, known := errors.AsType[*HTTPError](err); known {
 			return nil, err
 		}
 		return nil, fail(http.StatusServiceUnavailable, "Multiplayer isn't available on this host now. Try again soon.")

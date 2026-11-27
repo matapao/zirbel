@@ -37,6 +37,14 @@ jobs:
           - { package: ./host, target: FuzzEditCode }
           - { package: ./host, target: FuzzSessionCode }
           - { package: ./host, target: FuzzLobbyInput }
+          - { package: ./host, target: FuzzPadFrame }
+          - { package: ./host, target: FuzzPadsMessage }
+          - { package: ./host, target: FuzzPadsService }
+          - { package: ./host, target: FuzzSocketOwner }
+          - { package: ./host, target: FuzzDescribedControls }
+          - { package: ./host, target: FuzzKernelLine }
+          - { package: ./host, target: FuzzSpaceInvite }
+          - { package: ./host, target: FuzzSpacesProxy }
           - { package: ./contracts, target: FuzzParseURL }
           - { package: ./contracts, target: FuzzIPv4 }
           - { package: ./contracts, target: FuzzDecode }

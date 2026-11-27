@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -143,7 +144,9 @@ func servicePayload(pads *Pads, c *serviceConn, payload []byte) bool {
 	if payload[0] != 0 || !utf8.Valid(payload[1:]) {
 		return false
 	}
-	value, err := contracts.Decode(payload[1:])
+	// As the Node host's TextDecoder reads it: without a byte order mark in front.
+	text := bytes.TrimPrefix(payload[1:], []byte("\xef\xbb\xbf"))
+	value, err := contracts.Decode(text)
 	if err != nil || contracts.Validate("pads-service", value) != nil {
 		return false
 	}
@@ -151,6 +154,6 @@ func servicePayload(pads *Pads, c *serviceConn, payload []byte) bool {
 	if contracts.Unmarshal(value, &message) != nil {
 		return false
 	}
-	pads.ServiceMessage(c, message, json.RawMessage(append([]byte(nil), payload[1:]...)))
+	pads.ServiceMessage(c, message, json.RawMessage(append([]byte(nil), text...)))
 	return true
 }

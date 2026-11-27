@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net"
-	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"zirbel/contracts"
 )
 
 // The spaces kernel's local socket as the host's own code speaks it,
@@ -30,16 +33,10 @@ type spacesError struct{ Code, Message string }
 
 func (e *spacesError) Error() string { return e.Message }
 
+// spacesReply is the kernel's answer to a call: its result, or why it refused.
 type spacesReply struct {
-	ID     *int64          `json:"id"`
-	Method string          `json:"method"`
-	Result json.RawMessage `json:"result"`
-	Error  *struct {
-		Message string `json:"message"`
-		Data    *struct {
-			Code string `json:"code"`
-		} `json:"data"`
-	} `json:"error"`
+	result  json.RawMessage
+	refused *spacesError
 }
 
 type spacesSocket struct {
@@ -54,8 +51,8 @@ type spacesSocket struct {
 // dialSpaces connects to unix:<path> or tcp:127.0.0.1:<port>, and says hello.
 func dialSpaces(address, token string) (*spacesSocket, error) {
 	network, target := "unix", strings.TrimPrefix(address, "unix:")
-	if strings.HasPrefix(address, "tcp:") {
-		network, target = "tcp", strings.TrimPrefix(address, "tcp:")
+	if tcp, ok := strings.CutPrefix(address, "tcp:"); ok {
+		network, target = "tcp", tcp
 		if host, _, err := net.SplitHostPort(target); err != nil || host != "127.0.0.1" {
 			return nil, errors.New("the spaces socket is unix:<path> or tcp:127.0.0.1:<port>")
 		}
@@ -107,14 +104,10 @@ func (s *spacesSocket) call(method string, params any) (json.RawMessage, error) 
 	s.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
 	select {
 	case reply := <-answer:
-		if reply.Error != nil {
-			code := "error"
-			if reply.Error.Data != nil && reply.Error.Data.Code != "" {
-				code = reply.Error.Data.Code
-			}
-			return nil, &spacesError{Code: code, Message: reply.Error.Message}
+		if reply.refused != nil {
+			return nil, reply.refused
 		}
-		return reply.Result, nil
+		return reply.result, nil
 	case <-s.done:
 		return nil, unavailable
 	case <-time.After(spacesWait):
@@ -135,29 +128,63 @@ func (s *spacesSocket) read() {
 	lines := bufio.NewScanner(s.conn)
 	lines.Buffer(make([]byte, 64<<10), spacesLine)
 	for lines.Scan() {
-		var reply spacesReply
-		if json.Unmarshal(lines.Bytes(), &reply) != nil {
-			continue
-		}
-		if reply.Method != "" {
-			// A request of the kernel's (rules the host doesn't provide): no such method here.
-			if reply.ID != nil {
-				go s.send(map[string]any{"jsonrpc": "2.0", "id": *reply.ID,
-					"error": map[string]any{"code": -32601, "message": "Zirbel provides no " + reply.Method + "."}})
+		answer, call, reply, ok := kernelLine(lines.Bytes())
+		switch {
+		case !ok:
+		case answer != nil:
+			go s.send(answer)
+		default:
+			s.mu.Lock()
+			waiting := s.pending[call]
+			delete(s.pending, call)
+			s.mu.Unlock()
+			if waiting != nil {
+				waiting <- reply
 			}
-			continue
-		}
-		if reply.ID == nil {
-			continue
-		}
-		s.mu.Lock()
-		answer := s.pending[*reply.ID]
-		delete(s.pending, *reply.ID)
-		s.mu.Unlock()
-		if answer != nil {
-			answer <- reply
 		}
 	}
+}
+
+// kernelLine reads a line of the kernel's as message in spaces-socket.ts
+// does, with JSON.parse's reading (names as they are, the last of duplicate
+// ones, every number a double): a request of the kernel's (a string method),
+// answered as no method of the host's when its id is given (answer); else the
+// reply to the call its number names; else nothing (ok false).
+func kernelLine(line []byte) (answer map[string]any, call int64, reply spacesReply, ok bool) {
+	value, err := contracts.Decode(line)
+	message, isObject := value.(map[string]any)
+	if err != nil || !isObject {
+		return nil, 0, spacesReply{}, false
+	}
+	if method, isRequest := message["method"].(string); isRequest {
+		if id := message["id"]; id != nil {
+			return map[string]any{"jsonrpc": "2.0", "id": id,
+				"error": map[string]any{"code": -32601, "message": "Zirbel provides no " + method + "."}}, 0, spacesReply{}, true
+		}
+		return nil, 0, spacesReply{}, false
+	}
+	id, isNumber := message["id"].(json.Number)
+	number, err := strconv.ParseFloat(string(id), 64)
+	// The calls are numbered from 1, each a double's whole number.
+	if !isNumber || err != nil || number != math.Trunc(number) || number < 1 || number > 1<<53 {
+		return nil, 0, spacesReply{}, false
+	}
+	if refused, isObject := message["error"].(map[string]any); isObject {
+		data, _ := refused["data"].(map[string]any)
+		code, isText := data["code"].(string)
+		if !isText {
+			code = "error"
+		}
+		text, isText := refused["message"].(string)
+		if !isText {
+			text = "The spaces kernel refused that."
+		}
+		return nil, int64(number), spacesReply{refused: &spacesError{Code: code, Message: text}}, true
+	}
+	if result, given := message["result"]; given {
+		reply.result, _ = json.Marshal(result)
+	}
+	return nil, int64(number), reply, true
 }
 
 // spaceOpened is a room's new space: its id, and the invitation its link
@@ -184,14 +211,46 @@ func (s *Spaces) Open(participants int, code string) (spaceOpened, error) {
 	if err := decodeContract("spaces-opened", result, &opened); err != nil {
 		return spaceOpened{}, err
 	}
-	_, fragment, _ := strings.Cut(opened.Link, "#")
-	values, _ := url.ParseQuery(fragment)
-	invite := values.Get("skalet.invite")
+	invite := linkInvite(opened.Link)
 	if !spaceSecret.MatchString(invite) {
 		s.Close(opened.Space)
 		return spaceOpened{}, &spacesError{Code: "protocol", Message: "The spaces kernel gave a link without its invitation."}
 	}
 	return spaceOpened{opened.Space, invite}, nil
+}
+
+// linkInvite is the invitation a space's link holds, as open in spaces.ts
+// reads it with URLSearchParams: in the text between the link's first # and
+// the next, the value of the first name skalet.invite (+ a space, %XX its
+// byte, any other % as it is), or none.
+func linkInvite(link string) string {
+	_, fragment, _ := strings.Cut(link, "#")
+	fragment, _, _ = strings.Cut(fragment, "#")
+	for pair := range strings.SplitSeq(strings.TrimPrefix(fragment, "?"), "&") {
+		if name, value, _ := strings.Cut(pair, "="); formDecoded(name) == "skalet.invite" {
+			return formDecoded(value)
+		}
+	}
+	return ""
+}
+
+func formDecoded(text string) string {
+	out := make([]byte, 0, len(text))
+	for i := 0; i < len(text); i++ {
+		if text[i] == '%' && i+2 < len(text) {
+			if b, err := strconv.ParseUint(text[i+1:i+3], 16, 8); err == nil {
+				out = append(out, byte(b))
+				i += 2
+				continue
+			}
+		}
+		if text[i] == '+' {
+			out = append(out, ' ')
+		} else {
+			out = append(out, text[i])
+		}
+	}
+	return string(out)
 }
 
 // Ticket is a one-time ticket into a space, for a name and a role.

@@ -59,7 +59,7 @@ func proxySpaces(spaces *Spaces, listener string, w http.ResponseWriter, r *http
 			out.Out.Header.Set("x-skalet-proxy", token)
 			out.Out.Header.Set("x-skalet-listener", listener)
 			out.Out.Header.Set("x-forwarded-host", r.Host)
-			out.Out.Header.Set("x-forwarded-for", strings.TrimPrefix(client, "::ffff:"))
+			out.Out.Header.Set("x-forwarded-for", plainAddress(client)) // an IPv4 address mapped into IPv6 as itself
 			out.Out.Header.Set("x-forwarded-proto", "http")
 		},
 		// The kernel's own headers stand in for the listener's of the same name, as the Node host's do.

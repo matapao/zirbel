@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -47,36 +48,52 @@ func tableAddress(field string, order binary.ByteOrder) net.IP {
 // socketOwner is the uid that owns the socket whose local address and port
 // are the peer's and whose remote port is ours, in the tables: found says
 // whether either has one. An IPv4 peer may be either an IPv4 socket or an
-// IPv6 one mapped.
+// IPv6 one mapped. A line is read as socketOwner in loopback-owner.ts reads
+// it: fields between JavaScript's white space, a slot of digits and a colon,
+// and a uid of digits; one past any int is no one's (-1), as Number(uid) is
+// neither root's nor ours there.
 func socketOwner(tables socketTables, peer string, peerPort, ourPort int, order binary.ByteOrder) (uid int, found bool) {
-	if zone := strings.IndexByte(peer, '%'); zone >= 0 {
-		peer = peer[:zone]
-	}
-	want := net.ParseIP(strings.Trim(peer, "[]"))
+	want := net.ParseIP(peerAddress(peer))
 	if want == nil {
 		return 0, false
 	}
 	for _, text := range []string{tables.v4, tables.v6} {
-		for _, line := range strings.Split(text, "\n") {
-			fields := strings.Fields(line)
-			if len(fields) < 8 || !strings.HasSuffix(fields[0], ":") {
+		for line := range strings.SplitSeq(text, "\n") {
+			fields := strings.FieldsFunc(line, jsSpace)
+			if len(fields) < 8 {
 				continue
 			}
+			slot, slotOK := strings.CutSuffix(fields[0], ":")
 			address, port, ok := strings.Cut(fields[1], ":")
 			_, remotePort, remoteOK := strings.Cut(fields[2], ":")
-			owner, err := strconv.Atoi(fields[7])
-			if !ok || !remoteOK || err != nil || !digits(fields[7]) {
+			if !slotOK || !digits(slot) || !digits(fields[7]) || !ok || !remoteOK {
 				continue
 			}
 			local, localErr := strconv.ParseUint(port, 16, 16)
 			remote, remoteErr := strconv.ParseUint(remotePort, 16, 16)
 			if localErr == nil && remoteErr == nil && int(local) == peerPort && int(remote) == ourPort &&
 				want.Equal(tableAddress(address, order)) {
+				owner, err := strconv.Atoi(fields[7])
+				if err != nil {
+					owner = -1
+				}
 				return owner, true
 			}
 		}
 	}
 	return 0, false
+}
+
+// A peer's address as addressKey in loopback-owner.ts takes it: without the
+// brackets around all of it, then without a zone (from a % to the end, where
+// no line ends between: JavaScript's . matches no line terminator).
+var (
+	bracketedPeer = regexp.MustCompile(`^\[([^\n\r\x{2028}\x{2029}]*)\]$`)
+	peerZone      = regexp.MustCompile(`%[^\n\r\x{2028}\x{2029}]*$`)
+)
+
+func peerAddress(peer string) string {
+	return peerZone.ReplaceAllString(bracketedPeer.ReplaceAllString(peer, "$1"), "")
 }
 
 func digits(text string) bool {

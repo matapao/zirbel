@@ -148,11 +148,10 @@ func (l *Listener) servePads(w http.ResponseWriter, r *http.Request) error {
 	_ = controller.SetWriteDeadline(time.Time{})
 	ws, err := acceptWebSocket(w, r, padsMessageLimit)
 	if err != nil {
-		var refused *HTTPError
-		if errors.As(err, &refused) {
-			return err
+		if _, refused := errors.AsType[*HTTPError](err); refused {
+			return err // nothing was taken over yet, so answer with the status
 		}
-		return nil //nolint:nilerr // the connection was hijacked and is gone; no response is possible
+		return nil // the connection was hijacked and is gone; no response is possible
 	}
 	l.sockets.Add(1)
 	go l.runPads(context.WithoutCancel(r.Context()), ws, role == "screen", query.Get, remoteAddress(r))
