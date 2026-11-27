@@ -46,7 +46,9 @@ def pairing(attempts: int = 10) -> Pairing | None:
                 url = reply["url"]
                 if url.startswith(("http://", "https://")):
                     claim = _claimable()
-                    return Pairing(code=reply["code"][:32], url=(url.split("?", 1)[0] if claim else url)[:500], claim=claim)
+                    return Pairing(
+                        code=reply["code"][:32], url=(url.split("?", 1)[0] if claim else url)[:500], claim=claim
+                    )
             return None
         except (OSError, ValueError):
             if attempt + 1 < attempts:

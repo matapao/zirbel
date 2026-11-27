@@ -192,7 +192,8 @@ def joining_page(box: str, network: str, pairing: Pairing | None, token: str = "
     return _page(
         "Joining " + network,
         f"<h1>{html.escape(box)} is joining {html.escape(network)}</h1>"
-        f"<p>This setup network goes away now. Join <b>{html.escape(network)}</b> on this phone again.</p>{finish}" + after,
+        f"<p>This setup network goes away now. Join <b>{html.escape(network)}</b> on this phone again.</p>{finish}"
+        + after,
     )
 
 
@@ -214,9 +215,11 @@ def own_page(box: str, own: Credentials, pairing: Pairing | None, token: str = "
             finish = (f"<p>Then open {anchor} (or <b>{local}</b>) and tap Claim this box.</p>"
                       "<p><small>No device has paired with this box yet, so there is no code and no hurry.</small></p>")
         else:
-            finish = (f"<p>Then open {anchor} and tap Pair this device. Or open <b>{local}</b> and enter the code</p>"
-                      f"<p class=code>{html.escape(pairing.code)}</p><small>The code works once, for 10 minutes. A device "
-                      "already paired with the box can make a new one in Box settings.</small>")
+            finish = (
+                f"<p>Then open {anchor} and tap Pair this device. Or open <b>{local}</b> and enter the code</p>"
+                f"<p class=code>{html.escape(pairing.code)}</p><small>The code works once, for 10 minutes. A device "
+                "already paired with the box can make a new one in Box settings.</small>"
+            )
     else:
         finish = f"<p>Then open <b>http://{OWN_ADDRESS}</b> (or <b>http://zirbel.local</b>).</p>"
     after = "<p><small>If the box can't make it, the Zirbel setup network comes back with what went wrong.</small></p>"
@@ -307,7 +310,9 @@ class Portal:
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
-                self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'")
+                self.send_header(
+                    "Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'"
+                )
                 self.send_header("X-Frame-Options", "DENY")
                 self.send_header("Referrer-Policy", "no-referrer")
                 self.end_headers()
@@ -328,7 +333,9 @@ class Portal:
                         return
                     choice, pairing = held
                     if isinstance(choice, Choice):
-                        self._send(200, joining_page(portal.box, choice.ssid.decode("utf-8", errors="replace"), pairing))
+                        self._send(
+                            200, joining_page(portal.box, choice.ssid.decode("utf-8", errors="replace"), pairing)
+                        )
                     else:
                         self._send(200, own_page(portal.box, choice, pairing))
                     return

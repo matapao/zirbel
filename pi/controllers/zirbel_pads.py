@@ -14,15 +14,16 @@ from __future__ import annotations
 import os
 import signal
 import sys
-from typing import Callable
+from collections.abc import Callable
 
+# The modules beside this one, however it is started.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import view  # noqa: E402 - the modules beside this one
-import wire  # noqa: E402
-from host_link import SOCKET, HostLink  # noqa: E402
-from pads import ADDRESS, Pads, System  # noqa: E402
-from view import NO_BLUETOOTH  # noqa: E402
+import view
+import wire
+from host_link import SOCKET, HostLink
+from pads import ADDRESS, Pads, System
+from view import NO_BLUETOOTH
 
 RECONNECT_SECONDS = 2
 RESCAN_SECONDS = 5
@@ -40,8 +41,14 @@ def _unit(value: object) -> float | None:
 class Service:
     """The gamepads, Bluetooth and the host, together; the loop's timers come in as later and cancel."""
 
-    def __init__(self, path: str, later: Callable[[float, Callable[[], None]], object], cancel: Callable[[object], None],
-                 folder: str = "/dev/input", system: System | None = None):
+    def __init__(
+        self,
+        path: str,
+        later: Callable[[float, Callable[[], None]], object],
+        cancel: Callable[[object], None],
+        folder: str = "/dev/input",
+        system: System | None = None,
+    ):
         self.later, self.cancel = later, cancel
         self.link = HostLink(path, self.opened, self.message, log=log)
         self.pads = Pads(self.link.send, later, folder, system, log=log)
@@ -98,8 +105,9 @@ def main() -> None:
 
     service = Service(SOCKET, later, GLib.source_remove)
     pads, link = service.pads, service.link
-    pads.watch = lambda device: GLib.io_add_watch(device.fd, GLib.PRIORITY_DEFAULT, GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR,
-                                                  lambda *_: pads.readable(device))
+    pads.watch = lambda device: GLib.io_add_watch(
+        device.fd, GLib.PRIORITY_DEFAULT, GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, lambda *_: pads.readable(device)
+    )
     pads.unwatch = lambda handle: handle and GLib.source_remove(handle)
 
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)

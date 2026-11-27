@@ -103,8 +103,15 @@ class Setup:
         self.networks: list[Network] = []
         suffix = box_suffix(nm)
         self.box, self.hotspot_ssid = f"Zirbel-{suffix}", f"Zirbel setup {suffix}"
-        self.portal = Portal(self.box, lambda: self.networks, lambda: editor.pairing(attempts=2), self._join_from_portal,
-                             self._used, own=own, make=self._own_from_portal)
+        self.portal = Portal(
+            self.box,
+            lambda: self.networks,
+            lambda: editor.pairing(attempts=2),
+            self._join_from_portal,
+            self._used,
+            own=own,
+            make=self._own_from_portal,
+        )
 
     def _used(self) -> None:
         self.last_use = time.monotonic()

@@ -14,8 +14,8 @@ import errno
 import os
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 import evdev as ev
 import wire

@@ -17,13 +17,14 @@ import subprocess
 import sys
 import time
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 EDITOR = os.environ.get("ZIRBEL_EDITOR_URL", "http://127.0.0.1").rstrip("/")
 WAKE = Path(os.environ.get("ZIRBEL_TV_WAKE", "/run/zirbel-tv/wake"))
 DRM = Path("/sys/class/drm")
 UNIT = "zirbel-tv.service"
+SYSTEMCTL = "/usr/bin/systemctl"
 # Loopback is not behind a proxy, whatever the environment says.
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 REPLY_BYTES = 64 * 1024
@@ -51,7 +52,10 @@ def _status(timeout: float = 3.0) -> object:
 
 
 def switch(
-    attempts: int = 1, wait: float = 3.0, ask: Callable[[], object] = _status, sleep: Callable[[float], None] = time.sleep
+    attempts: int = 1,
+    wait: float = 3.0,
+    ask: Callable[[], object] = _status,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> bool | None:
     """The editor's TV switch, from its status, or None while it doesn't answer (asked attempts times, wait apart)."""
     for attempt in range(attempts):
@@ -76,12 +80,16 @@ def decide(connected: bool, on: bool | None) -> str | None:
     return "start" if on else None
 
 
+def _run(command: list[str]) -> object:
+    return subprocess.run(command, check=False)  # noqa: S603  # follow's own systemctl command
+
+
 def follow(
     drm: Path = DRM,
     wake: Path = WAKE,
     attempts: int = 1,
     ask: Callable[[], object] = _status,
-    run: Callable[[list[str]], object] = lambda command: subprocess.run(command, check=False),
+    run: Callable[[list[str]], object] = _run,
     sleep: Callable[[float], None] = time.sleep,
 ) -> str | None:
     """Follows once: the wake file goes, then the console starts or stops. What it did, if anything."""
@@ -93,7 +101,7 @@ def follow(
     # With no display there is nothing to ask the editor.
     action = decide(connected, switch(attempts, ask=ask, sleep=sleep) if connected else None)
     if action:
-        run(["systemctl", "--no-block", action, UNIT])
+        run([SYSTEMCTL, "--no-block", action, UNIT])
     return action
 
 

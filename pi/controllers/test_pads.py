@@ -11,7 +11,7 @@ import evdev as ev
 import layout
 import pads
 import wire
-from test_evdev import BT_PAD, BT_PAD_MOTION, KEYBOARD, USB_PAD, FLIGHT_STICK, FakeKernel, Recorded, recording
+from test_evdev import BT_PAD, BT_PAD_MOTION, FLIGHT_STICK, KEYBOARD, USB_PAD, FakeKernel, Recorded, recording
 
 
 class FakeSystem:
@@ -149,9 +149,13 @@ class Devices(unittest.TestCase):
         self.assertEqual(len(system.closed), 2)
         found.scan()
         self.assertEqual(len(system.fds), 4)
-        self.assertEqual([device.view() for device in found.numbers()],
-                         [{"device": 0, "name": "USB gamepad", "kind": "usb"},
-                          {"device": 1, "name": "Wireless Controller", "kind": "bluetooth", "address": "A0:B1:C2:D3:E4:F5"}])
+        self.assertEqual(
+            [device.view() for device in found.numbers()],
+            [
+                {"device": 0, "name": "USB gamepad", "kind": "usb"},
+                {"device": 1, "name": "Wireless Controller", "kind": "bluetooth", "address": "A0:B1:C2:D3:E4:F5"},
+            ],
+        )
 
     def test_a_device_that_goes_is_let_go_and_its_number_is_used_again(self):
         system, _, sent, found, _ = setup_pads(self)
@@ -179,7 +183,9 @@ class Devices(unittest.TestCase):
         system.plug("event3", BT_PAD)
         found.scan()
         self.assertEqual(found.devices[path].info.name, "Wireless Controller")
-        self.assertEqual([frame["type"] for frame in frames(sent) if isinstance(frame, dict)], ["device", "gone", "device"])
+        self.assertEqual(
+            [frame["type"] for frame in frames(sent) if isinstance(frame, dict)], ["device", "gone", "device"]
+        )
 
     def test_one_not_readable_yet_is_tried_again_and_one_not_writable_reads_without_rumble(self):
         system, _, _, found, _ = setup_pads(self)
@@ -244,8 +250,13 @@ class Input(unittest.TestCase):
         found.scan()
         sent.clear()
         clock.advance(1)
-        fd = system.feed(path, (ev.EV_KEY, ev.BTN_SOUTH, 1), (ev.EV_SYN, ev.SYN_DROPPED, 0), (ev.EV_KEY, ev.BTN_SOUTH, 0),
-                         (ev.EV_SYN, ev.SYN_REPORT, 0))
+        fd = system.feed(
+            path,
+            (ev.EV_KEY, ev.BTN_SOUTH, 1),
+            (ev.EV_SYN, ev.SYN_DROPPED, 0),
+            (ev.EV_KEY, ev.BTN_SOUTH, 0),
+            (ev.EV_SYN, ev.SYN_REPORT, 0),
+        )
         # What the device holds now: B down, the stick right.
         system.kernel.held[fd] = {ev.BTN_EAST}
         system.kernel.values[fd][ev.ABS_X] = 32767

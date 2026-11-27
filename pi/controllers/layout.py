@@ -3,9 +3,9 @@ standard codes, else the device's own buttons and axes in the kernel's order), k
 
 The standard layout: buttons A (south), B (east), X (west), Y (north), LB, RB, LT, RT, Select, Start, the two stick
 presses, the d-pad's up, down, left and right, and Home; axes the left stick's x and y, then the right stick's. The
-triggers are ABS_Z and ABS_RZ (or ABS_HAT2Y and ABS_HAT2X) where the device has them, else BTN_TL2 and BTN_TR2; the d-pad
-is ABS_HAT0X and ABS_HAT0Y, or its own buttons. Each axis is normalized by its range: -1 to 1 for a stick, 0 to 1 for a
-trigger.
+triggers are ABS_Z and ABS_RZ (or ABS_HAT2Y and ABS_HAT2X) where the device has them, else BTN_TL2 and BTN_TR2; the
+d-pad is ABS_HAT0X and ABS_HAT0Y, or its own buttons. Each axis is normalized by its range: -1 to 1 for a stick, 0 to 1
+for a trigger.
 
 A pad state, the same in every pad frame (phones, this service, the screen), little-endian:
   u8 slot, u8 flags (bit 0: standard), u8 buttons n, u8 axes m, u32 pressed, u8 value[n], i16 axis[m]
@@ -54,7 +54,12 @@ def decode(data: bytes) -> tuple[bool, list[int], int, list[int]]:
     if len(data) < HEAD.size:
         raise ValueError("short")
     _, flags, buttons, axes, pressed = HEAD.unpack_from(data)
-    if flags & ~FLAG_STANDARD or buttons > MAX_BUTTONS or axes > MAX_AXES or len(data) != HEAD.size + buttons + 2 * axes:
+    if (
+        flags & ~FLAG_STANDARD
+        or buttons > MAX_BUTTONS
+        or axes > MAX_AXES
+        or len(data) != HEAD.size + buttons + 2 * axes
+    ):
         raise ValueError("not a pad state")
     values = list(data[HEAD.size:HEAD.size + buttons])
     return bool(flags), values, pressed, list(struct.unpack_from(f"<{axes}h", data, HEAD.size + buttons))
@@ -111,14 +116,14 @@ class Layout:
     def state(self) -> tuple[list[int], int]:
         """Each button's value and the pressed bits: a held button is fully pressed, a trigger as far as it goes, and
         the d-pad its hat's direction or its own button."""
-        values = [255 if held else analog for held, analog in zip(self.held, self.analog)]
+        values = [255 if held else analog for held, analog in zip(self.held, self.analog, strict=True)]
         if self.standard:
             for index, on in ((UP, self.hat[ev.ABS_HAT0Y] < 0), (DOWN, self.hat[ev.ABS_HAT0Y] > 0),
                               (LEFT, self.hat[ev.ABS_HAT0X] < 0), (RIGHT, self.hat[ev.ABS_HAT0X] > 0)):
                 if on:
                     values[index] = 255
         pressed = 0
-        for index, (held, value) in enumerate(zip(self.held, values)):
+        for index, (held, value) in enumerate(zip(self.held, values, strict=True)):
             if held or value >= (TRIGGER_PRESSED if index in (LT, RT) and self.standard else 128):
                 pressed |= 1 << index
         return values, pressed

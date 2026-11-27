@@ -48,8 +48,13 @@ BT_PAD = Recorded(
     ff=[ev.FF_RUMBLE])
 BT_PAD_MOTION = Recorded("Wireless Controller Motion Sensors", bus=ev.BUS_BLUETOOTH, uniq="a0:b1:c2:d3:e4:f5",
                          axes={code: (0, -32768, 32767) for code in range(6)}, props=[ev.INPUT_PROP_ACCELEROMETER])
-BT_PAD_TOUCHPAD = Recorded("Wireless Controller Touchpad", bus=ev.BUS_BLUETOOTH, uniq="a0:b1:c2:d3:e4:f5",
-                           keys=[ev.BTN_MOUSE, 0x145, ev.BTN_TOUCH, 0x14D], axes={ev.ABS_X: (0, 0, 1919), ev.ABS_Y: (0, 0, 1079)})
+BT_PAD_TOUCHPAD = Recorded(
+    "Wireless Controller Touchpad",
+    bus=ev.BUS_BLUETOOTH,
+    uniq="a0:b1:c2:d3:e4:f5",
+    keys=[ev.BTN_MOUSE, 0x145, ev.BTN_TOUCH, 0x14D],
+    axes={ev.ABS_X: (0, 0, 1919), ev.ABS_Y: (0, 0, 1079)},
+)
 KEYBOARD = Recorded("USB keyboard", keys=list(range(1, 128)))
 # A flight stick as hid-generic reports one: joystick buttons from BTN_TRIGGER, a twist on ABS_RZ and a throttle.
 FLIGHT_STICK = Recorded("Flight stick", keys=list(range(0x120, 0x12C)),
@@ -62,7 +67,7 @@ HID_PAD = Recorded("Generic gamepad",
                    axes={ev.ABS_X: (128, 0, 255), ev.ABS_Y: (128, 0, 255), ev.ABS_Z: (128, 0, 255),
                          ev.ABS_RZ: (128, 0, 255), ev.ABS_HAT0X: HAT, ev.ABS_HAT0Y: HAT})
 # A wheel: its own buttons, the wheel on ABS_X and pedals.
-WHEEL = Recorded("Racing wheel", keys=list(range(0x120, 0x130)) + [0x2C0, 0x2C1],
+WHEEL = Recorded("Racing wheel", keys=[*range(0x120, 0x130), 0x2C0, 0x2C1],
                  axes={ev.ABS_X: (32768, 0, 65535), ev.ABS_Y: (255, 0, 255), ev.ABS_Z: (255, 0, 255),
                        ev.ABS_RZ: (255, 0, 255)}, ff=[0x52])
 
@@ -162,7 +167,9 @@ class Ioctls(unittest.TestCase):
 
     def test_a_device_reads_as_its_driver_reports_it(self):
         info = info_of(BT_PAD)
-        self.assertEqual((info.name, info.bus, info.uniq), ("Wireless Controller", ev.BUS_BLUETOOTH, "a0:b1:c2:d3:e4:f5"))
+        self.assertEqual(
+            (info.name, info.bus, info.uniq), ("Wireless Controller", ev.BUS_BLUETOOTH, "a0:b1:c2:d3:e4:f5")
+        )
         self.assertEqual((info.vendor, info.product), (0x1234, 0x5678))
         self.assertEqual(info_of(USB_PAD).phys, "usb-0000:01:00.0-1.2/input0")
         self.assertEqual(info.keys, sorted(BT_PAD.keys))
@@ -192,7 +199,9 @@ class Kinds(unittest.TestCase):
         self.assertFalse(ev.is_standard(info_of(FLIGHT_STICK)))
         self.assertFalse(ev.is_standard(info_of(WHEEL)))
         # One stick and no right stick at all is still the standard layout.
-        one_stick = Recorded("Mini pad", keys=[ev.BTN_SOUTH, ev.BTN_EAST, ev.BTN_START], axes={ev.ABS_X: STICK, ev.ABS_Y: STICK})
+        one_stick = Recorded(
+            "Mini pad", keys=[ev.BTN_SOUTH, ev.BTN_EAST, ev.BTN_START], axes={ev.ABS_X: STICK, ev.ABS_Y: STICK}
+        )
         self.assertTrue(ev.is_standard(info_of(one_stick)))
 
 

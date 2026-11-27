@@ -1,5 +1,6 @@
-# Python checks: ruff (`pnpm check:py`: `ruff check` and `ruff format --check`) for the box's Wi-Fi setup service in
-# pi/setup, which runs on the Pi image's Python (Raspberry Pi OS Lite on Debian 13, Python 3.13).
+# Python checks: ruff (`pnpm check:py`: `ruff check` and `ruff format --check`) for the box's services in pi/ (the
+# Wi-Fi setup, the controllers and the TV console), which run on the Pi image's Python (Raspberry Pi OS Lite on Debian
+# 13, Python 3.13).
 target-version = "py313"
 line-length = 120
 
@@ -7,5 +8,6 @@ line-length = 120
 select = ["E", "F", "W", "I", "B", "UP", "S", "PGH", "RUF"]
 
 [lint.per-file-ignores]
-# The tests open the setup page on loopback and hand it made-up tokens.
-"pi/setup/test_*.py" = ["S106", "S310"]
+# The tests, which never run with -O: their fakes assert what they are asked (S101), and they hand the setup page
+# made-up tokens (S106) and open it on loopback (S310).
+"pi/**/test_*.py" = ["S101", "S106", "S310"]

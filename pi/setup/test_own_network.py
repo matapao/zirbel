@@ -89,7 +89,9 @@ class Credentials(unittest.TestCase):
         made = own_network.credentials("3F2A", self.state)
         self.assertEqual(made.name, "Zirbel 3F2A")
         self.assertEqual(stat.S_IMODE(self.state.stat().st_mode), 0o640)
-        self.assertEqual(json.loads(self.state.read_text()), {"version": 1, "name": made.name, "password": made.password})
+        self.assertEqual(
+            json.loads(self.state.read_text()), {"version": 1, "name": made.name, "password": made.password}
+        )
         self.assertEqual(own_network.credentials("9999", self.state), made, "the same ever after")
         self.assertEqual(own_network.read(self.state), made)
         self.assertEqual(os.listdir(self.folder.name), ["own-network.json"], "nothing half-written is left")
@@ -125,11 +127,16 @@ class FollowingTheSetting(unittest.TestCase):
             (None, False, False): own_network.KEEP,
         }
         for (wanted, exists, active), step in cases.items():
-            self.assertEqual(own_network.action(wanted=wanted, exists=exists, active=active), step, (wanted, exists, active))
+            self.assertEqual(
+                own_network.action(wanted=wanted, exists=exists, active=active), step, (wanted, exists, active)
+            )
 
     def test_the_network_is_made_after_the_radio_is_let_go_and_taken_away_when_it_does_not_start(self):
         nm = FakeNetworkManager()
-        hotspot_down = lambda: nm.calls.append(("hotspot down",))  # noqa: E731
+
+        def hotspot_down() -> None:
+            nm.calls.append(("hotspot down",))
+
         self.assertEqual(own_network.apply(nm, True, self.made, before_up=hotspot_down), own_network.UP)
         self.assertEqual(nm.calls, [("hotspot down",), ("up", "Zirbel 3F2A", "abcd-efgh-jkmn")])
         self.assertEqual(own_network.apply(nm, True, self.made, before_up=hotspot_down), own_network.KEEP)
@@ -138,7 +145,9 @@ class FollowingTheSetting(unittest.TestCase):
         failing = FakeNetworkManager(starts=False)
         self.assertEqual(own_network.apply(failing, True, self.made), own_network.FAILED)
         self.assertEqual(failing.calls, [("up", "Zirbel 3F2A", "abcd-efgh-jkmn"), ("down",)])
-        self.assertEqual(own_network.apply(FakeNetworkManager(), True, None), own_network.FAILED, "no password to make it with")
+        self.assertEqual(
+            own_network.apply(FakeNetworkManager(), True, None), own_network.FAILED, "no password to make it with"
+        )
 
     def test_off_takes_the_network_away_and_no_answer_leaves_it(self):
         nm = FakeNetworkManager(exists=True, active=True)

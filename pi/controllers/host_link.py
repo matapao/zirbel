@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 import socket
-from typing import Callable
+from collections.abc import Callable
 
 import wire
 
@@ -15,8 +15,14 @@ SEND_SECONDS = 0.5
 
 
 class HostLink:
-    def __init__(self, path: str, opened: Callable[[], None], message: Callable[[dict], None],
-                 closed: Callable[[], None] = lambda: None, log: Callable[[str], None] = lambda text: print(text, flush=True)):
+    def __init__(
+        self,
+        path: str,
+        opened: Callable[[], None],
+        message: Callable[[dict], None],
+        closed: Callable[[], None] = lambda: None,
+        log: Callable[[str], None] = lambda text: print(text, flush=True),
+    ):
         self.path, self.opened, self.message, self.closed, self.log = path, opened, message, closed, log
         self.sock: socket.socket | None = None
         self.reader = wire.Reader()

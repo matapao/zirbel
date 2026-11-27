@@ -10,10 +10,9 @@ start after this service, or restart: the controller and the agent are set up ag
 from __future__ import annotations
 
 import re
-from typing import Callable
+from collections.abc import Callable
 
 import dbus
-
 from view import NO_BLUETOOTH
 
 BLUEZ = "org.bluez"
@@ -142,7 +141,12 @@ class Bluetooth:
         props.update(changed)
         for name in invalidated:
             props.pop(str(name), None)
-        if str(interface) == ADAPTER and str(path) == self.adapter and "Discovering" in changed and not changed["Discovering"]:
+        if (
+            str(interface) == ADAPTER
+            and str(path) == self.adapter
+            and "Discovering" in changed
+            and not changed["Discovering"]
+        ):
             self._scan_over()
         if str(interface) in (ADAPTER, DEVICE):
             self.changed()
@@ -168,7 +172,9 @@ class Bluetooth:
             if not ADDRESS.match(address) or not is_gamepad(props):
                 continue
             if bool(props.get("Paired", False)):
-                paired.append({"address": address, "name": _name(props), "connected": bool(props.get("Connected", False))})
+                paired.append(
+                    {"address": address, "name": _name(props), "connected": bool(props.get("Connected", False))}
+                )
             elif "Name" in props:
                 found.append((int(props.get("RSSI", -127)), {"address": address, "name": _name(props)}))
         found.sort(key=lambda item: -item[0])
@@ -272,8 +278,12 @@ class Bluetooth:
             return
         if self.pairing == address:
             self.pairing = None
-        self._proxy(self.adapter).RemoveDevice(dbus.ObjectPath(found[0]), dbus_interface=ADAPTER, reply_handler=_ignore,
-                                               error_handler=lambda error: self._done(f"The box didn't forget it: {error}"))
+        self._proxy(self.adapter).RemoveDevice(
+            dbus.ObjectPath(found[0]),
+            dbus_interface=ADAPTER,
+            reply_handler=_ignore,
+            error_handler=lambda error: self._done(f"The box didn't forget it: {error}"),
+        )
 
     # The agent's answers (agent.py).
 

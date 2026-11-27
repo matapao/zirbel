@@ -39,7 +39,9 @@ class Decisions(unittest.TestCase):
         self.assertTrue(policy.retry_saved(saved=True, requested=False, **idle))
         self.assertFalse(policy.retry_saved(saved=False, requested=False, **idle))
         self.assertFalse(policy.retry_saved(saved=True, requested=True, **idle))
-        self.assertFalse(policy.retry_saved(saved=True, requested=False, since_retry=policy.RETRY_SECONDS, since_use=10))
+        self.assertFalse(
+            policy.retry_saved(saved=True, requested=False, since_retry=policy.RETRY_SECONDS, since_use=10)
+        )
 
 
 class Radio(unittest.TestCase):

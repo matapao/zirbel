@@ -1,6 +1,6 @@
 """The frames between this service and the host, over the host's local socket (its --pads-socket, by default
-/run/zirbel-pads/host.sock): each is a u16 length (little-endian), then that many bytes of payload, whose first byte is 0
-for a JSON control message (UTF-8, at most 4 KB) or 1 for input (u8 device, then a pad state, layout.py).
+/run/zirbel-pads/host.sock): each is a u16 length (little-endian), then that many bytes of payload, whose first byte is
+0 for a JSON control message (UTF-8, at most 4 KB) or 1 for input (u8 device, then a pad state, layout.py).
 
 This service sends {"type":"device","device":n,"name":…,"standard":bool,"uid":…} when a gamepad appears (uid: who it
 is across a reconnect, its Bluetooth address or its USB port's path), {"type":"gone","device":n} when it goes, input

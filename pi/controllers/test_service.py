@@ -60,20 +60,53 @@ BLUETOOTH = {"bluetooth": True, "scanning": True, "pairing": None, "error": None
 class Listing(unittest.TestCase):
     def test_devices_and_paired_controllers_are_one_list(self):
         message = view.controllers(PADS, BLUETOOTH)
-        self.assertEqual(message, {"type": "controllers", "devices": [
-            {"name": "USB gamepad", "kind": "usb", "connected": True, "device": 0},
-            {"name": "Wireless Controller", "kind": "bluetooth", "connected": True, "device": 1, "address": "A0:B1:C2:D3:E4:F5"},
-            {"name": "Arcade stick", "kind": "bluetooth", "connected": False, "address": "11:22:33:44:55:66"}],
-            "found": [{"address": "77:88:99:AA:BB:CC", "name": "Pro pad"}],
-            "scanning": True, "bluetooth": True, "pairing": None, "error": None})
-        self.assertEqual(view.controllers([], None), {"type": "controllers", "devices": [], "found": [], "scanning": False,
-                                                       "bluetooth": False, "pairing": None, "error": None})
-        self.assertEqual(view.controllers([], dict(BLUETOOTH, error="BlueZ's"), "The service's")["error"], "The service's")
+        self.assertEqual(
+            message,
+            {
+                "type": "controllers",
+                "devices": [
+                    {"name": "USB gamepad", "kind": "usb", "connected": True, "device": 0},
+                    {
+                        "name": "Wireless Controller",
+                        "kind": "bluetooth",
+                        "connected": True,
+                        "device": 1,
+                        "address": "A0:B1:C2:D3:E4:F5",
+                    },
+                    {"name": "Arcade stick", "kind": "bluetooth", "connected": False, "address": "11:22:33:44:55:66"},
+                ],
+                "found": [{"address": "77:88:99:AA:BB:CC", "name": "Pro pad"}],
+                "scanning": True,
+                "bluetooth": True,
+                "pairing": None,
+                "error": None,
+            },
+        )
+        self.assertEqual(
+            view.controllers([], None),
+            {
+                "type": "controllers",
+                "devices": [],
+                "found": [],
+                "scanning": False,
+                "bluetooth": False,
+                "pairing": None,
+                "error": None,
+            },
+        )
+        self.assertEqual(
+            view.controllers([], dict(BLUETOOTH, error="BlueZ's"), "The service's")["error"], "The service's"
+        )
 
     def test_the_view_fits_a_control_frame(self):
         long = "Ж" * 64
-        many = dict(BLUETOOTH, found=[{"address": f"77:88:99:AA:BB:{index:02X}", "name": long} for index in range(12)],
-                    paired=[{"address": f"11:22:33:44:55:{index:02X}", "name": long, "connected": False} for index in range(12)])
+        many = dict(
+            BLUETOOTH,
+            found=[{"address": f"77:88:99:AA:BB:{index:02X}", "name": long} for index in range(12)],
+            paired=[
+                {"address": f"11:22:33:44:55:{index:02X}", "name": long, "connected": False} for index in range(12)
+            ],
+        )
         pads = [{"device": index, "name": long, "kind": "usb"} for index in range(16)]
         message = view.controllers(pads, many, "x" * 500)
         self.assertTrue(wire.fits(message))
@@ -218,8 +251,9 @@ class Service(unittest.TestCase):
     def test_no_host_yet_is_tried_again_later(self):
         folder = tempfile.mkdtemp(prefix="zp")
         self.addCleanup(shutil.rmtree, folder)
-        service = zirbel_pads.Service(os.path.join(folder, "host.sock"), Clock().later, lambda timer: None, "/dev/input",
-                                      FakeSystem())
+        service = zirbel_pads.Service(
+            os.path.join(folder, "host.sock"), Clock().later, lambda timer: None, "/dev/input", FakeSystem()
+        )
         self.assertFalse(service.link.open())
         self.assertFalse(service.link.readable())
         service.report()

@@ -61,7 +61,9 @@ def _shared() -> dbus.Dictionary:
     return _sv(
         {
             "method": "shared",
-            "address-data": dbus.Array([_sv({"address": HOTSPOT_ADDRESS, "prefix": dbus.UInt32(24)})], signature="a{sv}"),
+            "address-data": dbus.Array(
+                [_sv({"address": HOTSPOT_ADDRESS, "prefix": dbus.UInt32(24)})], signature="a{sv}"
+            ),
         }
     )
 
@@ -261,7 +263,9 @@ class NetworkManager:
             try:
                 ssid = bytes(self._get(path, ACCESS_POINT, "Ssid"))
                 strength = int(self._get(path, ACCESS_POINT, "Strength"))
-                auth = auth_of(*(int(self._get(path, ACCESS_POINT, name)) for name in ("Flags", "WpaFlags", "RsnFlags")))
+                auth = auth_of(
+                    *(int(self._get(path, ACCESS_POINT, name)) for name in ("Flags", "WpaFlags", "RsnFlags"))
+                )
             except dbus.DBusException:
                 continue
             # NetworkManager gives a percentage; the setup page shows dBm, which this approximates.
@@ -424,15 +428,19 @@ def reaches_out(attempts: int = 3) -> bool:
     import urllib.request
 
     for _ in range(attempts):
-        route = subprocess.run(["/usr/bin/ip", "-4", "route", "show", "default"], capture_output=True, text=True).stdout.split()
+        route = subprocess.run(
+            ["/usr/bin/ip", "-4", "route", "show", "default"], capture_output=True, text=True
+        ).stdout.split()
         gateway = route[2] if len(route) > 2 and route[0] == "default" and route[1] == "via" else ""
         # The gateway is the address `ip` gave for the default route, an argument of ping's alone (no shell).
         ping = ["/usr/bin/ping", "-c", "2", "-W", "2", gateway]
         if gateway and subprocess.run(ping, capture_output=True).returncode == 0:  # noqa: S603  # an address, as above
             return True
         try:
-            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- a fixed https address  # noqa: E501
-            urllib.request.urlopen(urllib.request.Request("https://downloads.raspberrypi.com/", method="HEAD"), timeout=6)
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- a fixed https address  # noqa: E501  # semgrep reads a rule's id and reason on one line
+            urllib.request.urlopen(
+                urllib.request.Request("https://downloads.raspberrypi.com/", method="HEAD"), timeout=6
+            )
             return True
         except OSError:
             time.sleep(2)
@@ -442,8 +450,10 @@ def reaches_out(attempts: int = 3) -> bool:
 def firewall(iface: str | None, port: int = 8081) -> None:
     """The hotspot's rules while it runs, on its interface alone; None takes them away."""
     subprocess.run(["/usr/sbin/nft", "destroy", "table", "inet", "zirbel_setup"], capture_output=True, check=False)
-    if not iface and subprocess.run(["/usr/sbin/nft", "list", "table", "inet", "zirbel_setup"], capture_output=True).returncode == 0:
-        print("The setup hotspot's firewall could not be taken away.", flush=True)
+    if not iface:
+        left = subprocess.run(["/usr/sbin/nft", "list", "table", "inet", "zirbel_setup"], capture_output=True)
+        if left.returncode == 0:
+            print("The setup hotspot's firewall could not be taken away.", flush=True)
     if iface:
         if not iface.replace("-", "").replace("_", "").isalnum():
             raise ValueError("An unexpected interface name.")

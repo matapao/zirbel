@@ -29,8 +29,13 @@ class Displays(unittest.TestCase):
         self.folder.cleanup()
 
     def test_a_connector_with_something_plugged_in_is_a_display(self) -> None:
-        drm = connectors(self.root, card1_HDMI_A_1="disconnected", card1_HDMI_A_2="connected", card1_Writeback_1="connected",
-                         card0_Composite_1="unknown")
+        drm = connectors(
+            self.root,
+            card1_HDMI_A_1="disconnected",
+            card1_HDMI_A_2="connected",
+            card1_Writeback_1="connected",
+            card0_Composite_1="unknown",
+        )
         self.assertEqual(zirbel_tv.displays(drm), ["card1-HDMI-A-2"])
 
     def test_none_plugged_in_or_no_drm_at_all(self) -> None:
@@ -87,7 +92,7 @@ class Follow(unittest.TestCase):
         self.wake.touch()
         drm = connectors(self.root / "drm", card1_HDMI_A_1="connected")
         self.assertEqual(self.follow(drm, {"settings": {"tv": True}}), "start")
-        self.assertEqual(self.commands, [["systemctl", "--no-block", "start", "zirbel-tv.service"]])
+        self.assertEqual(self.commands, [["/usr/bin/systemctl", "--no-block", "start", "zirbel-tv.service"]])
         self.assertFalse(self.wake.exists(), "the wake file goes")
 
     def test_it_stops_with_the_switch_off_or_no_display_and_waits_on_an_editor_that_doesnt_say(self) -> None:

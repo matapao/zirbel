@@ -137,7 +137,9 @@ class Server(unittest.TestCase):
             self.assertEqual(wrong.exception.code, 400)
             wrong.exception.close()
             started = time.monotonic()
-            with NO_PROXY.open(urllib.request.Request(f"http://127.0.0.1:{port}/go", data=f"token={token}".encode())) as answer:
+            with NO_PROXY.open(
+                urllib.request.Request(f"http://127.0.0.1:{port}/go", data=f"token={token}".encode())
+            ) as answer:
                 self.assertIn("is joining Home", answer.read().decode())
             self.assertFalse(chosen, "the join waits until the page is out")
             self.assertTrue(joined.wait(5))
@@ -327,7 +329,9 @@ class Editor(unittest.TestCase):
         with mock.patch("sys.stdout", new_callable=io.StringIO):
             self.assertEqual(zirbel_setup.follow_setting(nm, OWN), own_network.DOWN)
         editor.EDITOR = "http://127.0.0.1:9"  # an editor that doesn't answer changes nothing
-        self.assertEqual(zirbel_setup.follow_setting(FakeNetworkManager(exists=True, active=True), OWN), own_network.KEEP)
+        self.assertEqual(
+            zirbel_setup.follow_setting(FakeNetworkManager(exists=True, active=True), OWN), own_network.KEEP
+        )
 
     def test_made_from_the_setup_page_the_setting_comes_first_and_goes_back_if_the_network_does_not_start(self):
         import zirbel_setup
@@ -336,7 +340,9 @@ class Editor(unittest.TestCase):
             # The service as its setup page's worker sees it, its main loop a list of what was handed to it.
             setup = object.__new__(zirbel_setup.Setup)
             setup.own, setup.scheduled = OWN, []
-            setup.GLib = types.SimpleNamespace(idle_add=lambda work, *args: setup.scheduled.append((work.__name__, args)))
+            setup.GLib = types.SimpleNamespace(
+                idle_add=lambda work, *args: setup.scheduled.append((work.__name__, args))
+            )
             setup._hotspot_down = lambda _nm: nm.calls.append(("hotspot down",))
             return setup
 

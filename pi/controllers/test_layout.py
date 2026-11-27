@@ -71,8 +71,11 @@ class Standard(unittest.TestCase):
         self.assertEqual(pressed, 1 << 12 | 1 << 15)
         _, _, pressed, _ = play(USB_PAD, (ev.EV_ABS, ev.ABS_HAT0Y, 1), (ev.EV_ABS, ev.ABS_HAT0X, -1))
         self.assertEqual(pressed, 1 << 13 | 1 << 14)
-        buttons = Recorded("D-pad buttons", keys=[ev.BTN_SOUTH, ev.BTN_EAST, ev.BTN_DPAD_UP, ev.BTN_DPAD_DOWN,
-                                                  ev.BTN_DPAD_LEFT, ev.BTN_DPAD_RIGHT], axes={ev.ABS_X: STICK, ev.ABS_Y: STICK})
+        buttons = Recorded(
+            "D-pad buttons",
+            keys=[ev.BTN_SOUTH, ev.BTN_EAST, ev.BTN_DPAD_UP, ev.BTN_DPAD_DOWN, ev.BTN_DPAD_LEFT, ev.BTN_DPAD_RIGHT],
+            axes={ev.ABS_X: STICK, ev.ABS_Y: STICK},
+        )
         _, values, pressed, _ = play(buttons, (ev.EV_KEY, ev.BTN_DPAD_LEFT, 1))
         self.assertEqual((pressed, values[14]), (1 << 14, 255))
 
@@ -80,15 +83,21 @@ class Standard(unittest.TestCase):
         state = layout.Layout(info_of(USB_PAD))
         state.update(ev.EV_KEY, ev.BTN_SOUTH, 1)
         state.reset({ev.BTN_EAST}, {ev.ABS_X: 32767})
-        _, values, pressed, axes = layout.decode(state.frame())
+        _, _, pressed, axes = layout.decode(state.frame())
         self.assertEqual((pressed, axes[0]), (1 << 1, 32767))
         self.assertIn(ev.ABS_Z, state.codes())
 
 
 class Own(unittest.TestCase):
     def test_another_device_keeps_its_buttons_and_axes_in_the_kernels_order(self):
-        standard, values, pressed, axes = play(FLIGHT_STICK, (ev.EV_KEY, 0x120, 1), (ev.EV_KEY, 0x12B, 1),
-                                               (ev.EV_ABS, ev.ABS_X, 0), (ev.EV_ABS, 0x06, 255), (ev.EV_ABS, ev.ABS_HAT0Y, 1))
+        standard, values, pressed, axes = play(
+            FLIGHT_STICK,
+            (ev.EV_KEY, 0x120, 1),
+            (ev.EV_KEY, 0x12B, 1),
+            (ev.EV_ABS, ev.ABS_X, 0),
+            (ev.EV_ABS, 0x06, 255),
+            (ev.EV_ABS, ev.ABS_HAT0Y, 1),
+        )
         self.assertFalse(standard)
         self.assertEqual((len(values), len(axes)), (12, 6))
         self.assertEqual(pressed, 1 | 1 << 11)

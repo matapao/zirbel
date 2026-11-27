@@ -1,6 +1,7 @@
 """Linux input devices (evdev), as the box's controllers service reads them, all through fcntl.ioctl: a device's name,
-ids, where it is plugged in and capabilities (EVIOCGNAME, EVIOCGID, EVIOCGPHYS, EVIOCGUNIQ, EVIOCGBIT, EVIOCGPROP), its axes' ranges (EVIOCGABS), the state
-of its buttons (EVIOCGKEY), its events as the kernel writes them, and rumble (EV_FF with FF_RUMBLE, EVIOCSFF).
+ids, where it is plugged in and capabilities (EVIOCGNAME, EVIOCGID, EVIOCGPHYS, EVIOCGUNIQ, EVIOCGBIT, EVIOCGPROP), its
+axes' ranges (EVIOCGABS), the state of its buttons (EVIOCGKEY), its events as the kernel writes them, and rumble (EV_FF
+with FF_RUMBLE, EVIOCSFF).
 
 The ioctl numbers are the kernel's asm-generic ones, which arm, arm64 and x86 share. Two of the kernel's structures are
 as long as the system's C long or pointer: an event is 24 bytes on a 64-bit box and 16 on a 32-bit one, and a force
@@ -11,8 +12,8 @@ from __future__ import annotations
 
 import fcntl
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 _READ, _WRITE = 2, 1
 
@@ -41,13 +42,13 @@ ABS_HAT0X, ABS_HAT0Y, ABS_HAT2X, ABS_HAT2Y = 0x10, 0x11, 0x14, 0x15
 ABS_MISC = 0x28
 
 EVIOCGID = _ioc(_READ, 0x02, 8)
-EVIOCGABS = lambda axis: _ioc(_READ, 0x40 + axis, 24)  # noqa: E731 - the kernel's macro
-EVIOCGNAME = lambda length: _ioc(_READ, 0x06, length)  # noqa: E731
-EVIOCGPHYS = lambda length: _ioc(_READ, 0x07, length)  # noqa: E731
-EVIOCGUNIQ = lambda length: _ioc(_READ, 0x08, length)  # noqa: E731
-EVIOCGPROP = lambda length: _ioc(_READ, 0x09, length)  # noqa: E731
-EVIOCGKEY = lambda length: _ioc(_READ, 0x18, length)  # noqa: E731
-EVIOCGBIT = lambda kind, length: _ioc(_READ, 0x20 + kind, length)  # noqa: E731
+EVIOCGABS = lambda axis: _ioc(_READ, 0x40 + axis, 24)  # noqa: E731  # the kernel's macro, as in its header
+EVIOCGNAME = lambda length: _ioc(_READ, 0x06, length)  # noqa: E731  # the kernel's macro, as in its header
+EVIOCGPHYS = lambda length: _ioc(_READ, 0x07, length)  # noqa: E731  # the kernel's macro, as in its header
+EVIOCGUNIQ = lambda length: _ioc(_READ, 0x08, length)  # noqa: E731  # the kernel's macro, as in its header
+EVIOCGPROP = lambda length: _ioc(_READ, 0x09, length)  # noqa: E731  # the kernel's macro, as in its header
+EVIOCGKEY = lambda length: _ioc(_READ, 0x18, length)  # noqa: E731  # the kernel's macro, as in its header
+EVIOCGBIT = lambda kind, length: _ioc(_READ, 0x20 + kind, length)  # noqa: E731  # the kernel's macro, as in its header
 FF_EFFECT_SIZE = 48 if struct.calcsize("P") == 8 else 44
 EVIOCSFF = _ioc(_WRITE, 0x80, FF_EFFECT_SIZE)
 EVIOCRMFF = _ioc(_WRITE, 0x81, 4)
@@ -120,12 +121,16 @@ def read_info(fd: int, ioctl: Ioctl = fcntl.ioctl) -> Info:
         for code in bits(_buffer(ioctl, fd, EVIOCGBIT(EV_ABS, ABS_MAX // 8 + 1), ABS_MAX // 8 + 1)):
             value, minimum, maximum = struct.unpack("=6i", _buffer(ioctl, fd, EVIOCGABS(code), 24))[:3]
             axes[code] = Axis(value, minimum, maximum)
-    rumble = EV_FF in kinds and FF_RUMBLE in bits(_buffer(ioctl, fd, EVIOCGBIT(EV_FF, FF_MAX // 8 + 1), FF_MAX // 8 + 1))
+    rumble = EV_FF in kinds and FF_RUMBLE in bits(
+        _buffer(ioctl, fd, EVIOCGBIT(EV_FF, FF_MAX // 8 + 1), FF_MAX // 8 + 1)
+    )
     try:
         props = bits(_buffer(ioctl, fd, EVIOCGPROP(PROP_MAX // 8 + 1), PROP_MAX // 8 + 1))
     except OSError:
         props = []
-    return Info(name or "Controller", bus, uniq, phys, vendor, product, keys, axes, rumble, INPUT_PROP_ACCELEROMETER in props)
+    return Info(
+        name or "Controller", bus, uniq, phys, vendor, product, keys, axes, rumble, INPUT_PROP_ACCELEROMETER in props
+    )
 
 
 def pressed_keys(fd: int, ioctl: Ioctl = fcntl.ioctl) -> set[int]:
@@ -171,13 +176,18 @@ def event(kind: int, code: int, value: int) -> bytes:
 
 def rumble_effect(effect: int, duration_ms: int, strong: float, weak: float) -> bytearray:
     """struct ff_effect for FF_RUMBLE: its id (-1 for a new one), the length it plays, and its two motors, 0 to 1."""
-    magnitude = lambda value: max(0, min(0xFFFF, round(value * 0xFFFF)))  # noqa: E731
+
+    def magnitude(value: float) -> int:
+        return max(0, min(0xFFFF, round(value * 0xFFFF)))
+
     head = struct.pack("=HhHHHHH2xHH", FF_RUMBLE, effect, 0, 0, 0, max(0, min(5000, int(duration_ms))), 0,
                        magnitude(strong), magnitude(weak))
     return bytearray(head.ljust(FF_EFFECT_SIZE, b"\0"))
 
 
-def upload_rumble(fd: int, effect: int, duration_ms: int, strong: float, weak: float, ioctl: Ioctl = fcntl.ioctl) -> int:
+def upload_rumble(
+    fd: int, effect: int, duration_ms: int, strong: float, weak: float, ioctl: Ioctl = fcntl.ioctl
+) -> int:
     """Uploads (or, with its id, changes) a rumble effect; the kernel writes back the id it plays by."""
     buffer = rumble_effect(effect, duration_ms, strong, weak)
     ioctl(fd, EVIOCSFF, buffer, True)

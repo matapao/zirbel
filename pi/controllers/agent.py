@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import dbus
 import dbus.service
-
 from bluetooth import AGENT_PATH, LEGACY_PIN, Bluetooth
 
 AGENT = "org.bluez.Agent1"
@@ -17,6 +16,8 @@ def _rejected() -> dbus.DBusException:
 
 
 class Agent(dbus.service.Object):
+    """The agent at AGENT_PATH; its methods have Agent1's names, as D-Bus calls them."""
+
     def __init__(self, bus, bluetooth: Bluetooth):
         super().__init__(bus, AGENT_PATH)
         self.bluetooth = bluetooth
@@ -26,39 +27,39 @@ class Agent(dbus.service.Object):
             raise _rejected()
 
     @dbus.service.method(AGENT, in_signature="", out_signature="")
-    def Release(self) -> None:  # noqa: N802 - D-Bus's names
+    def Release(self) -> None:
         pass
 
     @dbus.service.method(AGENT, in_signature="o", out_signature="s")
-    def RequestPinCode(self, device) -> str:  # noqa: N802
+    def RequestPinCode(self, device) -> str:
         self._check(device)
         return LEGACY_PIN
 
     @dbus.service.method(AGENT, in_signature="o", out_signature="u")
-    def RequestPasskey(self, device) -> int:  # noqa: N802
+    def RequestPasskey(self, device) -> int:
         self._check(device)
         return dbus.UInt32(0)
 
     @dbus.service.method(AGENT, in_signature="os", out_signature="")
-    def DisplayPinCode(self, device, pincode) -> None:  # noqa: N802
+    def DisplayPinCode(self, device, pincode) -> None:
         self._check(device)
 
     @dbus.service.method(AGENT, in_signature="ouq", out_signature="")
-    def DisplayPasskey(self, device, passkey, entered) -> None:  # noqa: N802
+    def DisplayPasskey(self, device, passkey, entered) -> None:
         pass
 
     @dbus.service.method(AGENT, in_signature="ou", out_signature="")
-    def RequestConfirmation(self, device, passkey) -> None:  # noqa: N802
+    def RequestConfirmation(self, device, passkey) -> None:
         self._check(device)
 
     @dbus.service.method(AGENT, in_signature="o", out_signature="")
-    def RequestAuthorization(self, device) -> None:  # noqa: N802
+    def RequestAuthorization(self, device) -> None:
         self._check(device)
 
     @dbus.service.method(AGENT, in_signature="os", out_signature="")
-    def AuthorizeService(self, device, uuid) -> None:  # noqa: N802
+    def AuthorizeService(self, device, uuid) -> None:
         self._check(device, service=True)
 
     @dbus.service.method(AGENT, in_signature="", out_signature="")
-    def Cancel(self) -> None:  # noqa: N802
+    def Cancel(self) -> None:
         pass

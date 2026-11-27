@@ -125,7 +125,9 @@ class FakeProxy:
 def objects(**adapter) -> dict:
     return {
         "/org/bluez": {bluetooth.AGENT_MANAGER: {}},
-        ADAPTER: {bluetooth.ADAPTER: {"Address": "B8:27:EB:00:00:01", "Powered": False, "Discovering": False, **adapter}},
+        ADAPTER: {
+            bluetooth.ADAPTER: {"Address": "B8:27:EB:00:00:01", "Powered": False, "Discovering": False, **adapter}
+        },
         PAD: device("A0:B1:C2:D3:E4:F5", "Wireless Controller", paired=True, connected=True, Icon="input-gaming"),
         OTHER: device("11:22:33:44:55:66", "Pro Controller", rssi=-60, Class=0x002508),
         KEYBOARD: device("77:88:99:AA:BB:CC", "Keyboard", rssi=-40, Icon="input-keyboard"),
@@ -153,7 +155,9 @@ class Start(unittest.TestCase):
 
     def test_an_agent_registered_already_is_still_made_the_default(self):
         bus = FakeBus(objects(Powered=True))
-        bus.failures[("/org/bluez", "RegisterAgent")] = dbus.DBusException("exists", name="org.bluez.Error.AlreadyExists")
+        bus.failures[("/org/bluez", "RegisterAgent")] = dbus.DBusException(
+            "exists", name="org.bluez.Error.AlreadyExists"
+        )
         found = bluetooth.Bluetooth(bus, lambda: None, Clock().later, lambda timer: None, log=lambda text: None)
         found.start()
         bus.owner(":1.7")
@@ -179,7 +183,9 @@ class View(unittest.TestCase):
         bus.receivers["InterfacesAdded"](ADAPTER + "/dev_00_11_22_33_44_56", device("00:11:22:33:44:56", None, rssi=-20,
                                                                                     Icon="input-gaming"))
         view = found.view()
-        self.assertEqual(view["paired"], [{"address": "A0:B1:C2:D3:E4:F5", "name": "Wireless Controller", "connected": True}])
+        self.assertEqual(
+            view["paired"], [{"address": "A0:B1:C2:D3:E4:F5", "name": "Wireless Controller", "connected": True}]
+        )
         # Not the keyboard, nor one with no name yet.
         self.assertEqual(view["found"], [{"address": "00:11:22:33:44:55", "name": "Arcade Stick"},
                                          {"address": "11:22:33:44:55:66", "name": "Pro Controller"}])
