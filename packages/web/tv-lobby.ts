@@ -43,19 +43,31 @@ function tile(key: string, title: string, lines: string[], action: string, act: 
 }
 
 const seats = (game: Game) => game.players.max === 1 ? '1 player' : 'Up to ' + game.players.max + ' players';
+/** What a game's tile says it does: here, where games can play, a session or a game alone; else a phone plays it. */
+function gameAction(canPlay: boolean, multiplayer: boolean) {
+  if (!canPlay) return 'Play on a phone';
+  return multiplayer ? 'Start a session' : 'Play';
+}
+
 function ago(when: string) {
   const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(when)) / 60_000));
-  return minutes < 1 ? 'Started just now' : minutes < 60 ? 'Started ' + minutes + ' min ago' : 'Started ' + Math.floor(minutes / 60) + ' h ago';
+  if (minutes < 1) return 'Started just now';
+  return minutes < 60 ? 'Started ' + minutes + ' min ago' : 'Started ' + Math.floor(minutes / 60) + ' h ago';
 }
 
 type View = 'home' | 'code' | 'started' | 'elsewhere';
+/** Where each view puts the focus first. */
+const VIEW_FOCUS: Record<View, string> = { home: '', code: 'letter:2', started: 'go-in', elsewhere: 'elsewhere-back' };
 
 export class TvLobby {
   private view: View = 'home';
   private typed = '';
   private busy = false;
 
-  constructor(private readonly context: Context) {
+  private readonly context: Context;
+
+  constructor(context: Context) {
+    this.context = context;
     const letters = byId('letters');
     for (const letter of CODE_LETTERS) {
       const button = el('button', letter);
@@ -74,7 +86,7 @@ export class TvLobby {
   render(state: LobbyState) {
     const { canPlay } = this.context;
     byId('games').replaceChildren(...state.games.map((game) => tile('game:' + game.release, game.title, [seats(game)],
-      !canPlay ? 'Play on a phone' : game.multiplayer ? 'Start a session' : 'Play', () => void this.start(game))));
+      gameAction(canPlay, game.multiplayer), () => void this.start(game))));
     byId('no-games').hidden = state.games.length > 0;
     byId('sessions').replaceChildren(
       tile('join', 'Join with a code', ['A session’s code, from whoever started it'], 'Enter a code', () => this.enter()),
@@ -102,7 +114,7 @@ export class TvLobby {
     this.view = view;
     for (const id of ['home', 'code', 'started', 'elsewhere'] as const) byId(id).hidden = id !== view;
     if (view === 'home') this.context.refresh();
-    this.context.focus(focus ?? (view === 'home' ? '' : view === 'code' ? 'letter:2' : view === 'started' ? 'go-in' : 'elsewhere-back'));
+    this.context.focus(focus ?? VIEW_FOCUS[view]);
   }
 
   private enter(title?: string) {

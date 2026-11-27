@@ -15,6 +15,12 @@ const PLACE_COLORS = ['#ef5b4f', '#3f8fe5', '#f2c33a', '#46c06a', '#a46be3', '#f
 const CLAIM_MS = 30_000;
 
 type Holder = { kind: 'phone' | 'box' | 'gamepad'; name: string; label: { name: string; color: string } | null; slot?: number };
+/** A place's controller as its tile names it. */
+function holderKind(holder: Holder) {
+  if (holder.kind === 'phone') return 'Phone';
+  if (holder.kind === 'box') return 'Gamepad on the box';
+  return holder.name;
+}
 type Context = {
   /** The screen, once open; the lobby's address for other devices; the screen's code. */
   screen: () => Screen | undefined; base: () => string; code: () => string | undefined;
@@ -36,14 +42,20 @@ export class Places {
   private pads: PadInfo[] = [];
   /** The device's own gamepads' places, by gamepad index. */
   private readonly native = new Map<number, { place: number; name: string }>();
-  private claim?: { place: number; until: number; timer: ReturnType<typeof setInterval> };
+  private claim: { place: number; until: number; timer: ReturnType<typeof setInterval> } | undefined;
   /** The controller that took the last place waiting for A, and when: that A chooses nothing here either. */
   private took?: { source: string; at: number };
-  private chosen?: number;
-  private swapping?: number;
+  private chosen: number | undefined;
+  private swapping: number | undefined;
   private readonly codes = new Map<string, Promise<HTMLImageElement>>();
 
-  constructor(private readonly root: HTMLElement, private readonly context: Context) {}
+  private readonly root: HTMLElement;
+  private readonly context: Context;
+
+  constructor(root: HTMLElement, context: Context) {
+    this.root = root;
+    this.context = context;
+  }
 
   /** Whether a controller's A now takes a place rather than choosing on the page: while a place waits for one, and
    *  for the controller that just took it (its frame may come after the host's word that it did). */
@@ -58,6 +70,13 @@ export class Places {
     const link = new URL('pad/' + encodeURIComponent(code), this.context.base());
     if (place !== undefined) link.searchParams.set('place', String(place));
     return link.href;
+  }
+
+  /** What a place's tile says: its holder's label and kind, else a claim's countdown, else Free. */
+  private holderText(place: number, holder: Holder | undefined) {
+    if (holder) return [holder.label?.name, holderKind(holder)].filter(Boolean).join(' · ');
+    if (this.claim?.place === place) return 'Press A · ' + Math.max(0, Math.ceil((this.claim.until - Date.now()) / 1000)) + ' s';
+    return 'Free';
   }
 
   holders() {
@@ -78,13 +97,19 @@ export class Places {
     this.render();
   }
 
+  /** The place a device gamepad's press takes: the claimed one, for A, if it is free or already this gamepad's; for
+   *  one without a place, the first free (-1 when none is); else none. */
+  private placeFor(a: boolean, holders: (Holder | undefined)[], own: { place: number } | undefined) {
+    if (a && this.claim && (!holders[this.claim.place] || own?.place === this.claim.place)) return this.claim.place;
+    return own ? undefined : holders.findIndex((holder) => !holder);
+  }
+
   /** A device gamepad's button went down: one without a place takes the place waiting for A, or the first free one. */
   pressed(index: number, name: string, a: boolean) {
     if (this.native.has(index) && !(a && this.claim)) return;
     const holders = this.holders();
     const own = this.native.get(index);
-    const place = a && this.claim && (!holders[this.claim.place] || own?.place === this.claim.place) ? this.claim.place
-      : own ? undefined : holders.findIndex((holder) => !holder);
+    const place = this.placeFor(a, holders, own);
     if (place === undefined || place < 0) return;
     this.native.set(index, { place, name: name.replace(/\s*\(.*$/, '').slice(0, 40) || 'Gamepad' });
     if (this.claim?.place === place) {
@@ -186,9 +211,7 @@ export class Places {
       tile.dataset.nav = '';
       tile.dataset.key = 'place:' + place;
       tile.style.setProperty('--place', colour(place, holder));
-      const who = holder ? [holder.label?.name, holder.kind === 'phone' ? 'Phone' : holder.kind === 'box' ? 'Gamepad on the box' : holder.name]
-        .filter(Boolean).join(' · ') : this.claim?.place === place
-        ? 'Press A · ' + Math.max(0, Math.ceil((this.claim.until - Date.now()) / 1000)) + ' s' : 'Free';
+      const who = this.holderText(place, holder);
       tile.append(el('span', label(place), 'tag'), el('span', who, 'who'));
       tile.setAttribute('aria-label', label(place) + ': ' + who);
       const link = holder ? undefined : this.padLink(place);

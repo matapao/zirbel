@@ -63,7 +63,7 @@ export function readSocketTables(): SocketTables | undefined {
   return v4 === undefined && v6 === undefined ? undefined : { v4: v4 ?? '', v6: v6 ?? '' };
 }
 
-type Connection = { remoteAddress?: string; remotePort?: number; localPort?: number };
+type Connection = { remoteAddress?: string | undefined; remotePort?: number | undefined; localPort?: number | undefined };
 
 // Asked once per connection: a kept-alive one stays whose it was.
 const owned = new WeakMap<object, boolean>();

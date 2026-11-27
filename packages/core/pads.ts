@@ -36,15 +36,15 @@ export type PadsLink = { text(message: object): void; binary(frame: Uint8Array):
 
 type Rate = { window: number; count: number };
 type Label = { name: string; color: string };
-type Device = { kind: 'box'; readonly id: number; name: string; standard: boolean; uid?: string; on?: Screen; place: number;
+type Device = { kind: 'box'; readonly id: number; name: string; standard: boolean; uid?: string | undefined; on?: Screen | undefined; place: number;
   pressed: number; rate: Rate };
 export type Phone = { kind: 'phone'; readonly link: PadsLink; readonly on: Screen; readonly resume: string; place: number; pressed: number;
   rate: Rate; gone: boolean };
 type Controller = Phone | Device;
-type Claim = { screen: Screen; at: number; place?: number };
+type Claim = { screen: Screen; at: number; place?: number | undefined };
 export type Screen = {
   readonly id: string; readonly code: string; readonly resume: string; readonly access: Access; readonly order: number;
-  box: boolean; link?: PadsLink; lost: number; open?: string; rate: Rate;
+  box: boolean; link?: PadsLink | undefined; lost: number; open?: string | undefined; rate: Rate;
   readonly slots: (Controller | undefined)[]; labels: (Label | undefined)[]; local: Set<number>;
   /** Dropped phones' places, by their resume tokens. */
   readonly kept: Map<string, { place: number; at: number }>;
@@ -62,17 +62,22 @@ export class Pads {
   private readonly screens = new Map<string, Screen>();
   private readonly devices = new Map<number, Device>();
   private claims: Claim[] = [];
-  private service?: PadsLink;
+  private service: PadsLink | undefined;
   private order = 0;
   private readonly tries: CodeTries;
   /** The controller service's last view of the box's controllers and Bluetooth, while it is connected. */
-  controllers?: Record<string, unknown>;
+  controllers: Record<string, unknown> | undefined;
   /** Called with each view the service sends (Box settings' controllers wait on it). */
   viewed?: () => void;
   /** Where box gamepads that went were, by their uid: one back within a minute takes its place again. */
   private readonly away = new Map<string, { screen: Screen; place: number; at: number }>();
 
-  constructor(private readonly now = Date.now) { this.tries = new CodeTries(now); }
+  private readonly now: () => number;
+
+  constructor(now = Date.now) {
+    this.now = now;
+    this.tries = new CodeTries(now);
+  }
 
   /** A screen's socket on a listener: the screen its resume names there, or a new one. box: the socket is the box's own
    *  (from loopback). A resumed screen's labels and local places are the new page's to say. Undefined when the listener

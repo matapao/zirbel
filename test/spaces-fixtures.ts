@@ -94,7 +94,7 @@ type Answer = { status: number; body: unknown; headers: Headers };
 /** A request with the base's own origin unless headers say otherwise, its JSON body when it has one. */
 export async function call(base: string, method: string, path: string, json?: unknown, headers: Record<string, string> = { origin: base }):
   Promise<Answer> {
-  const response = await fetch(base + path, { method, body: json === undefined ? undefined : JSON.stringify(json),
+  const response = await fetch(base + path, { method, body: json === undefined ? null : JSON.stringify(json),
     headers: { ...(json === undefined ? {} : { 'content-type': 'application/json' }), ...headers } });
   const text = await response.text();
   let body: unknown = text;

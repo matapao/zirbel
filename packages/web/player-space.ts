@@ -68,7 +68,9 @@ async function simulated() {
 export async function joinSpace(link: SpaceLink, asked: { name?: string; role?: Role } = {}) {
   const spaces = await spacesSdk();
   if (!spaces) throw new Error('Multiplayer isn’t available on this host now.');
-  const credential = link.invite ? '&skalet.invite=' + link.invite : link.ticket ? '&skalet.ticket=' + link.ticket : '';
+  let credential = '';
+  if (link.invite) credential = '&skalet.invite=' + link.invite;
+  else if (link.ticket) credential = '&skalet.ticket=' + link.ticket;
   const WebSocket = await simulated();
   const space = await spaces.join({ link: location.origin + location.pathname + '#skalet.space=' + link.space + credential,
     binary: true, ...asked, ...(WebSocket ? { WebSocket } : {}) });

@@ -175,7 +175,9 @@ function serve(pads: Pads, connection: Socket) {
     if (message.success) pads.serviceMessage(link, message.data);
     return message.success;
   };
-  connection.on('data', (chunk) => {
+  connection.on('data', (data) => {
+    // No encoding is set on the socket, so its data are bytes.
+    const chunk = typeof data === 'string' ? Buffer.from(data) : data;
     pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
     while (pending.length >= 2) {
       const length = pending.readUInt16LE(0);

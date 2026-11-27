@@ -4,7 +4,12 @@ import { connect, type Socket } from 'node:net';
 
 /** A call the kernel refused: its word for why (data.code, such as full or expired), and its message. */
 export class SpacesError extends Error {
-  constructor(readonly code: string, message: string) { super(message); }
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
 }
 
 /** The longest line read from the kernel, and how long a call waits for its answer. */
@@ -30,7 +35,10 @@ export class SpacesSocket {
   private closed = false;
   private readonly ended: (() => void)[] = [];
 
-  private constructor(private readonly socket: Socket) {
+  private readonly socket: Socket;
+
+  private constructor(socket: Socket) {
+    this.socket = socket;
     socket.setEncoding('utf8');
     socket.on('data', (chunk: string) => this.read(chunk));
     socket.on('error', () => socket.destroy());

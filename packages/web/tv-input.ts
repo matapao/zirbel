@@ -21,16 +21,24 @@ export function direction(input: PadInput): Command | undefined {
   }
   const x = input.axes[0] ?? 0, y = input.axes[1] ?? 0;
   if (Math.max(Math.abs(x), Math.abs(y)) < STICK) return undefined;
-  return Math.abs(x) >= Math.abs(y) ? (x > 0 ? 'right' : 'left') : (y > 0 ? 'down' : 'up');
+  if (Math.abs(x) >= Math.abs(y)) return x > 0 ? 'right' : 'left';
+  return y > 0 ? 'down' : 'up';
 }
 
 /** Turns gamepads' states into commands: A (or Start) chooses and B (or Select) goes back as they go down, and a
  *  direction moves at once, then again after delay and every repeat milliseconds while it is held. */
 export class PadNavigator {
-  private readonly pads = new Map<string, { input: PadInput; direction?: Command; next: number }>();
+  private readonly pads = new Map<string, { input: PadInput; direction?: Command | undefined; next: number }>();
 
-  constructor(private readonly emit: (command: Command, source: string) => void, private readonly delay = 420,
-    private readonly repeat = 140) {}
+  private readonly emit: (command: Command, source: string) => void;
+  private readonly delay: number;
+  private readonly repeat: number;
+
+  constructor(emit: (command: Command, source: string) => void, delay = 420, repeat = 140) {
+    this.emit = emit;
+    this.delay = delay;
+    this.repeat = repeat;
+  }
 
   /** A gamepad's state now, or none once it is gone. */
   update(source: string, input: PadInput | undefined, now: number) {
@@ -59,7 +67,7 @@ export class PadNavigator {
 }
 
 /** A key's command: arrows move, Enter (a remote's OK) chooses, Escape, Backspace and the Back keys TVs send go back. */
-export function keyCommand(event: { key: string; keyCode?: number }): Command | undefined {
+export function keyCommand(event: { key: string; keyCode?: number | undefined }): Command | undefined {
   switch (event.key) {
     case 'ArrowUp': case 'Up': return 'up';
     case 'ArrowDown': case 'Down': return 'down';

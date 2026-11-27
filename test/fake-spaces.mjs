@@ -137,7 +137,7 @@ const local = net((connection) => {
   connection.setEncoding('utf8');
   connection.on('error', () => connection.destroy());
   connection.on('data', (chunk) => {
-    buffer += chunk;
+    buffer += String(chunk);
     for (let end = buffer.indexOf('\n'); end >= 0; end = buffer.indexOf('\n')) {
       const message = JSON.parse(buffer.slice(0, end));
       buffer = buffer.slice(end + 1);
@@ -198,7 +198,7 @@ server.on('upgrade', (request, stream, head) => {
   // As the kernel: a page of the front's own origin, or one in an opaque-origin sandbox, or a program.
   const origin = request.headers.origin;
   const refused = proxied(request) ?? (new URL(request.url, 'http://fake').pathname === '/.skalet/spaces' ? undefined : 'No such path.') ??
-    (origin && origin !== 'null' && origin !== 'http://' + request.headers['x-forwarded-host'] ? 'Other origins are refused.' : undefined);
+    (origin && origin !== 'null' && origin !== 'http://' + String(request.headers['x-forwarded-host']) ? 'Other origins are refused.' : undefined);
   if (refused) { stream.end('HTTP/1.1 403 Forbidden\r\nconnection: close\r\ncontent-length: 0\r\n\r\n'); return; }
   // The join page as the page that came by this host sees it.
   const base = 'http://' + request.headers['x-forwarded-host'];

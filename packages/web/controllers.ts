@@ -30,9 +30,8 @@ export function screenControllers(options: { open: boolean; onChange(): void; on
   let local: LocalPad[] = [];
   const frames = new Map<number, PadState>();
   const labels = new Map<number, PlaceLabel>();
-  let claim: { place?: number; until: number; timer: number } | undefined;
+  let claim: { place?: number | undefined; until: number; timer: number } | undefined;
   let port: MessagePort | undefined;
-  // oxlint-disable-next-line unicorn/require-post-message-target-origin -- a MessagePort has no target origin
   const post = (type: string, value: unknown) => port?.postMessage({ type, value });
   const forFrame = () => pads.map(({ slot, kind, name, connected }) => ({ slot, kind, name, connected }));
 
@@ -159,7 +158,10 @@ export function screenControllers(options: { open: boolean; onChange(): void; on
     /** Swaps the controllers at two places, either of which may be empty. */
     swap(from: number, to: number) {
       if (from === to) return;
-      const moved = local.map((item) => item.place === from ? { ...item, place: to } : item.place === to ? { ...item, place: from } : item);
+      const moved = local.map((item) => {
+        if (item.place === from) return { ...item, place: to };
+        return item.place === to ? { ...item, place: from } : item;
+      });
       placed(moved);
       if (pads.some((pad) => pad.slot === from || pad.slot === to)) screen?.move(from, to);
     },

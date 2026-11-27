@@ -45,7 +45,11 @@ export const loopback = (address: string) => address === '::1' || address.starts
  *  session codes, and a screen's on the pads socket (pads.ts), each counted apart. */
 export class CodeTries {
   private readonly wrong = new Map<string, { since: number; count: number }>();
-  constructor(private readonly now = Date.now) {}
+  private readonly now: () => number;
+
+  constructor(now = Date.now) {
+    this.now = now;
+  }
 
   /** The address tried too many wrong codes this minute. */
   blocked(address: string) {

@@ -113,10 +113,10 @@ for (const host of hosts) {
         .map((name) => page.headers.get(name))], [200, 'text/html; charset=utf-8', 'no-cache', policy, 'no-referrer'], path);
       assert.equal(await page.text(), readFileSync('dist/web/pad.html', 'utf8'), path);
     }
-    for (const [file, type] of [['pad.js', 'application/javascript; charset=utf-8'], ['pad.css', 'text/css; charset=utf-8']]) {
+    for (const [file, type] of [['pad.js', 'application/javascript; charset=utf-8'], ['pad.css', 'text/css; charset=utf-8']] as const) {
       const served = await fetch(player + '/' + file);
       assert.deepEqual([served.status, served.headers.get('content-type'), served.headers.get('cache-control')], [200, type, 'no-cache'], file);
-      assert.equal(await served.text(), readFileSync('dist/web/' + file!, 'utf8'));
+      assert.equal(await served.text(), readFileSync('dist/web/' + file, 'utf8'));
     }
     for (const path of ['/pad.html', '/pad/', '/pad/K7QX/', '/pad/K7QX/more', '/pad/' + 'K'.repeat(17), '/pad/K%20X', '/pads'])
       assert.equal((await fetch(player + path)).status, 404, path);
@@ -132,10 +132,10 @@ for (const host of hosts) {
     assert.deepEqual([page.status, page.headers.get('content-type'), page.headers.get('cache-control'), page.headers.get('content-security-policy')],
       [200, 'text/html; charset=utf-8', 'no-cache', policy]);
     assert.equal(await page.text(), readFileSync('dist/web/tv.html', 'utf8'));
-    for (const [file, type] of [['tv.js', 'application/javascript; charset=utf-8'], ['tv.css', 'text/css; charset=utf-8']]) {
+    for (const [file, type] of [['tv.js', 'application/javascript; charset=utf-8'], ['tv.css', 'text/css; charset=utf-8']] as const) {
       const served = await fetch(player + '/' + file);
       assert.deepEqual([served.status, served.headers.get('content-type'), served.headers.get('cache-control')], [200, type, 'no-cache'], file);
-      assert.equal(await served.text(), readFileSync('dist/web/' + file!, 'utf8'));
+      assert.equal(await served.text(), readFileSync('dist/web/' + file, 'utf8'));
     }
     for (const path of ['/tv.html', '/tv/', '/tv/more']) assert.equal((await fetch(player + path)).status, 404, path);
     assert.equal((await fetch(player + '/tv', { method: 'POST' })).status, 404);

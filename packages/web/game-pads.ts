@@ -18,7 +18,9 @@ export type PadLike = {
 };
 /** A device gamepad the page gave a place: the browser's index and id for it. */
 export type LocalPad = { place: number; index: number; id: string };
-type Controller = PadEntry & { pad?: Pad; timestamp: number; shown: boolean; layout: number; snapshot?: PadLike; actuator: Actuator };
+type Controller = PadEntry & {
+  pad?: Pad; timestamp: number; shown: boolean; layout: number; snapshot?: PadLike | undefined; actuator: Actuator;
+};
 export type Rumble = { slot: number; duration: number; strong: number; weak: number };
 
 /** The places browsers keep for a device's own gamepads: getGamepads() is at least this long. */

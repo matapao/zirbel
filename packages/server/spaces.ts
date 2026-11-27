@@ -44,14 +44,18 @@ export class Spaces implements SpaceKernel {
   /** Where /.skalet/* goes, and the token it goes with: the child's; none under a host, whose front answers those
    *  paths itself, or while no child runs. */
   target: { http: string; token: string } | null = null;
-  private socket?: SpacesSocket;
-  private child?: ChildProcess;
+  private socket: SpacesSocket | undefined;
+  private child: ChildProcess | undefined;
   private timer?: NodeJS.Timeout;
   private attempt = 0;
   private stopped = false;
   private readonly resets = new Set<() => void>();
 
-  constructor(private readonly options: SpacesOptions) {}
+  private readonly options: SpacesOptions;
+
+  constructor(options: SpacesOptions) {
+    this.options = options;
+  }
 
   /** Whether spaces can be opened now. */
   get available() { return Boolean(this.socket); }

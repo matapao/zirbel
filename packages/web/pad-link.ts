@@ -35,7 +35,7 @@ function vibrate({ duration, strong, weak }: Rumble) {
   try { navigator.vibrate(duration > 0 && Math.max(strong, weak) > 0 ? Math.min(5000, duration) : 0); } catch { /* not allowed yet */ }
 }
 
-export function padLink(code: string, onState: (state: LinkState) => void, options: { place?: number } = {}, open = openPad) {
+export function padLink(code: string, onState: (state: LinkState) => void, options: { place?: number | undefined } = {}, open = openPad) {
   let current = restingPad();
   let stopped = false;
   onState({ state: 'joining' });

@@ -119,8 +119,13 @@ function startControllers() {
 }
 // Show on TV: the box's screen takes this seat (a net game's member hands its place over), and this page controls it.
 async function showOnTv() {
-  const link = space ? await handOver(room, space).catch((reason: unknown) => { error.textContent = (reason as Error).message; })
-    : seatCredential ? '/join/' + room + '#seat=' + seatCredential : undefined;
+  let link: string | undefined;
+  if (space) {
+    link = await handOver(room, space).catch((reason: unknown) => {
+      error.textContent = (reason as Error).message;
+      return undefined;
+    });
+  } else if (seatCredential) link = '/join/' + room + '#seat=' + seatCredential;
   if (link) controllers?.show(link);
 }
 function onTv(code: string) {

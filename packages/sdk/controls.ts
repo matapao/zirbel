@@ -12,7 +12,7 @@ export const MAX_PLACES = 8;
 export const PLACE_NAME = 24;
 export const PLACE_COLOR = /^#[0-9a-fA-F]{6}$/;
 export type ControlKeys = Partial<Record<ControlInput, string>>;
-export type PlaceLabel = { name?: string; color?: string };
+export type PlaceLabel = { name?: string | undefined; color?: string | undefined };
 type ControlPlayer = { keys?: ControlKeys } & PlaceLabel;
 export type Controls = { keys?: ControlKeys; players?: ControlPlayer[] };
 
@@ -55,5 +55,7 @@ export function checkedControls(value: unknown): Controls | undefined {
 }
 
 /** The keys place k presses: its player's where the game lists players, else controls.keys for P1. */
-export const placeKeys = (controls: Controls, place: number) =>
-  controls.players ? controls.players[place]?.keys : place === 0 ? controls.keys : undefined;
+export function placeKeys(controls: Controls, place: number) {
+  if (controls.players) return controls.players[place]?.keys;
+  return place === 0 ? controls.keys : undefined;
+}

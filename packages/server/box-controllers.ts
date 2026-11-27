@@ -22,7 +22,12 @@ const ANSWER_MS = 2000;
 export class BoxControllers {
   private readonly waiting = new Set<() => void>();
 
-  constructor(private readonly service: ControllerService, private readonly answerMs = ANSWER_MS) {
+  private readonly service: ControllerService;
+  private readonly answerMs: number;
+
+  constructor(service: ControllerService, answerMs = ANSWER_MS) {
+    this.service = service;
+    this.answerMs = answerMs;
     service.viewed = () => { for (const done of this.waiting) done(); };
   }
 

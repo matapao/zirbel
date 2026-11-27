@@ -20,7 +20,8 @@ export function nextFocus(rects: readonly Rect[], from: number, toward: Command)
   let best: number | undefined, score = Infinity;
   rects.forEach((rect, index) => {
     // Beyond the tile's own edge that way, by its middle.
-    const edge = horizontal ? (sign > 0 ? here.left + here.width : here.left) : (sign > 0 ? here.top + here.height : here.top);
+    const start = horizontal ? here.left : here.top;
+    const edge = sign > 0 ? start + (horizontal ? here.width : here.height) : start;
     if (index === from || (centre(rect) - edge) * sign <= -1) return;
     const along = horizontal ? gap(here.left, here.width, rect.left, rect.width) : gap(here.top, here.height, rect.top, rect.height);
     const off = horizontal ? gap(here.top, here.height, rect.top, rect.height) : gap(here.left, here.width, rect.left, rect.width);

@@ -11,7 +11,7 @@ type Sent = { type: string; [key: string]: unknown };
 function link() {
   const texts: Sent[] = [], frames: Uint8Array[] = [];
   let closed: number | undefined;
-  const self: PadsLink & { texts: Sent[]; frames: Uint8Array[]; closed?: number; last(type: string): Sent | undefined } = {
+  const self: PadsLink & { texts: Sent[]; frames: Uint8Array[]; readonly closed: number | undefined; last(type: string): Sent | undefined } = {
     texts, frames,
     text(message) { texts.push(structuredClone(message) as Sent); },
     binary(frame) { frames.push(frame.slice()); },

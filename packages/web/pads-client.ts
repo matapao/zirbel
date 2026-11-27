@@ -79,8 +79,8 @@ function connection(origin: string, query: () => string, handlers: { text(messag
 }
 
 export type ScreenOptions = {
-  /** The resume token of the screen to keep; by default this tab's last screen's, kept in sessionStorage. */
-  resume?: string;
+  /** The resume token of the screen to keep; by default (or undefined) this tab's last screen's, kept in sessionStorage. */
+  resume?: string | undefined;
   onScreen?(screen: ScreenInfo): void;
   onPads?(pads: PadInfo[]): void;
   /** A controller's state; its slot is its place. */
@@ -187,9 +187,10 @@ type PadPlace = { slot: number; screen: string; resume: string; label: PlaceLabe
 
 export type PadOptions = {
   /** The place to ask for (one taken, or none, gives the first free one). */
-  place?: number;
-  /** The resume token of an earlier pad of this screen, by default the one this tab's last pad of the code kept. */
-  resume?: string;
+  place?: number | undefined;
+  /** The resume token of an earlier pad of this screen, by default (or undefined) the one this tab's last pad of the
+   *  code kept. */
+  resume?: string | undefined;
   /** Joined, or its place or label changed; again after each reconnection. */
   onPad?(pad: PadPlace): void;
   onRumble?(rumble: Rumble & { slot: number }): void;
