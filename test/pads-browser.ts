@@ -332,7 +332,7 @@ for (const host of hostsUnderTest()) test('over the ' + host.name + ' host, a ph
 });
 
 // Show on TV of a game with its own netcode: the TV takes the laptop's member of the game's space, its number and all,
-// from the member's own resume the laptop hands it; the laptop becomes its controller.
+// by the hand-over the laptop's page asks the kernel for; the laptop becomes its controller.
 const netGame = `<!doctype html><p id="out">waiting</p><script type="module">
   const zn = await import('/.skalet/net.js');
   const net = zn.connect({ via: 'parent' });

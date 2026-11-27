@@ -125,7 +125,9 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
         return;
       }
       if (route === 'rooms' && parts[0] === 'info' && parts.length === 1 && request.method === 'GET') {
-        if (!room.mayView((request.headers.authorization ?? '').replace(/^Bearer /, '')))
+        // A net game's room is for its space's members, by the proof a page made on its own connection.
+        const credential = (request.headers.authorization ?? '').replace(/^Bearer /, '');
+        if (room.space ? !await rooms.proven(room, credential) : !room.mayView(credential))
           throw new ZirbelError(403, 'An invitation or current seat is required.');
         reply(response, { ...room.summary(), scene: room.release.scene,
           registerObjects: room.release.game?.registerObjects,

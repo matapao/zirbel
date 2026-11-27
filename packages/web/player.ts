@@ -7,7 +7,7 @@ import { createQuest, type Quest } from '../games/quest.ts';
 import { drawScene } from './scene.ts';
 import { screenControllers, type Controllers } from './controllers.ts';
 import { fromTv, TV_PAGE } from './tv-return.ts';
-import { bridgeFrame, forgetPlace, handOver, holdsPlace, joinSpace, localSpace, spaceLink, type PageSpace, type Role } from './player-space.ts';
+import { bridgeFrame, gameFrame, handOver, joinSpace, localSpace, spaceLink, type PageSpace, type Role } from './player-space.ts';
 
 function byId<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
 const room = location.pathname.split('/').at(-1) ?? '';
@@ -104,7 +104,7 @@ function toggleControllers(open = controllersPanel.hidden) {
   controllersPanel.hidden = !open;
   controllersButton.setAttribute('aria-expanded', String(open));
   if (open) void import('./controllers-panel.ts').then(({ controllersPanel: drawn }) => {
-    panel ??= drawn(controllersPanel, controllers!, { showOnTv, close: () => toggleControllers(false) });
+    panel ??= drawn(controllersPanel, controllers!, { showOnTv: () => void showOnTv(), close: () => toggleControllers(false) });
     panel.draw();
   });
 }
@@ -112,19 +112,22 @@ controllersButton.addEventListener('click', () => toggleControllers());
 function startControllers() {
   if (controllers) return;
   const open = document.body.dataset.preview === undefined;
-  controllers = screenControllers({ open, onChange: () => { if (!controllersPanel.hidden) panel?.draw(); }, onShown: onTv });
+  controllers = screenControllers({ open, onChange: () => { if (!controllersPanel.hidden) panel?.draw(); }, onShown: onTv,
+    // The TV goes to a game shown on it: the member it holds here leaves, so the SDK seats it by the link's ticket.
+    onLeaving: () => { if (space) { handedOver = true; void space.leave(); space = undefined; } } });
   controllersButton.hidden = !open;
 }
-// Show on TV: the box's screen takes this seat, and this page becomes the game's controller there.
-function showOnTv() {
-  const link = space ? handOver(room, space) : seatCredential ? '/join/' + room + '#seat=' + seatCredential : undefined;
+// Show on TV: the box's screen takes this seat (a net game's member hands its place over), and this page controls it.
+async function showOnTv() {
+  const link = space ? await handOver(room, space).catch((reason: unknown) => { error.textContent = (reason as Error).message; })
+    : seatCredential ? '/join/' + room + '#seat=' + seatCredential : undefined;
   if (link) controllers?.show(link);
 }
 function onTv(code: string) {
   client?.stop(false);
   remember();
-  // The TV takes this member's place, which this page neither leaves nor keeps.
-  if (space) { handedOver = true; forgetPlace(space.id); space = undefined; }
+  // The TV takes this member's place, which this page doesn't leave: the kernel ends its connection as replaced.
+  if (space) { handedOver = true; space = undefined; }
   showLobby();
   controllers?.close();
   controllers = undefined;
@@ -137,13 +140,14 @@ function onTv(code: string) {
 
 // A game the TV page went into goes back there when it is left, and its lobby link too.
 if (fromTv()) byId<HTMLAnchorElement>('to-lobby').href = TV_PAGE;
-byId('leave').addEventListener('click', () => {
+function leaveRoom(message = 'You left the room.') {
   client?.stop();
   remember();
-  if (space) { forgetPlace(space.id); void space.leave(); space = undefined; }
+  if (space) { void space.leave(); space = undefined; }
   if (fromTv()) { location.assign(TV_PAGE); return; }
-  showLobby('You left the room.');
-});
+  showLobby(message);
+}
+byId('leave').addEventListener('click', () => leaveRoom());
 reset.addEventListener('click', () => client?.send({ type: 'reset' }));
 
 let authoredFrame: HTMLIFrameElement | undefined;
@@ -198,7 +202,6 @@ function showLobby(message = '') {
   stateTimer = undefined;
   gamePort?.close();
   gamePort = undefined;
-  // The frame hears the space end before it goes, so its leaving at pagehide doesn't reach the space.
   endBridge?.();
   endBridge = undefined;
   authoredFrame?.remove();
@@ -249,15 +252,9 @@ async function showGame() {
   if (info.gameUrl) {
     canvas.hidden = true;
     game.querySelector('footer')!.hidden = true;
-    authoredFrame = document.createElement('iframe');
+    // A net game's frame in a session is its space's already (enterSpace).
+    authoredFrame ??= gameFrame();
     authoredFrame.title = info.manifest.title;
-    authoredFrame.className = 'authored-game';
-    // Pointer lock, for games aimed with the mouse: it starts only on a click in the game, and the browser always shows
-    // how to leave it (Esc).
-    authoredFrame.sandbox.add('allow-scripts', 'allow-pointer-lock');
-    // The device's own gamepads, which game-sdk gives the game at the places this page gives them.
-    authoredFrame.allow = 'gamepad';
-    authoredFrame.referrerPolicy = 'no-referrer';
     startControllers();
     // A simulated network for testing (the net module's ?net=lag:120,…,stats) goes from the player's address to the
     // game's, whose overlay shows it; the simulator itself is under this page's connection.
@@ -265,7 +262,7 @@ async function showGame() {
     const net = info.manifest.simulation === 'net-v2';
     authoredFrame.src = info.gameUrl + (net && simulated ? '?net=' + encodeURIComponent(simulated) : '');
     game.prepend(authoredFrame);
-    if (net) void shareSpace(authoredFrame);
+    if (net && !endBridge) void playAlone(authoredFrame);
     return;
   }
   switch (info.manifest.template) {
@@ -317,23 +314,32 @@ async function showGame() {
   }
 }
 
-/** A game with its own netcode joins this page's space through it: the session's, or alone one of the page's own. */
-async function shareSpace(frame: HTMLIFrameElement) {
-  const shared = space ?? await localSpace().catch(() => undefined);
-  if (!shared || frame !== authoredFrame) return;
-  const end = await bridgeFrame(frame, shared);
+/** A game with its own netcode that plays alone joins a space of the page's own through it. */
+async function playAlone(frame: HTMLIFrameElement) {
+  const alone = await localSpace().catch(() => undefined);
+  const end = alone && frame === authoredFrame ? await bridgeFrame(frame, alone, () => {}) : undefined;
   if (frame === authoredFrame) endBridge = end;
-  else end();
+  else end?.();
 }
 
 const ENDED: Record<string, string> = { replaced: 'This seat is in use on another screen now.',
   lost: 'The connection to this session was lost.', 'credential-expired': 'This seat has expired. Join again from the lobby.',
   refused: 'This seat has expired. Join again from the lobby.', left: 'You left the room.' };
-/** Joins a net game's space, as the link says or as the join form asks, and starts the game in it. */
+/** Joins a net game's space, as the link says or as the join form asks, proves to the host which member this page is,
+ *  for the room's info, and starts the game in it. */
 async function enterSpace(asked?: { name: string; role: Role }) {
   if (!netLink) return;
   connection.textContent = 'Connecting…';
   const joined = await joinSpace(netLink, asked);
+  // Shared with the game's frame at once, so what the others send waits for the game, which loads once the page has the
+  // room's info. A game that left the session and didn't come back gives up this page's place in it too.
+  const frame = authoredFrame = gameFrame();
+  endBridge = await bridgeFrame(frame, joined, () => {
+    if (joined === space && frame === authoredFrame) leaveRoom('The game left the session.');
+  });
+  try { info = await fetchRoom<RoomInfo>(room, 'info', undefined, await joined.proof()); }
+  catch (reason) { void joined.leave(); showLobby(); throw reason; }
+  describe();
   space = joined;
   joined.on('status', (status) => {
     if (joined === space) connection.textContent = status === 'reconnecting' ? 'Reconnecting…' : '';
@@ -341,7 +347,6 @@ async function enterSpace(asked?: { name: string; role: Role }) {
   joined.on('closed', ({ reason }) => {
     if (joined !== space || handedOver) return;
     space = undefined;
-    if (reason !== 'replaced' && reason !== 'lost') forgetPlace(netLink.space);
     showLobby(ENDED[reason] ?? 'This session has ended.');
     form.hidden = true;
   });
@@ -456,12 +461,23 @@ async function reserveSeat(event: SubmitEvent) {
   finally { submit.disabled = false; }
 }
 
+/** The room's title, description and badge, from its info. */
+function describe() {
+  document.title = info.manifest.title + ' · Zirbel';
+  byId('game-title').textContent = info.manifest.title;
+  byId('lobby-title').textContent = info.manifest.title;
+  byId('lobby-description').textContent = info.gameUrl || !info.manifest.template ? '' : templates[info.manifest.template].description;
+  byId('badge').textContent = info.code ? 'Code ' + info.code : info.development ? 'Development playtest'
+    : info.solo && !ticket ? 'Local playtest' : '';
+}
+
 try {
-  const link = ticket || invite;
-  let credential = saved() || link;
-  // A net game's room is for whoever has its space's link.
-  if (netLink) info = await fetchRoom<RoomInfo>(room, 'info', undefined, netLink.space);
+  // A net game's room is for its space's members: an invitation asks for a name first; a ticket, or the member this tab
+  // holds, goes straight in. Else a seat kept from before, the one the lobby held, or the invitation's.
+  if (netLink) await (netLink.invite ? Promise.resolve(showLobby()) : enterSpace());
   else {
+    const link = ticket || invite;
+    let credential = saved() || link;
     if (!credential) throw new Error('Open the complete invitation link from the room owner.');
     try { info = await fetchRoom<RoomInfo>(room, 'info', undefined, credential); }
     catch (error) {
@@ -470,21 +486,11 @@ try {
       credential = link;
       info = await fetchRoom<RoomInfo>(room, 'info', undefined, credential);
     }
+    describe();
+    if (credential !== invite) connect(credential);
+    else if (info.solo) connect((await fetchRoom<{ ticket: string }>(room, 'reserve', { invite, name: 'Explorer', role: 'player' })).ticket);
+    else showLobby();
   }
-  document.title = info.manifest.title + ' · Zirbel';
-  byId('game-title').textContent = info.manifest.title;
-  byId('lobby-title').textContent = info.manifest.title;
-  byId('lobby-description').textContent = info.gameUrl || !info.manifest.template ? '' : templates[info.manifest.template].description;
-  byId('badge').textContent = info.code ? 'Code ' + info.code : info.development ? 'Development playtest'
-    : info.solo && !ticket ? 'Local playtest' : '';
-  // In a space: an invitation asks for a name first, unless this tab is in it already. Else a seat kept from before, or
-  // the one the lobby held.
-  if (netLink) await (netLink.invite && !holdsPlace(netLink.space) ? Promise.resolve(showLobby()) : enterSpace());
-  else if (credential !== invite) connect(credential);
-  else if (info.solo) {
-    const { ticket } = await fetchRoom<{ ticket: string }>(room, 'reserve', { invite, name: 'Explorer', role: 'player' });
-    connect(ticket);
-  } else showLobby();
 } catch (reason) {
   showLobby((reason as Error).message);
   form.hidden = true;

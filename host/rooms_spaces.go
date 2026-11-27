@@ -3,13 +3,15 @@ package main
 import (
 	"errors"
 	"net/http"
+	"regexp"
 	"time"
 )
 
 // A net game's room plays over a space of the spaces kernel (spaces.go),
-// mirroring Rooms.withSpace, spaceTicket and spaces in packages/core/rooms.ts:
-// the space's code is the room's, its tickets seat the room's players, and the
-// room ends with its space.
+// mirroring Rooms.withSpace, spaceTicket, proven and spaces in
+// packages/core/rooms.ts: the room's code is its space's, its tickets seat the
+// room's players, a proof says who of them a page is, and the room ends with
+// its space.
 
 // spacesSweep is how often the kernel's spaces are listed: their members for
 // the lobby, and the rooms whose space ended.
@@ -80,48 +82,75 @@ func (rs *Rooms) sweepSpaces(listed map[string]spaceMembers, since time.Time) {
 	}
 }
 
+// spaceCodeTries is how many codes a net game's room tries for its space,
+// each refused as another space's, before it gives up.
+const spaceCodeTries = 8
+
+// spaceProof is a proof as the kernel makes one: one of its secrets.
+var spaceProof = regexp.MustCompile(`^[A-Za-z0-9_-]{16,100}$`)
+
 // WithSpace opens a space for a net game's shared room while the kernel runs,
-// with a code where the room would have one: the room plays over it, and its
-// code is the session's. A room the kernel can't give one is closed. A space
-// whose code another room has (the kernel draws its own) is given back.
+// with a code where the room would have one: the room plays over it, and the
+// code the host chose is its session's and its space's. A code the kernel
+// refuses as another space's gives way to another. A room the kernel can't
+// give a space is closed.
 func (rs *Rooms) WithSpace(room *Room) (*Room, error) {
 	kernel := rs.kernel
 	if room.Solo || !isNet(room.Release.Manifest.Simulation) || room.spaceOf() != nil || kernel == nil || !kernel.Available() {
 		return room, nil
 	}
-	code := room.starter != "" || room.Access == "lan"
-	for tries := 0; ; tries++ {
+	coded := room.starter != "" || room.Access == "lan"
+	for tries := 1; ; tries++ {
+		code := ""
+		if coded {
+			rs.mu.Lock()
+			code = rs.freeCode()
+			rs.opening[code] = true
+			rs.mu.Unlock()
+		}
 		opened, err := kernel.Open(room.Release.Manifest.Players.Max, code)
-		if err != nil {
-			rs.Close(room.ID)
-			var known *HTTPError
-			if errors.As(err, &known) {
-				return nil, err
-			}
-			return nil, fail(http.StatusServiceUnavailable, "Multiplayer isn't available on this host now. Try again soon.")
-		}
 		rs.mu.Lock()
-		taken := false
-		for _, other := range rs.rooms {
-			taken = taken || (opened.Code != "" && other.Code == opened.Code)
-		}
-		open := rs.rooms[room.ID] == room
-		if open && (!taken || tries >= 3) {
+		delete(rs.opening, code)
+		open := err == nil && rs.rooms[room.ID] == room
+		if open {
 			room.mu.Lock()
-			room.space, room.Code, room.spaceOpened = &roomSpace{ID: opened.Space, Invite: opened.Invite}, opened.Code, time.Now()
+			room.space, room.Code, room.spaceOpened = &roomSpace{ID: opened.Space, Invite: opened.Invite}, code, time.Now()
 			room.mu.Unlock()
 		}
 		rs.mu.Unlock()
+		var refused *spacesError
 		switch {
-		case !open:
+		case open:
+			return room, nil
+		case err == nil:
 			kernel.Close(opened.Space)
 			return nil, fail(http.StatusNotFound, "This room has closed.")
-		case taken && tries < 3:
-			kernel.Close(opened.Space)
-		default:
-			return room, nil
+		case errors.As(err, &refused) && refused.Code == "taken" && tries < spaceCodeTries:
+			continue
 		}
+		rs.Close(room.ID)
+		var known *HTTPError
+		if errors.As(err, &known) {
+			return nil, err
+		}
+		return nil, fail(http.StatusServiceUnavailable, "Multiplayer isn't available on this host now. Try again soon.")
 	}
+}
+
+// Proven reports whether a proof a page made on its own connection to a
+// room's space names a member of that space, as the kernel says; the proof is
+// used up. A space's id, in every link, is no credential.
+func (rs *Rooms) Proven(room *Room, proof string) (bool, error) {
+	space := room.spaceOf()
+	if space == nil || rs.kernel == nil || !spaceProof.MatchString(proof) {
+		return false, nil
+	}
+	_, err := rs.kernel.Member(space.ID, proof)
+	var refused *spacesError
+	if errors.As(err, &refused) && refused.Code == "unavailable" {
+		return false, fail(http.StatusServiceUnavailable, "Multiplayer isn't available on this host now.")
+	}
+	return err == nil, nil
 }
 
 // SpaceTicket is a one-time ticket into a room's space for someone: in role,

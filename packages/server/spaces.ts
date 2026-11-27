@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { SpaceKernel } from '../core/rooms.ts';
-import { spacesList, spacesOpened, spacesStart, spacesTicket } from '../sdk/contracts.ts';
+import { spacesList, spacesMember, spacesOpened, spacesStart, spacesTicket } from '../sdk/contracts.ts';
 import { SpacesError, SpacesSocket } from './spaces-socket.ts';
 
 /** How long a child has to print its start line, and the waits before starting it again: doubled up to the last. */
@@ -78,23 +78,28 @@ export class Spaces implements SpaceKernel {
       : Promise.reject(new SpacesError('unavailable', 'Multiplayer isn\'t available on this host now.'));
   }
 
-  /** A space for a net game's room, for the player listener, with the binary lane: its id, the invitation its link
-   *  holds, and its code when it has one. */
-  async open({ participants, code }: { participants: number; code: boolean }) {
+  /** A space for a net game's room, for the player listener, with the binary lane and the code Zirbel chose for it, if
+   *  any (a SpacesError taken when another space has it): its id, and the invitation its link holds. */
+  async open({ participants, code }: { participants: number; code?: string }) {
     const opened = spacesOpened.parse(await this.call('space.open',
-      { rules: null, listener: PLAYER, members: { participants, observers: OBSERVERS }, code, binary: true,
+      { rules: null, listener: PLAYER, members: { participants, observers: OBSERVERS }, ...(code ? { code } : {}), binary: true,
         graceSeconds: GRACE_SECONDS }));
     const invite = new URLSearchParams(opened.link.split('#')[1] ?? '').get('skalet.invite') ?? '';
     if (!secretPattern.test(invite)) {
       this.close(opened.space);
       throw new SpacesError('protocol', 'The spaces kernel gave a link without its invitation.');
     }
-    return { space: opened.space, invite, ...(opened.code ? { code: opened.code } : {}) };
+    return { space: opened.space, invite };
   }
 
   /** A one-time ticket into a space, for a name and a role. */
   async ticket(space: string, name: string, role: 'participant' | 'observer') {
     return spacesTicket.parse(await this.call('space.ticket', { space, name, role })).ticket;
+  }
+
+  /** The member of a space a page's proof names, which uses the proof up; a SpacesError expired when it names none. */
+  async member(space: string, proof: string) {
+    return spacesMember.parse(await this.call('space.member', { space, proof })).member;
   }
 
   /** Ends a space; its members hear it closed. */

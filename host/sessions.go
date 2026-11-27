@@ -56,10 +56,12 @@ func randomSessionCode() string {
 	return string(code)
 }
 
-// freeCode is a code no open room has. The caller holds rs.mu.
+// freeCode is a code no open room has, nor a space being opened: every
+// room's code is the host's, from the lobby's letters. The caller holds rs.mu.
 func (rs *Rooms) freeCode() string {
 	for {
-		code, taken := randomSessionCode(), false
+		code := randomSessionCode()
+		taken := rs.opening[code]
 		for _, room := range rs.rooms {
 			taken = taken || room.Code == code
 		}

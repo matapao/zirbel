@@ -10,6 +10,7 @@ import { Projects } from '../packages/core/projects.ts';
 import { Releases } from '../packages/core/releases.ts';
 import { gamePage } from '../packages/server/game-page.ts';
 import { hostsUnderTest, launch, netGame, rights, sandboxPolicy, tempDir } from './helpers.ts';
+import { member } from './spaces-fixtures.ts';
 
 const encoded = (files: Record<string, string>) =>
   Object.fromEntries(Object.entries(files).map(([path, text]) => [path, Buffer.from(text).toString('base64')]));
@@ -47,8 +48,10 @@ for (const host of hostsUnderTest()) {
     for (const { name, release } of games) {
       const room = rooms.find(({ manifest }) => manifest.releaseId === release.manifest.releaseId)!;
       const [roomId, invite] = room.link.split('/join/')[1]!.split('#') as [string, string];
-      // A net game's room is in a space, for whoever has its link: its space's id.
-      const credential = new URLSearchParams(invite).get('skalet.space') ?? invite;
+      // A net game's room is in a space, for its members: a proof from one's own connection.
+      const space = new URLSearchParams(invite).get('skalet.space');
+      const credential = space ? (await (await member(t, player, space, { invite: new URLSearchParams(invite).get('skalet.invite') ?? '',
+        name: 'Ada', role: 'participant' })).ask<{ proof: string }>('space.proof')).proof : invite;
       const { gameUrl } = await (await fetch(player + '/rooms/' + roomId + '/info', { headers: { authorization: 'Bearer ' + credential } }))
         .json() as { gameUrl: string };
       const page = await fetch(player + gameUrl);

@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // A fake of the spaces kernel's `spaces` mode, for Zirbel's own tests on both hosts: the hosts run it as they run the
 // real binary (ZIRBEL_SPACES_BINARY). It prints the start line, ends when its stdin closes or on SIGTERM, answers the
-// local socket's calls Zirbel makes (app.hello, space.open, space.list, space.info, space.ticket, space.close), and
-// behind the proxy's token the HTTP routes and a minimal /.skalet/spaces WebSocket: a hello seats a member by its
-// ticket, invitation or resume, and the member goes when its socket closes. GET /.skalet/echo, the fake's alone, answers
-// with the request as the proxy passed it on.
+// local socket's calls Zirbel makes (app.hello, space.open with the code Zirbel chose, space.list, space.info,
+// space.ticket, space.member, space.close), and behind the proxy's token the HTTP routes and a minimal /.skalet/spaces
+// WebSocket: a hello seats a member by its ticket (a hand-over's too), invitation or resume, a member hands its own
+// place over (space.handover) and proves who it is (space.proof), and the member goes when its socket closes. GET
+// /.skalet/echo, the fake's alone, answers with the request as the proxy passed it on. FAKE_SPACES_TAKEN=<n> refuses the
+// first n codes chosen for a space as another space's.
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer as http } from 'node:http';
@@ -25,8 +27,12 @@ if (!manifest.spaces || !manifest.listeners) { console.error('skalet.json has no
 const secret = () => randomBytes(24).toString('base64url');
 const token = secret();
 const LETTERS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-/** id → { id, listener, code?, invite, participants, observers, tickets: Map(ticket → { name, role, member? }),
- *  members: Map(id → { id, n, name, role, kind, resume, socket? }) } */
+/** As the kernel: the features a hello may turn on, members.v1 and state.v1 always; a hand-over's and a proof's life. */
+const FEATURES = ['members.v1', 'state.v1', 'leader.v1', 'time.v1', 'bin.v1', 'handover.v1', 'proof.v1'];
+const HANDOVER = 5 * 60_000, PROOF = 60_000, PROOFS = 8;
+let refusing = Number(process.env.FAKE_SPACES_TAKEN ?? 0);
+/** id → { id, listener, code?, invite, participants, observers, tickets: Map(ticket → { name, role } or { member, expires }),
+ *  members: Map(id → { id, n, name, role, kind, resume, proofs: Map(proof → expires), socket? }) } */
 const spaces = new Map();
 const join_ = (listener) => manifest.spaces.join?.[listener] ?? '/';
 
@@ -35,7 +41,11 @@ function summary(space) {
     members: [...space.members.values()].map(({ id, n, name, role, kind, socket }) =>
       ({ id, n, name, role, kind, connected: Boolean(socket), away: false })) };
 }
-const failure = (code, message) => ({ code: -32000, message, data: { code } });
+const WORDS = { protocol: -32010, expired: -32011, full: -32012, forbidden: -32013, closed: -32014, rate: -32015, unavailable: -32016,
+  taken: -32017 };
+const failure = (code, message) => ({ code: WORDS[code], message, data: { code } });
+const invalid = (message) => ({ error: { code: -32602, message } });
+const ticketLink = (base, space, ticket) => base + '#skalet.space=' + space.id + '&skalet.ticket=' + ticket;
 const counted = (space, role) => [...space.members.values()].filter((m) => m.role === role).length +
   [...space.tickets.values()].filter((t) => !t.member && t.role === role).length;
 
@@ -50,9 +60,15 @@ function call(method, params) {
         params.graceSeconds <= Math.min(600, manifest.spaces.limits?.graceSeconds ?? 90)))
         return { error: failure('protocol', 'graceSeconds is out of range.') };
       const id = randomBytes(6).toString('hex');
+      const coded = (code) => [...spaces.values()].some((other) => other.code === code);
       let code;
-      if (params.code) do code = Array.from(randomBytes(4), (b) => LETTERS[b & 31]).join('');
-      while ([...spaces.values()].some((other) => other.code === code));
+      if (typeof params.code === 'string') {
+        // The app's service chooses it: four of the letters, which no other space has.
+        if (!/^[2-9A-HJ-NP-Z]{4}$/.test(params.code)) return { error: failure('protocol', 'A code is four of ' + LETTERS + '.') };
+        if (coded(params.code) || refusing-- > 0) return { error: failure('taken', 'Another space has the code ' + params.code + '.') };
+        code = params.code;
+      } else if (params.code) do code = Array.from(randomBytes(4), (b) => LETTERS[b & 31]).join('');
+      while (coded(code));
       const opened = { id, listener: params.listener, code, invite: secret(), participants: params.members?.participants ?? 8,
         observers: params.members?.observers ?? 0, tickets: new Map(), members: new Map() };
       spaces.set(id, opened);
@@ -70,20 +86,47 @@ function call(method, params) {
       return { result: {} };
     case 'space.ticket': {
       if (params.member) {
-        if (!space.members.has(params.member)) return { error: failure('expired', 'No such member is in the space.') };
-        const ticket = secret();
-        space.tickets.set(ticket, { member: params.member });
-        return { result: { ticket, link: join_(space.listener) + '#skalet.space=' + space.id + '&skalet.ticket=' + ticket } };
+        const member = space.members.get(params.member);
+        if (!member) return { error: failure('expired', 'No such member is in the space.') };
+        const ticket = handover(space, member);
+        return { result: { ticket, link: ticketLink(join_(space.listener), space, ticket) } };
       }
       if (!params.name || !['participant', 'observer'].includes(params.role)) return { error: { code: -32602, message: 'Invalid params.' } };
       if (counted(space, params.role) >= (params.role === 'participant' ? space.participants : space.observers))
         return { error: failure('full', 'That space is full.') };
       const ticket = secret();
       space.tickets.set(ticket, { name: params.name, role: params.role });
-      return { result: { ticket, link: join_(space.listener) + '#skalet.space=' + space.id + '&skalet.ticket=' + ticket } };
+      return { result: { ticket, link: ticketLink(join_(space.listener), space, ticket) } };
+    }
+    case 'space.member': {
+      // Which member a page is: a proof it got on its own connection, used up here.
+      if (typeof params.proof !== 'string' || !params.proof || params.proof.length > 100) return invalid('space.member takes {space, proof}.');
+      const member = [...space.members.values()].find((m) => m.proofs.has(params.proof));
+      const expires = member?.proofs.get(params.proof);
+      member?.proofs.delete(params.proof);
+      if (!member || expires <= Date.now()) return { error: failure('expired', 'No member holds that proof: it expired, or was used.') };
+      const { id, n, name, role, kind, socket } = member;
+      return { result: { member: { id, n, name, role, kind, connected: Boolean(socket), away: false } } };
     }
   }
   return { error: { code: -32601, message: 'No method ' + method + '.' } };
+}
+
+/** A member's own place for another page or device, once: one at a time, as the kernel's. */
+function handover(space, member) {
+  for (const [key, held] of space.tickets) if (held.member === member.id) space.tickets.delete(key);
+  const ticket = secret();
+  space.tickets.set(ticket, { member: member.id, expires: Date.now() + HANDOVER });
+  return ticket;
+}
+
+/** A one-time proof of a member for the app's service, for a minute; past eight waiting, the oldest goes. */
+function proof(member) {
+  for (const [key, expires] of member.proofs) if (expires <= Date.now()) member.proofs.delete(key);
+  if (member.proofs.size >= PROOFS) member.proofs.delete(member.proofs.keys().next().value);
+  const key = secret();
+  member.proofs.set(key, Date.now() + PROOF);
+  return key;
 }
 
 // The local socket.
@@ -147,7 +190,8 @@ const server = http((request, response) => {
   reply(response, 404, { error: 'Spaces has no such path.' });
 });
 
-// The WebSocket: a hello seats a member; nothing else is carried but an echo of what the member sends.
+// The WebSocket: a hello seats a member, which may then hand its place over, prove who it is and leave; nothing else is
+// carried but an echo of what the member sends.
 const sockets = new WebSocketServer({ noServer: true,
   handleProtocols: (offered) => [...offered].find((p) => p === 'skalet.spaces.v1.json' || p === 'skalet.spaces.v1.bin') ?? false });
 server.on('upgrade', (request, stream, head) => {
@@ -156,12 +200,29 @@ server.on('upgrade', (request, stream, head) => {
   const refused = proxied(request) ?? (new URL(request.url, 'http://fake').pathname === '/.skalet/spaces' ? undefined : 'No such path.') ??
     (origin && origin !== 'null' && origin !== 'http://' + request.headers['x-forwarded-host'] ? 'Other origins are refused.' : undefined);
   if (refused) { stream.end('HTTP/1.1 403 Forbidden\r\nconnection: close\r\ncontent-length: 0\r\n\r\n'); return; }
+  // The join page as the page that came by this host sees it.
+  const base = 'http://' + request.headers['x-forwarded-host'];
   sockets.handleUpgrade(request, stream, head, (socket) => {
-    let member, space;
+    let member, space, features = [];
     socket.on('message', (data) => {
       const message = JSON.parse(new TextDecoder().decode(data));
       const answer = (reply) => socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, ...reply }));
-      if (member) { socket.send(JSON.stringify({ jsonrpc: '2.0', method: 'fake.echo', params: message })); return; }
+      if (member) {
+        const own = (feature) => member.socket !== socket ? failure('expired', 'This connection no longer holds the member.')
+          : !features.includes(feature) ? failure('protocol', 'Ask for ' + feature + ' in the hello first.') : undefined;
+        if (message.method === 'space.handover') {
+          const refused = own('handover.v1');
+          const ticket = refused ? undefined : handover(space, member);
+          answer(refused ? { error: refused } : { result: { ticket, link: ticketLink(base + join_(space.listener), space, ticket) } });
+        } else if (message.method === 'space.proof') {
+          const refused = own('proof.v1');
+          answer(refused ? { error: refused } : { result: { proof: proof(member) } });
+        } else if (message.method === 'space.leave') {
+          answer({ result: null });
+          socket.close(1000);
+        } else socket.send(JSON.stringify({ jsonrpc: '2.0', method: 'fake.echo', params: message }));
+        return;
+      }
       space = spaces.get(message.params?.space);
       const credential = message.params?.credential ?? {};
       if (message.method !== 'space.hello' || !space) {
@@ -172,16 +233,18 @@ server.on('upgrade', (request, stream, head) => {
       const resumed = [...space.members.values()].find((m) => credential.resume && m.resume === credential.resume);
       const ticket = credential.ticket && space.tickets.get(credential.ticket);
       if (credential.ticket) space.tickets.delete(credential.ticket);
-      const handed = ticket?.member && space.members.get(ticket.member);
+      const handed = ticket?.member && ticket.expires > Date.now() && space.members.get(ticket.member);
       const invited = credential.invite === space.invite && credential.name && credential.role ? credential : undefined;
       if (resumed || handed) {
         member = resumed ?? handed;
         member.socket?.close(4001, 'Connected again elsewhere.');
-        if (handed) member.resume = secret();
+        // What the page that held the place had is no longer good.
+        if (handed) { member.resume = secret(); member.proofs.clear(); }
       } else if ((ticket && !ticket.member) || invited) {
         const asked = ticket || invited;
         const n = Math.max(0, ...[...space.members.values()].map((m) => m.n)) + 1;
-        member = { id: randomBytes(16).toString('hex'), n, name: asked.name, role: asked.role, kind: 'person', resume: secret() };
+        member = { id: randomBytes(16).toString('hex'), n, name: asked.name, role: asked.role, kind: 'person', resume: secret(),
+          proofs: new Map() };
         space.members.set(member.id, member);
       } else {
         answer({ error: failure('expired', 'This ticket has expired or was used. Join again.') });
@@ -189,8 +252,10 @@ server.on('upgrade', (request, stream, head) => {
         return;
       }
       member.socket = socket;
+      const asked = Array.isArray(message.params?.features) ? message.params.features : [];
+      features = FEATURES.filter((feature) => feature === 'members.v1' || feature === 'state.v1' || asked.includes(feature));
       const { id, n, name, role, kind } = member;
-      answer({ result: { protocol: 1, features: [], member: { id, n, name, role, kind }, resume: member.resume, ack: 0,
+      answer({ result: { protocol: 1, features, member: { id, n, name, role, kind }, resume: member.resume, ack: 0,
         rules: { id: null }, limits: { jsonBytes: 16384, binaryBytes: 1048576, messagesPerSecond: 60 }, time: Date.now() } });
     });
     socket.on('close', () => {

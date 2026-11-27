@@ -160,22 +160,27 @@ func (s *spacesSocket) read() {
 	}
 }
 
-// spaceOpened is a room's new space: its id, the invitation its link holds,
-// and its code when it has one.
-type spaceOpened struct{ Space, Invite, Code string }
+// spaceOpened is a room's new space: its id, and the invitation its link
+// holds.
+type spaceOpened struct{ Space, Invite string }
 
 var spaceSecret = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
 
 // Open opens a space for a net game's room, for the player listener, with the
-// binary lane.
-func (s *Spaces) Open(participants int, code bool) (spaceOpened, error) {
-	result, err := s.Call("space.open", map[string]any{"rules": nil, "listener": spacesListener,
-		"members": map[string]int{"participants": participants, "observers": spacesObservers}, "code": code, "binary": true,
-		"graceSeconds": spacesGrace})
+// binary lane and the code the host chose for it, if any (a *spacesError
+// taken when another space has it).
+func (s *Spaces) Open(participants int, code string) (spaceOpened, error) {
+	params := map[string]any{"rules": nil, "listener": spacesListener,
+		"members": map[string]int{"participants": participants, "observers": spacesObservers}, "binary": true,
+		"graceSeconds": spacesGrace}
+	if code != "" {
+		params["code"] = code
+	}
+	result, err := s.Call("space.open", params)
 	if err != nil {
 		return spaceOpened{}, err
 	}
-	var opened struct{ Space, Link, Code string }
+	var opened struct{ Space, Link string }
 	if err := decodeContract("spaces-opened", result, &opened); err != nil {
 		return spaceOpened{}, err
 	}
@@ -186,7 +191,7 @@ func (s *Spaces) Open(participants int, code bool) (spaceOpened, error) {
 		s.Close(opened.Space)
 		return spaceOpened{}, &spacesError{Code: "protocol", Message: "The spaces kernel gave a link without its invitation."}
 	}
-	return spaceOpened{opened.Space, invite, opened.Code}, nil
+	return spaceOpened{opened.Space, invite}, nil
 }
 
 // Ticket is a one-time ticket into a space, for a name and a role.
@@ -200,6 +205,20 @@ func (s *Spaces) Ticket(space, name, role string) (string, error) {
 		return "", err
 	}
 	return ticket.Ticket, nil
+}
+
+// Member is the member of a space a page's proof names, which uses the proof
+// up: its id; a *spacesError expired when it names none.
+func (s *Spaces) Member(space, proof string) (string, error) {
+	result, err := s.Call("space.member", map[string]string{"space": space, "proof": proof})
+	if err != nil {
+		return "", err
+	}
+	var member struct{ Member struct{ ID string } }
+	if err := decodeContract("spaces-member", result, &member); err != nil {
+		return "", err
+	}
+	return member.Member.ID, nil
 }
 
 // Close ends a space; its members hear it closed.

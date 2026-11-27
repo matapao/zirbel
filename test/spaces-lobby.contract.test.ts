@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { hostsUnderTest, kernelsUnderTest, launch } from './helpers.ts';
-import { alive, call, error, kernelOf, member, spaceLink, spacesFixtures, until } from './spaces-fixtures.ts';
+import { alive, call, error, kernelOf, member, roomInfo, spaceLink, spacesFixtures, until } from './spaces-fixtures.ts';
 
 const hosts = hostsUnderTest();
 const kernels = kernelsUnderTest();
@@ -13,11 +13,11 @@ const CODE = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/;
 const PAGE_POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
-async function editorWith(t: TestContext, command: string[], binary: string) {
+async function editorWith(t: TestContext, command: string[], binary: string, env: Record<string, string> = {}) {
   const data = spacesFixtures(t);
   const { child, ready } = launch(t, command, ['--data', data.data, '--port', '0', '--player-port', '0', ...data.imports],
     (line) => typeof line.editor === 'string' && typeof line.player === 'string' ? { editor: line.editor, player: line.player } : undefined,
-    { ZIRBEL_SPACES_BINARY: binary });
+    { ZIRBEL_SPACES_BINARY: binary, ...env });
   const { editor, player } = await ready;
   const owner = (method: string, path: string, json?: unknown) => call(editor, method, '/api/' + path, json);
   assert.equal((await owner('POST', 'lobby/offer', { release: data.net.id, offered: true })).status, 200);
@@ -32,7 +32,8 @@ for (const host of hosts) for (const kernel of kernels) {
     const state = (await lobby('state')).body as { games: { multiplayer: boolean }[]; spaces: boolean };
     assert.deepEqual([state.spaces, state.games.map((game) => game.multiplayer)], [true, [true]]);
 
-    // Starting a session opens its space, whose code is the session's; the link holds a ticket into it.
+    // Starting a session opens its space with the code the host chose for it, the session's; the link holds a ticket
+    // into it. Its info is for its members, by their proofs.
     const started = await lobby('sessions', { release: data.net.id, name: 'Ada' });
     assert.equal(started.status, 201);
     const { code, link } = started.body as { code: string; link: string };
@@ -40,10 +41,13 @@ for (const host of hosts) for (const kernel of kernels) {
     const ada = spaceLink(link);
     assert.deepEqual([ada.origin, ada.kind], [player, 'ticket']);
     assert.deepEqual(await players(), [0]);
-    const info = await call(player, 'GET', '/rooms/' + ada.room + '/info', undefined, { authorization: 'Bearer ' + ada.space });
-    assert.deepEqual([info.status, (info.body as { code?: string }).code, (info.body as { solo: boolean }).solo], [200, code, false]);
+    assert.equal((await roomInfo(player, ada.room, ada.space)).status, 403);
     const seated = await member(t, player, ada.space, { ticket: ada.credential });
     assert.deepEqual(seated.seated, ['Ada', 'participant']);
+    const info = await roomInfo(player, ada.room, (await seated.ask<{ proof: string }>('space.proof')).proof);
+    assert.deepEqual([info.status, info.body.code, info.body.solo], [200, code, false]);
+    const space = await call(player, 'GET', '/.skalet/spaces/' + ada.space, undefined, { authorization: 'Bearer ' + String(seated.resume) });
+    assert.deepEqual([space.status, (space.body as { code?: string }).code], [200, code]);
     // A ticket is good once.
     assert.equal((await member(t, player, ada.space, { ticket: ada.credential })).error?.data?.code, 'expired');
     assert.deepEqual(await until('the kernel to count Ada', async () => (await players())[0] === 1 ? [1] : undefined), [1]);
@@ -56,6 +60,15 @@ for (const host of hosts) for (const kernel of kernels) {
     const eve = spaceLink(((await lobby('join', { code, name: 'Eve' })).body as { link: string }).link);
     assert.deepEqual((await member(t, player, eve.space, { ticket: eve.credential })).seated, ['Eve', 'observer']);
     await until('the kernel to count Bo', async () => (await players())[0] === 2 || undefined);
+
+    // A proof is for its own space's room alone.
+    const other = (await lobby('sessions', { release: data.net.id, name: 'Cy' })).body as { code: string; link: string };
+    const cy = spaceLink(other.link);
+    assert.notEqual(other.code, code);
+    const proof = (await seated.ask<{ proof: string }>('space.proof')).proof;
+    assert.equal((await roomInfo(player, cy.room, proof)).status, 403);
+    assert.equal((await roomInfo(player, ada.room, proof)).status, 200);
+    assert.equal((await owner('POST', 'rooms/' + cy.room + '/close', {})).status, 200);
 
     // A link the kernel formed names the space alone: the lobby page at /join finds its room.
     const page = await call(player, 'GET', '/join');
@@ -74,6 +87,22 @@ for (const host of hosts) for (const kernel of kernels) {
 }
 
 for (const host of hosts) {
+  test(host.name + ' host chooses another code for a session\'s space when the kernel says another space has it', async (t) => {
+    // The fake refuses the first nine codes the host chooses: a session gives up after eight, and the next opens with
+    // its second.
+    const { data, player, lobby } = await editorWith(t, host.command, kernelsUnderTest()[0]!.binary, { FAKE_SPACES_TAKEN: '9' });
+    assert.deepEqual(error(await lobby('sessions', { release: data.net.id, name: 'Ada' })),
+      [503, 'Multiplayer isn\'t available on this host now. Try again soon.']);
+    const started = await lobby('sessions', { release: data.net.id, name: 'Ada' });
+    assert.equal(started.status, 201);
+    const { code, link } = started.body as { code: string; link: string };
+    const ada = spaceLink(link);
+    const seated = await member(t, player, ada.space, { ticket: ada.credential });
+    const space = await call(player, 'GET', '/.skalet/spaces/' + ada.space, undefined, { authorization: 'Bearer ' + String(seated.resume) });
+    assert.deepEqual([(space.body as { code?: string }).code, (await roomInfo(player, ada.room,
+      (await seated.ask<{ proof: string }>('space.proof')).proof)).body.code], [code, code]);
+  });
+
   test(host.name + ' host drops the sessions of a kernel that went, and starts another', async (t) => {
     const { data, child, lobby, players } = await editorWith(t, host.command, kernelsUnderTest()[0]!.binary);
     assert.equal((await lobby('sessions', { release: data.net.id, name: 'Ada' })).status, 201);

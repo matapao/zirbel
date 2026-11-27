@@ -69,10 +69,13 @@ type Rooms struct {
 	done  sync.WaitGroup
 	// kernel is the spaces kernel a net game's room plays over (rooms_spaces.go).
 	kernel *Spaces
+	// opening are the codes chosen for spaces the kernel is opening: no
+	// other room gets one meanwhile.
+	opening map[string]bool
 }
 
 func NewRooms() *Rooms {
-	rooms := &Rooms{rooms: map[string]*Room{}, stop: make(chan struct{})}
+	rooms := &Rooms{rooms: map[string]*Room{}, opening: map[string]bool{}, stop: make(chan struct{})}
 	rooms.done.Add(1)
 	go func() {
 		defer rooms.done.Done()
@@ -177,7 +180,8 @@ func (rs *Rooms) add(release *Release, how opening) (room, evicted *Room, err er
 	room = newRoom(&playable, how.solo, how.access, how.development)
 	room.starter = how.starter
 	// A session has a code: a multiplayer room started from the lobby, or one
-	// the owner opened on the LAN. A net game's is its space's (WithSpace).
+	// the owner opened on the LAN. A net game's goes to its space as that
+	// opens (WithSpace).
 	if !how.solo && multiplayer(release) && !isNet(release.Manifest.Simulation) && (how.starter != "" || how.access == "lan") {
 		room.Code = rs.freeCode()
 	}

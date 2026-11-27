@@ -1,0 +1,42 @@
+{
+  "$id": "https://zirbel.app/contracts/spaces-member.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "member": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 253
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "participant",
+            "observer"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "n",
+        "name",
+        "role"
+      ]
+    }
+  },
+  "required": [
+    "member"
+  ]
+}

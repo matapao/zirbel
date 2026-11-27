@@ -178,6 +178,44 @@ for (const host of hosts) {
   });
 }
 
+// A game that leaves its space, and loads itself again or not.
+const leavingGame = `<!doctype html><p id="out">waiting</p><script type="module">
+  const zn = await import('/.skalet/net.js');
+  const net = zn.connect({ via: 'parent' });
+  net.on('open', () => { document.getElementById('out').textContent = 'member ' + net.id + location.hash; });
+  globalThis.leave = (again) => { net.close(); if (again) { location.hash = 'again'; location.reload(); } };
+</script>`;
+
+for (const host of hosts) {
+  test(host.name + ' host: a game\'s leaving ends its frame\'s view alone, and the page gives the place up only if it doesn\'t come back',
+    { ...realKernel, timeout: 90_000 }, async (t) => {
+    const root = tempDir(t, 'zirbel-host-leave-');
+    const projects = new Projects(join(root, 'source'));
+    const project = importGameFolder(projects, { title: 'Leave', files: encoded({ 'index.html': leavingGame, 'zirbel.json': '{"players":{"max":2}}' }) });
+    const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
+    writeFileSync(join(root, 'release.json'), JSON.stringify(release));
+    const link = await launch(t, host.command, ['--host-only', '--player-port', '0', '--data', join(root, 'data'),
+      '--import', join(root, 'release.json'), '--release', release.manifest.releaseId],
+    (line) => typeof line.link === 'string' ? line.link : undefined, { ZIRBEL_SPACES_BINARY: REAL_SPACES }).ready;
+    const browser = await chromium.launch();
+    t.after(() => browser.close());
+    const page = await (await browser.newContext()).newPage();
+    await page.goto(link);
+    await page.locator('#join-form input[name="name"]').fill('Ada');
+    await page.locator('#join-form button.primary').click();
+    const out = page.frameLocator('iframe').locator('#out');
+    await out.filter({ hasText: /^member 1$/ }).waitFor({ timeout: 15_000 });
+    const leave = (again: boolean) => page.frame({ url: /\/game\// })!.evaluate((back) => (globalThis as { leave?: (again: boolean) => void }).leave?.(back), again);
+    // The game leaves and loads again: the page kept its place, and the game's next page is the same member.
+    await leave(true);
+    await out.filter({ hasText: /^member 1#again$/ }).waitFor({ timeout: 15_000 });
+    // It leaves for good: once its frame hasn't asked for the space again in 15 s, the page leaves too.
+    await leave(false);
+    await page.getByText('The game left the session.').waitFor({ timeout: 25_000 });
+    assert.equal(await page.locator('iframe').count(), 0);
+  });
+}
+
 // A game that knows nothing of any host: hooks for who this screen is, who else plays and what they say. Its
 // zirbel.json names the adapter beside it, which the game page loads after the game, and which alone talks to the net
 // module.

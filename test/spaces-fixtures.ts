@@ -32,21 +32,42 @@ export function spaceLink(link: unknown) {
   return { origin: match[1]!, room: match[2]!, space: match[3]!, kind: match[4] as 'invite' | 'ticket', credential: match[5]! };
 }
 
-type Hello = { member?: { n: number; name: string; role: string }; error?: { message: string; data?: { code?: string } } };
-/** A member's socket: the hello's answer, and how the socket ended. The socket stays until the test ends. */
+type Failure = { message: string; data?: { code?: string } };
+type Hello = { member?: { id: string; n: number; name: string; role: string }; resume?: string; features?: string[]; error?: Failure };
+/** A member's socket, which asks for the features a page's SDK does (its own hand-over and proofs): the hello's answer,
+ *  how the socket ended, and its requests after the hello (their result, or the error's data.code). The socket stays
+ *  until the test ends. */
 export async function member(t: TestContext, base: string, space: string, credential: Record<string, string>, origin = base) {
   const ws = new WebSocket(base.replace('http', 'ws') + '/.skalet/spaces', ['skalet.spaces.v1.json'], { origin });
   t.after(() => ws.terminate());
   const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
   await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
-  const answer = new Promise<Hello>((resolve) => ws.on('message', (data: Buffer) => {
-    const message = JSON.parse(data.toString('utf8')) as { id?: number; result?: Hello; error?: Hello['error'] };
-    if (message.id === 1) resolve(message.error ? { error: message.error } : message.result!);
-  }));
-  ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'space.hello', params: { protocol: 1, space, credential,
-    features: ['members.v1'], client: { name: 'zirbel-test', version: '1' } } }));
-  const hello = await answer;
-  return { ...hello, ws, closed, seated: hello.member ? [hello.member.name, hello.member.role] : undefined };
+  const waiting = new Map<number, (message: { result?: unknown; error?: Failure }) => void>();
+  ws.on('message', (data: Buffer) => {
+    const message = JSON.parse(data.toString('utf8')) as { id?: number; result?: unknown; error?: Failure };
+    if (typeof message.id === 'number') waiting.get(message.id)?.(message);
+  });
+  let next = 0;
+  const request = (method: string, params?: object) => new Promise<{ result?: unknown; error?: Failure }>((resolve) => {
+    waiting.set(++next, resolve);
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: next, method, ...(params ? { params } : {}) }));
+  });
+  const answer = await request('space.hello', { protocol: 1, space, credential,
+    features: ['members.v1', 'handover.v1', 'proof.v1'], client: { name: 'zirbel-test', version: '1' } });
+  const hello: Hello = answer.error ? { error: answer.error } : answer.result as Hello;
+  /** A request of the member's: its result, or a refusal's word. */
+  const ask = async <T>(method: string) => {
+    const { result, error } = await request(method);
+    if (error) throw new Error(error.data?.code ?? error.message);
+    return result as T;
+  };
+  return { ...hello, ws, closed, ask, seated: hello.member ? [hello.member.name, hello.member.role] : undefined };
+}
+
+/** A room's info for the holder of a credential (a member's proof, for a net game's room): its status and code. */
+export async function roomInfo(base: string, room: string, credential: string) {
+  const info = await call(base, 'GET', '/rooms/' + room + '/info', undefined, { authorization: 'Bearer ' + credential });
+  return { status: info.status, body: info.body as { code?: string; solo: boolean; gameUrl: string; manifest: { simulation: string } } };
 }
 
 /** The kernel child a host runs: its pid, or none. */

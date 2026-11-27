@@ -240,6 +240,10 @@ export const spacesStart = z.object({
 });
 export const spacesOpened = z.object({ space: spaceId, link: z.string().max(2048), code: spaceCode.optional() });
 export const spacesTicket = z.object({ ticket: spaceSecret });
+/** The member a page's proof names (space.member): one of the space's, by its number, name and role. */
+export const spacesMember = z.object({ member: z.object({
+  id: z.string().min(1).max(64), n: z.number().int().min(1).max(253), name: z.string().max(64), role: z.enum(['participant', 'observer']),
+}) });
 export const spacesList = z.array(z.object({
   space: spaceId, listener: z.string().max(32), code: spaceCode.optional(),
   members: z.array(z.object({ role: z.enum(['participant', 'observer']), connected: z.boolean(), away: z.boolean() })).max(300),

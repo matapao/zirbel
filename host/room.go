@@ -109,19 +109,16 @@ func (r *Room) Summary() summary {
 	return summary{r.ID, r.Release.ManifestRaw, r.Solo, r.Development, r.Access, seats, status, r.Code}
 }
 
-// MayView: an invitation, a held seat or a seat's own, or for a room with a
-// space that space's id, which is in every link.
+// MayView: an invitation, a held seat or a seat's own. A room with a space is
+// for its members alone (Rooms.Proven).
 func (r *Room) MayView(credential string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.prune()
-	if r.closed {
+	if r.closed || r.space != nil {
 		return false
 	}
 	if same(credential, r.Invite) && time.Now().Before(r.InviteExpires) {
-		return true
-	}
-	if r.space != nil && same(credential, r.space.ID) {
 		return true
 	}
 	if _, ok := r.pending[credential]; ok {

@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { test, type TestContext } from 'node:test';
 import WebSocket from 'ws';
 import { FAKE_SPACES, hostsUnderTest, kernelsUnderTest, launch, NO_SPACES, sandboxPolicy, stopHost } from './helpers.ts';
-import { alive, call, error, kernelOf, member, spaceLink, spacesFixtures, until } from './spaces-fixtures.ts';
+import { alive, call, error, kernelOf, member, roomInfo, spaceLink, spacesFixtures, until } from './spaces-fixtures.ts';
 
 const hosts = hostsUnderTest();
 const kernels = kernelsUnderTest();
@@ -42,14 +42,6 @@ for (const host of hosts) for (const kernel of kernels) {
         [200, 'text/javascript; charset=utf-8', '*']);
       assert.equal((await fetch(player + '/.skalet/net.js', { headers })).status, 200);
     }
-    // The room is for whoever has its space's link, and its game page may import the kernel's modules and reach its socket.
-    assert.equal((await call(player, 'GET', '/rooms/' + room.room + '/info', undefined, { authorization: 'Bearer abcdefabcdef' })).status, 403);
-    const info = await call(player, 'GET', '/rooms/' + room.room + '/info', undefined, { authorization: 'Bearer ' + room.space });
-    const { gameUrl, manifest } = info.body as { gameUrl: string; manifest: { simulation: string } };
-    assert.deepEqual([info.status, manifest.simulation], [200, 'net-v2']);
-    assert.match(gameUrl, new RegExp('^/game/' + room.room + '/[\\w-]{32}/$'));
-    const page = await fetch(player + gameUrl);
-    assert.equal(page.headers.get('content-security-policy'), sandboxPolicy(player + '/runtime/' + room.room + '/', player + gameUrl, "'self'", player));
     // The space's summary, for a holder of its invitation.
     const summary = await call(player, 'GET', '/.skalet/spaces/' + room.space, undefined, { authorization: 'Bearer ' + room.credential });
     assert.deepEqual([summary.status, (summary.body as { space: string }).space], [200, room.space]);
@@ -57,9 +49,38 @@ for (const host of hosts) for (const kernel of kernels) {
     // Its members join through the listener's socket: with the invitation, from the page's own origin or a sandbox's.
     const ada = await member(t, player, room.space, { invite: room.credential, name: 'Ada', role: 'participant' });
     assert.deepEqual([ada.member?.n, ada.seated], [1, ['Ada', 'participant']]);
+    assert.ok(ada.features?.includes('handover.v1') && ada.features.includes('proof.v1'));
     const bo = await member(t, player, room.space, { invite: room.credential, name: 'Bo', role: 'participant' }, 'null');
     assert.deepEqual(bo.seated, ['Bo', 'participant']);
     await assert.rejects(member(t, player, room.space, { invite: room.credential, name: 'Mal', role: 'participant' }, 'http://evil.example'));
+
+    // The room is for its space's members, by a proof a member's own connection made, once: neither the space's id, in
+    // every link, nor anything made up opens it. Its game page may import the kernel's modules and reach its socket.
+    for (const credential of [room.space, room.credential, 'abcdefabcdefabcdefabcdef', ''])
+      assert.equal((await roomInfo(player, room.room, credential)).status, 403, credential);
+    const proof = (await ada.ask<{ proof: string }>('space.proof')).proof;
+    const info = await roomInfo(player, room.room, proof);
+    assert.deepEqual([info.status, info.body.manifest.simulation], [200, 'net-v2']);
+    assert.equal((await roomInfo(player, room.room, proof)).status, 403);
+    const { gameUrl } = info.body;
+    assert.match(gameUrl, new RegExp('^/game/' + room.room + '/[\\w-]{32}/$'));
+    const page = await fetch(player + gameUrl);
+    assert.equal(page.headers.get('content-security-policy'), sandboxPolicy(player + '/runtime/' + room.room + '/', player + gameUrl, "'self'", player));
+
+    // A member hands its own place over: the link is the join page on the host it came by, its ticket good once, a new
+    // one in place of the one before. Whoever opens it is the same member; the old connection ends as replaced, and the
+    // proofs it made are good no more.
+    const first = await ada.ask<{ ticket: string }>('space.handover');
+    const { link: handed, ticket } = await ada.ask<{ link: string; ticket: string }>('space.handover');
+    assert.equal(handed, player + '/join#skalet.space=' + room.space + '&skalet.ticket=' + ticket);
+    assert.equal((await member(t, player, room.space, { ticket: first.ticket })).error?.data?.code, 'expired');
+    const stale = (await ada.ask<{ proof: string }>('space.proof')).proof;
+    const tv = await member(t, player, room.space, { ticket });
+    assert.deepEqual([tv.member?.id, tv.member?.n, tv.seated], [ada.member?.id, 1, ['Ada', 'participant']]);
+    assert.equal(await ada.closed, 4001);
+    assert.equal((await member(t, player, room.space, { ticket })).error?.data?.code, 'expired');
+    assert.equal((await roomInfo(player, room.room, stale)).status, 403);
+    assert.equal((await roomInfo(player, room.room, (await tv.ask<{ proof: string }>('space.proof')).proof)).status, 200);
 
     // The relay and the earlier client are gone from every listener.
     for (const path of ['/zirbel-net.js', '/zirbel-net/SKILL.md', '/mp']) assert.equal((await fetch(player + path)).status, 404, path);

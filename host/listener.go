@@ -189,7 +189,17 @@ func (l *Listener) serve(w http.ResponseWriter, r *http.Request) error {
 		bytesReply(w, []byte(page), typeFor(".html"), nil)
 		return nil
 	case route == "rooms" && get && len(parts) == 1 && parts[0] == "info":
-		if !room.MayView(bearer(r)) {
+		// A net game's room is for its space's members, by the proof a page
+		// made on its own connection.
+		allowed := room.MayView(bearer(r))
+		if room.spaceOf() != nil {
+			proven, err := l.rooms.Proven(room, bearer(r))
+			if err != nil {
+				return err
+			}
+			allowed = proven
+		}
+		if !allowed {
 			return fail(http.StatusForbidden, "An invitation or current seat is required.")
 		}
 		info := struct {

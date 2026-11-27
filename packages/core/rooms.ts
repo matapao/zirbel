@@ -14,13 +14,19 @@ const INVITE = 4 * 60 * 60 * 1000;
 const IDLE = 20 * 60 * 1000;
 /** How long a seat the lobby holds for someone waits for them: they may read out the code before they go in. */
 const LOBBY_TICKET = 5 * 60 * 1000;
+/** Codes a net game's room tries for its space, each refused as another space's, before it gives up. */
+const CODE_TRIES = 8;
+/** A proof as the kernel makes one: one of its secrets. */
+const PROOF = /^[A-Za-z0-9_-]{16,100}$/;
 
-/** What a net game's room needs of the spaces kernel (packages/server/spaces.ts gives it): a space of its own, a
- *  one-time ticket into it, and its end. A space's code is its session's. */
+/** What a net game's room needs of the spaces kernel (packages/server/spaces.ts gives it): a space of its own, with
+ *  the code Zirbel chose for its session (refused as taken when another space has it), a one-time ticket into it, the
+ *  member a page's proof names, and its end. */
 export interface SpaceKernel {
   readonly available: boolean;
-  open(options: { participants: number; code: boolean }): Promise<{ space: string; invite: string; code?: string }>;
+  open(options: { participants: number; code?: string }): Promise<{ space: string; invite: string }>;
   ticket(space: string, name: string, role: 'participant' | 'observer'): Promise<string>;
+  member(space: string, proof: string): Promise<{ id: string; n: number; name: string; role: 'participant' | 'observer' }>;
   close(space: string): void;
 }
 /** A game with its own netcode, which plays over a space of the spaces kernel. */
@@ -101,11 +107,10 @@ export class Room {
   /** The player seats taken now, by players connected or still within their grace. */
   get players() { return this.space ? this.members.participants : this.used('player'); }
 
-  /** An invitation, a held seat or a seat's own, or for a room with a space that space's id, which is in every link. */
+  /** An invitation, a held seat or a seat's own. A room with a space is for its members alone (Rooms.proven). */
   mayView(credential: string) {
     this.prune();
-    return !this.closed && ((same(credential, this.invite) && Date.now() < this.inviteExpires) ||
-      (this.space !== null && same(credential, this.space.id)) ||
+    return !this.closed && this.space === null && ((same(credential, this.invite) && Date.now() < this.inviteExpires) ||
       this.pending.has(credential) || [...this.seats.values()].some((seat) => same(seat.resume, credential)));
   }
 
@@ -265,6 +270,8 @@ export class Room {
 
 export class Rooms {
   private rooms = new Map<string, Room>();
+  /** Codes chosen for spaces the kernel is opening: no other room gets one meanwhile. */
+  private readonly opening = new Set<string>();
   /** The spaces kernel, which a net game's room plays over while it runs (hosting.ts sets it). */
   kernel?: SpaceKernel;
   private timer = setInterval(() => {
@@ -284,9 +291,8 @@ export class Rooms {
       this.close(idle.id);
     }
     if (solo && access === 'lan' && !lobby) throw new ZirbelError(400, 'Solo playtests use the local player service.');
-    // A net game's code is its space's (withSpace).
-    const code = !solo && release.manifest.simulation !== null && !isNet(release) && (lobby || access === 'lan')
-      ? newCode((taken) => [...this.rooms.values()].some((room) => room.code === taken)) : null;
+    // A net game's code goes to its space as that opens (withSpace).
+    const code = !solo && release.manifest.simulation !== null && !isNet(release) && (lobby || access === 'lan') ? this.freeCode() : null;
     // The player serves runtime files from the host's own verified build, so a room
     // does not keep the release's embedded copy (about 3 MB per room).
     const room = new Room({ ...release, files: {} }, solo, access, development, code, startedBy);
@@ -294,21 +300,31 @@ export class Rooms {
     return room;
   }
 
+  /** A code no open room has, nor a space being opened: every room's code is Zirbel's, from the lobby's letters. */
+  private freeCode() {
+    return newCode((taken) => this.opening.has(taken) || [...this.rooms.values()].some((room) => room.code === taken));
+  }
+
   /** Opens a space for a net game's shared room, while the kernel runs, with a code where the room would have one: the
-   *  room plays over it, and its code is the session's. A room the kernel can't give one is closed. A space whose code
-   *  another room has (the kernel draws its own) is given back for another. */
+   *  room plays over it, and the code Zirbel chose is its session's and its space's. A code the kernel refuses as another
+   *  space's gives way to another. A room the kernel can't give a space is closed. */
   async withSpace(room: Room) {
     const kernel = this.kernel;
     if (room.solo || !isNet(room.release) || room.space || !kernel?.available) return room;
-    const code = room.startedBy !== undefined || room.access === 'lan';
+    const coded = room.startedBy !== undefined || room.access === 'lan';
     try {
-      for (let tries = 0; ; tries++) {
-        const opened = await kernel.open({ participants: room.release.manifest.players.max, code });
-        if (opened.code && tries < 3 && this.open().some((other) => other.code === opened.code)) { kernel.close(opened.space); continue; }
+      for (let tries = 1; ; tries++) {
+        const code = coded ? this.freeCode() : undefined;
+        if (code) this.opening.add(code);
+        let opened: { space: string; invite: string };
+        try { opened = await kernel.open({ participants: room.release.manifest.players.max, ...(code ? { code } : {}) }); } catch (error) {
+          if ((error as { code?: unknown }).code === 'taken' && tries < CODE_TRIES) continue;
+          throw error;
+        } finally { if (code) this.opening.delete(code); }
         if (!this.rooms.has(room.id)) { kernel.close(opened.space); throw new ZirbelError(404, 'This room has closed.'); }
         room.space = { id: opened.space, invite: opened.invite };
         room.spaceOpened = performance.now();
-        room.code = opened.code ?? null;
+        room.code = code ?? null;
         return room;
       }
     } catch (error) {
@@ -330,6 +346,16 @@ export class Rooms {
       }
     }
     throw new ZirbelError(409, role === 'participant' ? 'All player seats are reserved.' : 'This session is full.');
+  }
+
+  /** Whether a proof a page made on its own connection to a room's space names a member of that space, as the kernel
+   *  says; the proof is used up. A space's id, in every link, is no credential. */
+  async proven(room: Room, proof: string) {
+    if (!room.space || !this.kernel || !PROOF.test(proof)) return false;
+    try { await this.kernel.member(room.space.id, proof); return true; } catch (error) {
+      if ((error as { code?: unknown }).code === 'unavailable') throw new ZirbelError(503, 'Multiplayer isn\'t available on this host now.');
+      return false;
+    }
   }
 
   get(id: string) {

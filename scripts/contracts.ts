@@ -9,7 +9,7 @@ import { gameFolder } from '../packages/core/game-files.ts';
 import {
   asset, attachment, ClientMessage, controllersAddress, controllersScan, controllersView, id, lobbyFile, lobbyJoin, lobbyOffer,
   lobbyStart, padsPadMessage, padsScreenMessage, padsServiceMessage, portableRelease, project, proposalInput, scene, ServerMessage,
-  spacesList, spacesOpened, spacesStart, spacesTicket,
+  spacesList, spacesMember, spacesOpened, spacesStart, spacesTicket,
 } from '../packages/sdk/contracts.ts';
 import { gameDocument } from '../packages/sdk/game.ts';
 import { grantSchema, toolDescriptors } from '../packages/server/mcp.ts';
@@ -56,6 +56,7 @@ const schemas = {
   'controllers-scan': controllersScan, 'controllers-address': controllersAddress, 'controllers-view': controllersView,
   // The spaces kernel's start line and its local socket's answers (packages/server/spaces.ts).
   'spaces-start': spacesStart, 'spaces-opened': spacesOpened, 'spaces-ticket': spacesTicket, 'spaces-list': spacesList,
+  'spaces-member': spacesMember,
 };
 
 // Zod trims some strings, and its URL check trims and drops tabs and newlines,

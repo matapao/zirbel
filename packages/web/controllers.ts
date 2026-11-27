@@ -23,8 +23,8 @@ function ownGamepads(): Gamepad[] {
 
 /** open: whether this page is a screen on its host (a page in the editor's preview isn't, and reads only its device's
  *  gamepads). onChange hears whenever what the panel shows changes; onShown, that the game went to the TV, whose code
- *  this page now controls it by. */
-export function screenControllers(options: { open: boolean; onChange(): void; onShown(code: string): void }) {
+ *  this page now controls it by; onLeaving, that this page, the TV, goes to a game shown on it, so it lets go of its own. */
+export function screenControllers(options: { open: boolean; onChange(): void; onShown(code: string): void; onLeaving(): void }) {
   let info: ScreenInfo | undefined;
   let pads: PadInfo[] = [];
   let local: LocalPad[] = [];
@@ -51,6 +51,7 @@ export function screenControllers(options: { open: boolean; onChange(): void; on
     onOpen(link) {
       const target = new URL(link, location.href);
       try { sessionStorage.removeItem('zirbel-room:' + target.pathname.split('/').at(-1)); } catch { /* nothing kept */ }
+      options.onLeaving();
       if (target.pathname === location.pathname && target.search === location.search) { location.hash = target.hash; location.reload(); }
       else location.assign(target);
     },
