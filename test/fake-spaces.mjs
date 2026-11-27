@@ -45,6 +45,10 @@ function call(method, params) {
     case 'space.open': {
       if (params.listener !== 'player' && params.listener !== 'editor') return { error: failure('protocol', 'No such listener.') };
       if (spaces.size >= (manifest.spaces.limits?.openSpaces ?? 32)) return { error: failure('full', 'Too many spaces.') };
+      // As the kernel takes it: 5 to 600 s, within the app's limits.graceSeconds (90 by default).
+      if (params.graceSeconds !== undefined && !(Number.isInteger(params.graceSeconds) && params.graceSeconds >= 5 &&
+        params.graceSeconds <= Math.min(600, manifest.spaces.limits?.graceSeconds ?? 90)))
+        return { error: failure('protocol', 'graceSeconds is out of range.') };
       const id = randomBytes(6).toString('hex');
       let code;
       if (params.code) do code = Array.from(randomBytes(4), (b) => LETTERS[b & 31]).join('');

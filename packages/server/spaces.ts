@@ -16,10 +16,11 @@ const START_TIME = 10_000;
 const BACKOFF = [1000, 2000, 4000, 8000, 16_000, 30_000];
 /** A child that ran this long starts the backoff over when it ends. */
 const STEADY = 60_000;
-/** The listener of Zirbel's skalet.json that its rooms' spaces are for, and the observers each takes beside its players,
- *  as a room's spectators. */
+/** The listener of Zirbel's skalet.json that its rooms' spaces are for, the observers each takes beside its players,
+ *  as a room's spectators, and how long a member who drops keeps its place (a lockstep game waits that long for it). */
 const PLAYER = 'player';
 const OBSERVERS = 4;
+const GRACE_SECONDS = 15;
 const secretPattern = /^[A-Za-z0-9_-]{16,128}$/;
 
 const binaryName = 'skalet' + (process.platform === 'win32' ? '.exe' : '');
@@ -81,7 +82,8 @@ export class Spaces implements SpaceKernel {
    *  holds, and its code when it has one. */
   async open({ participants, code }: { participants: number; code: boolean }) {
     const opened = spacesOpened.parse(await this.call('space.open',
-      { rules: null, listener: PLAYER, members: { participants, observers: OBSERVERS }, code, binary: true }));
+      { rules: null, listener: PLAYER, members: { participants, observers: OBSERVERS }, code, binary: true,
+        graceSeconds: GRACE_SECONDS }));
     const invite = new URLSearchParams(opened.link.split('#')[1] ?? '').get('skalet.invite') ?? '';
     if (!secretPattern.test(invite)) {
       this.close(opened.space);

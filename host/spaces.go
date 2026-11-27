@@ -30,10 +30,13 @@ import (
 const (
 	spacesStartTime = 10 * time.Second // for the child's start line
 	spacesSteady    = time.Minute      // a child that ran this long starts the backoff over
-	// spacesListener is the listener of skalet.json a room's space is for, and
-	// spacesObservers the observers each takes beside its players.
+	// spacesListener is the listener of skalet.json a room's space is for,
+	// spacesObservers the observers each takes beside its players, and
+	// spacesGrace how long a member who drops keeps its place (a lockstep game
+	// waits that long for it).
 	spacesListener  = "player"
 	spacesObservers = 4
+	spacesGrace     = 15
 )
 
 var spacesBackoff = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 30 * time.Second}

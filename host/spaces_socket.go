@@ -170,7 +170,8 @@ var spaceSecret = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
 // binary lane.
 func (s *Spaces) Open(participants int, code bool) (spaceOpened, error) {
 	result, err := s.Call("space.open", map[string]any{"rules": nil, "listener": spacesListener,
-		"members": map[string]int{"participants": participants, "observers": spacesObservers}, "code": code, "binary": true})
+		"members": map[string]int{"participants": participants, "observers": spacesObservers}, "code": code, "binary": true,
+		"graceSeconds": spacesGrace})
 	if err != nil {
 		return spaceOpened{}, err
 	}
