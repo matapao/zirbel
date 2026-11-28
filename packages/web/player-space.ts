@@ -49,7 +49,10 @@ const load = (path: string) => import(path) as Promise<Record<string, unknown>>;
 let loading: Promise<Spaces | undefined> | undefined;
 /** The spaces SDK, or none where this host runs no kernel. */
 function spacesSdk() {
-  loading ??= load('/.skalet/spaces.js').then((module) => module.spaces as Spaces, () => undefined);
+  loading ??= load('/.skalet/spaces.js').then(
+    (module) => module.spaces as Spaces,
+    () => undefined,
+  );
   return loading;
 }
 
@@ -57,7 +60,7 @@ function spacesSdk() {
 async function simulated() {
   const asked = new URLSearchParams(location.search).get('net');
   if (!asked || !/(?:^|,)(?:lag|jitter|loss|kbps):/.test(asked)) return undefined;
-  const net = await load('/.skalet/net.js').catch(() => undefined) as
+  const net = (await load('/.skalet/net.js').catch(() => undefined)) as
     { netParams?: (search: string) => object; netsim?: (options: object) => unknown } | undefined;
   if (!net?.netParams || !net.netsim) return undefined;
   return net.netsim(net.netParams('?net=' + asked));
@@ -72,8 +75,12 @@ export async function joinSpace(link: SpaceLink, asked: { name?: string; role?: 
   if (link.invite) credential = '&skalet.invite=' + link.invite;
   else if (link.ticket) credential = '&skalet.ticket=' + link.ticket;
   const WebSocket = await simulated();
-  const space = await spaces.join({ link: location.origin + location.pathname + '#skalet.space=' + link.space + credential,
-    binary: true, ...asked, ...(WebSocket ? { WebSocket } : {}) });
+  const space = await spaces.join({
+    link: location.origin + location.pathname + '#skalet.space=' + link.space + credential,
+    binary: true,
+    ...asked,
+    ...(WebSocket ? { WebSocket } : {}),
+  });
   history.replaceState(null, '', location.pathname + location.search + '#skalet.space=' + link.space);
   return space;
 }
@@ -107,12 +114,26 @@ export async function bridgeFrame(frame: HTMLIFrameElement, space: PageSpace, go
   let waiting: ReturnType<typeof setTimeout> | undefined;
   const back = (event: MessageEvent) => {
     const data: unknown = event.data;
-    if (event.source === frame.contentWindow && data && typeof data === 'object' &&
-      (data as Record<string, unknown>)['skalet.spaces'] === 'hello') clearTimeout(waiting);
+    if (
+      event.source === frame.contentWindow &&
+      data &&
+      typeof data === 'object' &&
+      (data as Record<string, unknown>)['skalet.spaces'] === 'hello'
+    )
+      clearTimeout(waiting);
   };
   addEventListener('message', back);
-  const end = spaces.bridge(frame, space, { onLeave() { clearTimeout(waiting); waiting = setTimeout(gone, FRAME_BACK); } });
-  return () => { clearTimeout(waiting); removeEventListener('message', back); end(); };
+  const end = spaces.bridge(frame, space, {
+    onLeave() {
+      clearTimeout(waiting);
+      waiting = setTimeout(gone, FRAME_BACK);
+    },
+  });
+  return () => {
+    clearTimeout(waiting);
+    removeEventListener('message', back);
+    end();
+  };
 }
 
 /** Show on TV: the link that seats the box's screen as this member, from the place the page hands over itself; this

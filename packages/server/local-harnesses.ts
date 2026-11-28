@@ -1,8 +1,19 @@
 // The person's own Claude Code and Codex, each run through its agent's SDK by the harness library, signed in as the
 // person is. A turn works in its thread's folder (threads.ts) and continues the thread's session; without a thread it
 // gets a folder of its own that goes after it.
-import { AgentRuntime, claudeAgent, codexAgent, findProgram, type AgentAsk, type AgentLogin, type Host, type RunHandle, type RunProgress,
-  type RunSpec, type Runtime } from 'celler/harness';
+import {
+  AgentRuntime,
+  claudeAgent,
+  codexAgent,
+  findProgram,
+  type AgentAsk,
+  type AgentLogin,
+  type Host,
+  type RunHandle,
+  type RunProgress,
+  type RunSpec,
+  type Runtime,
+} from 'celler/harness';
 import { constants, copyFileSync, existsSync, lstatSync, chmodSync, realpathSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -20,9 +31,18 @@ import { TurnEndedError, type Processor, type ProcessorRun, type Processors, typ
 const NO_TIME_LIMIT = Number.POSITIVE_INFINITY;
 
 /** The model tiers every harness takes, and the reasoning efforts each agent offers, by its runtime's kind. */
-const TIERS = [{ value: 'fast', name: 'Fast' }, { value: 'balanced', name: 'Balanced' }, { value: 'strong', name: 'Strong' }];
+const TIERS = [
+  { value: 'fast', name: 'Fast' },
+  { value: 'balanced', name: 'Balanced' },
+  { value: 'strong', name: 'Strong' },
+];
 const EFFORT_NAMES: Record<string, string> = {
-  minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max',
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max',
 };
 const EFFORTS: Record<string, string[]> = {
   'claude-code': ['low', 'medium', 'high', 'xhigh', 'max'],
@@ -34,8 +54,15 @@ function modelSettings(kind: string): ModelSettings {
   const efforts = EFFORTS[kind] ?? [];
   return {
     model: { name: 'Model', currentValue: '', options: TIERS },
-    ...(efforts.length ? { effort: { name: 'Reasoning effort', currentValue: '',
-      options: efforts.map((value) => ({ value, name: EFFORT_NAMES[value] ?? value })) } } : {}),
+    ...(efforts.length
+      ? {
+          effort: {
+            name: 'Reasoning effort',
+            currentValue: '',
+            options: efforts.map((value) => ({ value, name: EFFORT_NAMES[value] ?? value })),
+          },
+        }
+      : {}),
   };
 }
 
@@ -59,7 +86,8 @@ function reuseCodexSignIn(codexHome: string) {
 }
 
 type LocalProcessor = Pick<Processor, 'id' | 'name'> & {
-  runtime: Runtime & Pick<AgentRuntime, 'login'>; unavailable?: string | undefined;
+  runtime: Runtime & Pick<AgentRuntime, 'login'>;
+  unavailable?: string | undefined;
   /** What a turn needs first: says what it did, when it did something. */
   prepare?: (signal?: AbortSignal) => Promise<{ title: string; detail: string } | undefined>;
 };
@@ -79,15 +107,35 @@ export function localHarnesses(projectDirectory: string, root = accountDirectory
   const host: Host = { client: { name: 'zirbel', version: '0.1.0' }, mark: (env) => env };
   const claudeSdk = new ClaudeSdk(join(root, 'claude-agent-sdk'));
   return new LocalHarnesses(turns, [
-    { id: 'codex', name: 'Codex', runtime: new AgentRuntime(codexAgent({
-      codex: () => findProgram('codex'), home: codexHome,
-      words: { install: 'Install Codex to use it here.', login: 'Sign in to Codex to continue.', signedOut: 'Sign-in required.' },
-    }), host) },
-    { id: 'claude', name: 'Claude Code', unavailable: claudeSdk.available ? undefined : 'Unavailable in this editor',
-      prepare: (signal) => claudeSdk.ready(signal), runtime: new AgentRuntime(claudeAgent({
-        claude: () => findProgram('claude'),
-        words: { noClaude: 'Claude Code is unavailable.', login: 'Sign in to Claude Code to continue.' },
-      }), host) },
+    {
+      id: 'codex',
+      name: 'Codex',
+      runtime: new AgentRuntime(
+        codexAgent({
+          codex: () => findProgram('codex'),
+          home: codexHome,
+          words: {
+            install: 'Install Codex to use it here.',
+            login: 'Sign in to Codex to continue.',
+            signedOut: 'Sign-in required.',
+          },
+        }),
+        host,
+      ),
+    },
+    {
+      id: 'claude',
+      name: 'Claude Code',
+      unavailable: claudeSdk.available ? undefined : 'Unavailable in this editor',
+      prepare: (signal) => claudeSdk.ready(signal),
+      runtime: new AgentRuntime(
+        claudeAgent({
+          claude: () => findProgram('claude'),
+          words: { noClaude: 'Claude Code is unavailable.', login: 'Sign in to Claude Code to continue.' },
+        }),
+        host,
+      ),
+    },
   ]);
 }
 
@@ -108,22 +156,28 @@ export class LocalHarnesses implements Processors {
   async list() {
     if (this.checking) return this.checking;
     if (this.checked && Date.now() - this.checked.at < 3000) return this.checked.processors;
-    this.checking = Promise.all(this.processors.map(async ({ id, name, runtime, unavailable }): Promise<Processor> => {
-      if (unavailable) return { id, name, ready: false, detail: unavailable };
-      try {
-        const health = await runtime.health(false);
-        if (health.ok) return { id, name, ready: true, modelSettings: true };
-        if (health.fix === 'login') return { id, name, ready: false, signIn: true };
-        // Found, but not one that runs here (older than its SDK is made with): the library says what to do.
-        if (health.program && !health.fix) return { id, name, ready: false, detail: health.detail.slice(0, 300) };
-      } catch { /* One unavailable harness should leave the others usable. */ }
-      return { id, name, ready: false, detail: 'Unavailable on this device' };
-    }));
+    this.checking = Promise.all(
+      this.processors.map(async ({ id, name, runtime, unavailable }): Promise<Processor> => {
+        if (unavailable) return { id, name, ready: false, detail: unavailable };
+        try {
+          const health = await runtime.health(false);
+          if (health.ok) return { id, name, ready: true, modelSettings: true };
+          if (health.fix === 'login') return { id, name, ready: false, signIn: true };
+          // Found, but not one that runs here (older than its SDK is made with): the library says what to do.
+          if (health.program && !health.fix) return { id, name, ready: false, detail: health.detail.slice(0, 300) };
+        } catch {
+          /* One unavailable harness should leave the others usable. */
+        }
+        return { id, name, ready: false, detail: 'Unavailable on this device' };
+      }),
+    );
     try {
       const processors = await this.checking;
       this.checked = { at: Date.now(), processors };
       return processors;
-    } finally { this.checking = undefined; }
+    } finally {
+      this.checking = undefined;
+    }
   }
 
   async settings(id: string, model?: string, signal?: AbortSignal): Promise<ModelSettings> {
@@ -142,19 +196,38 @@ export class LocalHarnesses implements Processors {
       throw new ZirbelError(422, 'Choose a reasoning level offered for this model.');
     const status = (await this.list()).find((choice) => choice.id === id);
     signal?.throwIfAborted();
-    if (!status?.ready) throw new ZirbelError(409, status?.signIn ? 'Sign in to ' + processor.name + ' to continue.' : processor.name + ' is unavailable.');
+    if (!status?.ready)
+      throw new ZirbelError(
+        409,
+        status?.signIn ? 'Sign in to ' + processor.name + ' to continue.' : processor.name + ' is unavailable.',
+      );
     const prepared = await processor.prepare?.(signal);
     if (prepared) update?.({ type: 'activity', entry: { id: 'prepared', kind: 'notice', ...prepared } });
-    const cwd = place?.cwd ?? await mkdtemp(join(this.cwd, 'turn-'));
+    const cwd = place?.cwd ?? (await mkdtemp(join(this.cwd, 'turn-')));
     try {
       signal?.throwIfAborted();
-      return await this.run(processor, { cwd, prompt, systemPrompt: '', model: model ?? '', ...(effort === undefined ? {} : { effort }),
-        sessionId: place?.sessionId ?? newId(), resume: Boolean(place?.resume && place.sessionId),
-        mcpServers: place?.mcpServers ?? [], ...(place?.readable ? { readable: place.readable } : {}), purpose: 'work',
-        timeoutMs: NO_TIME_LIMIT },
-      { signal, update, ask, session });
+      return await this.run(
+        processor,
+        {
+          cwd,
+          prompt,
+          systemPrompt: '',
+          model: model ?? '',
+          ...(effort === undefined ? {} : { effort }),
+          sessionId: place?.sessionId ?? newId(),
+          resume: Boolean(place?.resume && place.sessionId),
+          mcpServers: place?.mcpServers ?? [],
+          ...(place?.readable ? { readable: place.readable } : {}),
+          purpose: 'work',
+          timeoutMs: NO_TIME_LIMIT,
+        },
+        { signal, update, ask, session },
+      );
     } finally {
-      if (!place) await rm(cwd, { recursive: true, force: true, maxRetries: 2 }).catch(() => console.warn('Could not remove a harness scratch folder.'));
+      if (!place)
+        await rm(cwd, { recursive: true, force: true, maxRetries: 2 }).catch(() =>
+          console.warn('Could not remove a harness scratch folder.'),
+        );
     }
   }
 
@@ -164,22 +237,41 @@ export class LocalHarnesses implements Processors {
     // A call to one of the turn's MCP servers, by its call: a request about it names that server and tool.
     const servers = new Map<string, { server: string; tool: string }>();
     const progress = (event: RunProgress) => {
-      if (event.type === 'session') { sessionId = event.sessionId; session?.(event.sessionId); }
+      if (event.type === 'session') {
+        sessionId = event.sessionId;
+        session?.(event.sessionId);
+      }
       if (event.type === 'tool' && event.call && event.mcp) servers.set(event.call, event.mcp);
       report?.(event);
     };
-    const handle = runtime.run({ ...spec, ...(ask ? { ask: (question: AgentAsk, withdrawn: AbortSignal) =>
-      ask(question, withdrawn, { folder: spec.cwd, harness: name, mcp: servers.get(question.call) }) } : {}) }, progress);
+    const handle = runtime.run(
+      {
+        ...spec,
+        ...(ask
+          ? {
+              ask: (question: AgentAsk, withdrawn: AbortSignal) =>
+                ask(question, withdrawn, { folder: spec.cwd, harness: name, mcp: servers.get(question.call) }),
+            }
+          : {}),
+      },
+      progress,
+    );
     this.running.add(handle);
     const stop = () => handle.cancel();
     signal?.addEventListener('abort', stop, { once: true });
     if (signal?.aborted) stop();
-    const result = await handle.done.finally(() => { signal?.removeEventListener('abort', stop); report?.flush(); });
+    const result = await handle.done.finally(() => {
+      signal?.removeEventListener('abort', stop);
+      report?.flush();
+    });
     void Promise.resolve(handle.cleaned).finally(() => this.running.delete(handle));
     signal?.throwIfAborted();
-    result.permissionDenials.slice(0, 40).forEach((detail, index) => update?.({ type: 'activity',
-      entry: { id: 'denied:' + index, kind: 'notice', title: 'Permission denied', detail },
-    }));
+    result.permissionDenials.slice(0, 40).forEach((detail, index) =>
+      update?.({
+        type: 'activity',
+        entry: { id: 'denied:' + index, kind: 'notice', title: 'Permission denied', detail },
+      }),
+    );
     const task = sessionId ?? spec.sessionId;
     if (result.cancelled) return { task, name, stopReason: 'cancelled', sessionId };
     if (!result.ok) {
@@ -189,7 +281,14 @@ export class LocalHarnesses implements Processors {
     }
     const { input, output, cacheRead, cacheWrite5m, cacheWrite1h } = result.usage;
     const totalTokens = input + output + cacheRead + cacheWrite5m + cacheWrite1h;
-    return { task, name, stopReason: 'end_turn', text: result.text, usage: totalTokens ? { totalTokens } : undefined, sessionId };
+    return {
+      task,
+      name,
+      stopReason: 'end_turn',
+      text: result.text,
+      usage: totalTokens ? { totalTokens } : undefined,
+      sessionId,
+    };
   }
 
   async removeSession(id: string, session: { cwd: string; sessionId: string }) {
@@ -217,22 +316,42 @@ export class LocalHarnesses implements Processors {
     if ('error' in login) throw new ZirbelError(502, 'Could not start sign-in for ' + name + '.');
     const session: ActiveSignIn = { login, state: { status: 'pending' } };
     this.signIns.set(id, session);
-    void login.url.then((address) => {
-      const url = address && URL.parse(address);
-      if (session.state.status === 'pending' && url && url.protocol === 'https:' && !url.username && !url.password)
-        session.state = { ...session.state, url: url.href };
-    }).catch(() => { /* The harness may use a code-only sign-in. */ });
+    void login.url
+      .then((address) => {
+        const url = address && URL.parse(address);
+        if (session.state.status === 'pending' && url && url.protocol === 'https:' && !url.username && !url.password)
+          session.state = { ...session.state, url: url.href };
+      })
+      .catch(() => {
+        /* The harness may use a code-only sign-in. */
+      });
     // The one-time code to enter on that page, for a sign-in from another device that shows one.
-    void login.userCode?.then((code) => {
-      if (session.state.status === 'pending' && code && /^[A-Z0-9-]{4,32}$/i.test(code))
-        session.state = { ...session.state, userCode: code };
-    }).catch(() => { /* It ended without one; done says how. */ });
-    void login.done.then(({ ok, error }) => {
-      // Why it didn't complete, as the sign-in says it: the harness's words, or the library's when it ended it.
-      const reason = !ok && error ? error.replace(/[\p{Cc}\p{Cf}]+/gu, ' ').trim().slice(0, 300) : '';
-      session.state = ok ? { status: 'complete' } : { status: 'failed', ...(reason ? { error: reason } : {}) };
-      this.checked = undefined;
-    }, () => { session.state = { status: 'failed' }; this.checked = undefined; });
+    void login.userCode
+      ?.then((code) => {
+        if (session.state.status === 'pending' && code && /^[A-Z0-9-]{4,32}$/i.test(code))
+          session.state = { ...session.state, userCode: code };
+      })
+      .catch(() => {
+        /* It ended without one; done says how. */
+      });
+    void login.done.then(
+      ({ ok, error }) => {
+        // Why it didn't complete, as the sign-in says it: the harness's words, or the library's when it ended it.
+        const reason =
+          !ok && error
+            ? error
+                .replace(/[\p{Cc}\p{Cf}]+/gu, ' ')
+                .trim()
+                .slice(0, 300)
+            : '';
+        session.state = ok ? { status: 'complete' } : { status: 'failed', ...(reason ? { error: reason } : {}) };
+        this.checked = undefined;
+      },
+      () => {
+        session.state = { status: 'failed' };
+        this.checked = undefined;
+      },
+    );
     return session.state;
   }
 

@@ -3,7 +3,13 @@ import { chatStreamType, type ChatEvent, type ChatUpdate } from '../sdk/chat-str
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 let statusTimer: number;
 
-function request(path: string, payload?: unknown, accept = 'application/json', signal?: AbortSignal, method?: 'PUT' | 'DELETE') {
+function request(
+  path: string,
+  payload?: unknown,
+  accept = 'application/json',
+  signal?: AbortSignal,
+  method?: 'PUT' | 'DELETE',
+) {
   const headers = new Headers({ accept });
   if (payload !== undefined) headers.set('content-type', 'application/json');
   return fetch(new URL('api/' + path, document.baseURI), {
@@ -17,7 +23,8 @@ function request(path: string, payload?: unknown, accept = 'application/json', s
 
 async function json<T>(response: Response): Promise<T> {
   const value = await response.json();
-  if (!response.ok) throw new Error(typeof value.error === 'string' ? value.error : 'Zirbel could not complete the request.');
+  if (!response.ok)
+    throw new Error(typeof value.error === 'string' ? value.error : 'Zirbel could not complete the request.');
   return value as T;
 }
 
@@ -30,7 +37,12 @@ export async function apiWith<T = unknown>(method: 'PUT' | 'DELETE', path: strin
   return json(await request(path, payload, undefined, undefined, method));
 }
 
-export async function chatApi<T>(path: string, payload: unknown, update: (event: ChatUpdate) => void, signal: AbortSignal): Promise<T> {
+export async function chatApi<T>(
+  path: string,
+  payload: unknown,
+  update: (event: ChatUpdate) => void,
+  signal: AbortSignal,
+): Promise<T> {
   const response = await request(path, payload, chatStreamType, signal);
   if (response.headers.get('content-type')?.split(';')[0] !== chatStreamType || !response.ok) return json(response);
   if (!response.body) throw new Error('The chat connection closed before the reply arrived.');
@@ -49,7 +61,9 @@ export async function chatApi<T>(path: string, payload: unknown, update: (event:
         update(event);
       }
     }
-  } finally { await reader.cancel().catch(() => {}); }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
 }
 
 export function el<K extends keyof HTMLElementTagNameMap>(name: K, text?: string, className?: string) {
@@ -69,7 +83,10 @@ export function action(label: string, fn: () => void | Promise<void>, className?
 export function link(label: string, url: string, external = false) {
   const a = el('a', label);
   a.href = url;
-  if (external) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+  if (external) {
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+  }
   return a;
 }
 
@@ -79,14 +96,22 @@ export function inform(message: string, fault = false) {
   node.textContent = message;
   node.classList.toggle('failed', fault);
   clearTimeout(statusTimer);
-  statusTimer = window.setTimeout(() => { node.hidden = true; }, fault ? 8000 : 3500);
+  statusTimer = window.setTimeout(
+    () => {
+      node.hidden = true;
+    },
+    fault ? 8000 : 3500,
+  );
 }
 
 export function attempt(fn: () => void | Promise<void>, button?: HTMLButtonElement) {
   if (button) button.disabled = true;
-  void Promise.resolve().then(fn).catch((error: Error) => inform(error.message, true)).finally(() => {
-    if (button) button.disabled = false;
-  });
+  void Promise.resolve()
+    .then(fn)
+    .catch((error: Error) => inform(error.message, true))
+    .finally(() => {
+      if (button) button.disabled = false;
+    });
 }
 
 export const dialog = $<HTMLDialogElement>('dialog');
@@ -105,4 +130,8 @@ export function formValue(form: HTMLFormElement, name: string) {
   const value = new FormData(form).get(name);
   return typeof value === 'string' ? value : '';
 }
-export function option(value: string, label: string) { const node = el('option', label); node.value = value; return node; }
+export function option(value: string, label: string) {
+  const node = el('option', label);
+  node.value = value;
+  return node;
+}

@@ -6,14 +6,35 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } 
 import { join } from 'node:path';
 import { z } from 'zod';
 import {
-  asset, attachment, project, scene, sceneReference, type Asset, type Attachment, type FullRevision, type Note, type Project,
-  type Reference, type Revision, type Template,
+  asset,
+  attachment,
+  project,
+  scene,
+  sceneReference,
+  type Asset,
+  type Attachment,
+  type FullRevision,
+  type Note,
+  type Project,
+  type Reference,
+  type Revision,
+  type Template,
 } from '../sdk/contracts.ts';
 import { gameDocument, type GameDocument } from '../sdk/game.ts';
 import { ZirbelError } from './errors.ts';
 import { digest, mediaMatches } from './bytes.ts';
 import {
-  commitTree, FastImport, git, initRepository, now as seconds, OWNER, readBranches, readObjects, resolve, updateRefs, type Ident,
+  commitTree,
+  FastImport,
+  git,
+  initRepository,
+  now as seconds,
+  OWNER,
+  readBranches,
+  readObjects,
+  resolve,
+  updateRefs,
+  type Ident,
 } from './git.ts';
 import { ASSETS_JSON, commitMessage, treeChanges } from './git-tree.ts';
 import { History } from './history.ts';
@@ -22,13 +43,39 @@ import { migrateProject } from './migrate.ts';
 import { exportBundle, importBundle, withAssetFiles } from './bundles.ts';
 import { referencesFor } from './operations.ts';
 import {
-  atomicWrite, newId, now, readData, safeId, savedNote, storedProject, titleSchema, type Proposal, type Stored,
+  atomicWrite,
+  newId,
+  now,
+  readData,
+  safeId,
+  savedNote,
+  storedProject,
+  titleSchema,
+  type Proposal,
+  type Stored,
 } from './project-files.ts';
 import {
-  applyProposal, discardProposal, listProposals, previewProposal, readProposal, submitProposal, writeProposal,
+  applyProposal,
+  discardProposal,
+  listProposals,
+  previewProposal,
+  readProposal,
+  submitProposal,
+  writeProposal,
 } from './proposals.ts';
 
-export { ZirbelError, digest, mediaMatches, atomicWrite, newId, readData, safeId, savedNote, storedProject, type Proposal };
+export {
+  ZirbelError,
+  digest,
+  mediaMatches,
+  atomicWrite,
+  newId,
+  readData,
+  safeId,
+  savedNote,
+  storedProject,
+  type Proposal,
+};
 export { deliveryAssets, gameFileBytes, gameFileHashes, verifyAssetBytes } from './bundles.ts';
 export { projectBundle, savedProposal } from './project-files.ts';
 
@@ -43,12 +90,17 @@ export function head(project: Pick<Project, 'branches' | 'revisions'>, branch: s
 
 export function assertCurrent(project: Pick<Project, 'branches' | 'revisions'>, branch: string, baseRevision: string) {
   const current = head(project, branch);
-  if (current.id !== baseRevision) throw new ZirbelError(409, 'The branch has changed. Request a new proposal against its current revision.');
+  if (current.id !== baseRevision)
+    throw new ZirbelError(409, 'The branch has changed. Request a new proposal against its current revision.');
   return current;
 }
 
 type Meta = Pick<Stored, 'title' | 'template' | 'upstream' | 'imported' | 'source'>;
-const content = z.strictObject({ scene: scene.optional(), game: gameDocument.optional(), assets: z.array(asset).max(80) });
+const content = z.strictObject({
+  scene: scene.optional(),
+  game: gameDocument.optional(),
+  assets: z.array(asset).max(80),
+});
 
 export class Projects {
   readonly history: History;
@@ -59,16 +111,29 @@ export class Projects {
     for (const name of ['projects', 'proposals', 'assets', 'media', 'releases', 'grants', 'git']) {
       mkdirSync(join(root, name), { recursive: true, mode: 0o700 });
     }
-    this.history = new History({ hasAsset: (hash) => existsSync(join(root, 'assets', hash)), storeAsset: (bytes) => this.storeAsset(bytes) });
+    this.history = new History({
+      hasAsset: (hash) => existsSync(join(root, 'assets', hash)),
+      storeAsset: (bytes) => this.storeAsset(bytes),
+    });
   }
 
-  private path(projectId: string) { return join(this.root, 'projects', safeId(projectId) + '.json'); }
+  private path(projectId: string) {
+    return join(this.root, 'projects', safeId(projectId) + '.json');
+  }
   /** A project's bare repository. */
-  repository(projectId: string) { return join(this.root, 'git', safeId(projectId) + '.git'); }
+  repository(projectId: string) {
+    return join(this.root, 'git', safeId(projectId) + '.git');
+  }
 
-  private ids() { return readdirSync(join(this.root, 'projects')).filter((file) => file.endsWith('.json')).map((file) => file.slice(0, -5)); }
+  private ids() {
+    return readdirSync(join(this.root, 'projects'))
+      .filter((file) => file.endsWith('.json'))
+      .map((file) => file.slice(0, -5));
+  }
 
-  list() { return this.ids().map((projectId) => this.read(projectId)); }
+  list() {
+    return this.ids().map((projectId) => this.read(projectId));
+  }
 
   summaries() {
     return this.ids().map((projectId) => {
@@ -79,8 +144,11 @@ export class Projects {
 
   /** Moves aside the built-in starters nobody changed, before or after their migration. */
   archiveLegacyPreviews() {
-    const withProposals = new Set(readdirSync(join(this.root, 'proposals')).filter((file) => file.endsWith('.json'))
-      .map((file) => file.split('.')[0]));
+    const withProposals = new Set(
+      readdirSync(join(this.root, 'proposals'))
+        .filter((file) => file.endsWith('.json'))
+        .map((file) => file.split('.')[0]),
+    );
     for (const projectId of this.ids()) {
       if (withProposals.has(projectId)) continue;
       const raw = readData(this.path(projectId)) as { version?: unknown };
@@ -110,18 +178,42 @@ export class Projects {
   }
 
   read(projectId: string): Project {
-    const { version: _version, id, title, template, notes, attachments, upstream, imported, source } = this.stored(projectId);
+    const {
+      version: _version,
+      id,
+      title,
+      template,
+      notes,
+      attachments,
+      upstream,
+      imported,
+      source,
+    } = this.stored(projectId);
     const repo = this.repository(projectId);
     const branches = readBranches(repo);
     if (!branches.main) throw new ZirbelError(422, 'The project’s repository has no main branch.');
     const heads = new Set(Object.values(branches));
-    const revisions: Revision[] = this.history.revisions(repo, branches)
-      .map((meta) => heads.has(meta.id) ? { ...meta, ...this.history.content(repo, meta.id) } : meta);
-    return { version: 1, id, title, ...(template ? { template } : {}), branches, revisions, notes, attachments,
-      ...(upstream ? { upstream } : {}), ...(imported ? { imported } : {}), ...(source ? { source } : {}) };
+    const revisions: Revision[] = this.history
+      .revisions(repo, branches)
+      .map((meta) => (heads.has(meta.id) ? { ...meta, ...this.history.content(repo, meta.id) } : meta));
+    return {
+      version: 1,
+      id,
+      title,
+      ...(template ? { template } : {}),
+      branches,
+      revisions,
+      notes,
+      attachments,
+      ...(upstream ? { upstream } : {}),
+      ...(imported ? { imported } : {}),
+      ...(source ? { source } : {}),
+    };
   }
 
-  has(projectId: string) { return existsSync(this.path(projectId)); }
+  has(projectId: string) {
+    return existsSync(this.path(projectId));
+  }
 
   remove(projectId: string) {
     this.stored(projectId);
@@ -148,21 +240,44 @@ export class Projects {
   }
 
   createGame(title = 'Untitled project', game?: GameDocument, author: Ident = OWNER) {
-    return this.createRevision(title, { game, assets: [], label: game ? 'Created with harness' : 'Created project' }, author);
+    return this.createRevision(
+      title,
+      { game, assets: [], label: game ? 'Created with harness' : 'Created project' },
+      author,
+    );
   }
 
-  createRevision(title: string, initial: { scene?: FullRevision['scene']; game?: GameDocument | undefined; assets: Asset[];
-    template?: Template | undefined; upstream?: string; label: string }, author: Ident = OWNER) {
+  createRevision(
+    title: string,
+    initial: {
+      scene?: FullRevision['scene'];
+      game?: GameDocument | undefined;
+      assets: Asset[];
+      template?: Template | undefined;
+      upstream?: string;
+      label: string;
+    },
+    author: Ident = OWNER,
+  ) {
     const { template, upstream } = initial;
     const first = content.parse({ scene: initial.scene, game: initial.game, assets: initial.assets });
     const name = titleSchema.parse(title);
-    return this.createRepository((repo) => {
-      const stream = new FastImport();
-      const { changes, hashes } = treeChanges([], () => undefined, first, (hash) => this.readAsset(hash), stream);
-      stream.commit('refs/heads/main', { author, time: seconds(), message: commitMessage(initial.label) }, changes);
-      stream.run(repo);
-      return hashes;
-    }, { title: name, ...(template ? { template } : {}), ...(upstream ? { upstream } : {}) });
+    return this.createRepository(
+      (repo) => {
+        const stream = new FastImport();
+        const { changes, hashes } = treeChanges(
+          [],
+          () => undefined,
+          first,
+          (hash) => this.readAsset(hash),
+          stream,
+        );
+        stream.commit('refs/heads/main', { author, time: seconds(), message: commitMessage(initial.label) }, changes);
+        stream.run(repo);
+        return hashes;
+      },
+      { title: name, ...(template ? { template } : {}), ...(upstream ? { upstream } : {}) },
+    );
   }
 
   /** A new project whose repository fill writes, made aside and moved in whole; its metadata last. */
@@ -171,7 +286,9 @@ export class Projects {
     try {
       initRepository(making);
       return this.adopt(making, fill(making), meta, projectId);
-    } finally { rmSync(making, { recursive: true, force: true }); }
+    } finally {
+      rmSync(making, { recursive: true, force: true });
+    }
   }
 
   /** Makes a repository written aside a new project's: hashes, the SHA-256s of blobs it was written with. */
@@ -194,17 +311,29 @@ export class Projects {
     return submitProposal(this, projectId, input, withFiles, author);
   }
 
-  saveProposal(proposal: Proposal) { writeProposal(this, proposal); }
+  saveProposal(proposal: Proposal) {
+    writeProposal(this, proposal);
+  }
 
-  getProposal(projectId: string, proposalId: string) { return readProposal(this, projectId, proposalId); }
+  getProposal(projectId: string, proposalId: string) {
+    return readProposal(this, projectId, proposalId);
+  }
 
-  proposals(projectId: string, branch: string) { return listProposals(this, projectId, branch); }
+  proposals(projectId: string, branch: string) {
+    return listProposals(this, projectId, branch);
+  }
 
-  preview(projectId: string, proposalId: string) { return previewProposal(this, projectId, proposalId); }
+  preview(projectId: string, proposalId: string) {
+    return previewProposal(this, projectId, proposalId);
+  }
 
-  discard(projectId: string, proposalId: string) { discardProposal(this, projectId, proposalId); }
+  discard(projectId: string, proposalId: string) {
+    discardProposal(this, projectId, proposalId);
+  }
 
-  commit(projectId: string, proposalId: string, fork?: string) { return applyProposal(this, projectId, proposalId, fork); }
+  commit(projectId: string, proposalId: string, fork?: string) {
+    return applyProposal(this, projectId, proposalId, fork);
+  }
 
   /** Moves a branch from base to a commit, or answers that it has moved on. */
   advance(projectId: string, branch: string, base: string, commit: string) {
@@ -230,7 +359,9 @@ export class Projects {
     this.stored(projectId);
     const repo = this.repository(projectId);
     const commit = /^[0-9a-f]{40}$/.test(revisionId) ? resolve(repo, revisionId) : undefined;
-    const reachable = commit !== undefined && commit === revisionId &&
+    const reachable =
+      commit !== undefined &&
+      commit === revisionId &&
       git(repo, ['for-each-ref', '--count=1', '--contains', commit, 'refs/heads/']).stdout.length > 0;
     if (!reachable) throw new ZirbelError(404, 'Revision does not exist.');
     return { ...this.history.meta(repo, commit), ...this.history.content(repo, commit) };
@@ -240,9 +371,16 @@ export class Projects {
   knownAssets(projectId: string) {
     const repo = this.repository(projectId);
     const listed = this.history.revisions(repo, readBranches(repo));
-    const files = readObjects(repo, listed.map(({ id }) => id + ':' + ASSETS_JSON));
+    const files = readObjects(
+      repo,
+      listed.map(({ id }) => id + ':' + ASSETS_JSON),
+    );
     return [...files.values()].flatMap((bytes) => {
-      try { return z.array(asset).parse(JSON.parse(bytes.toString('utf8'))); } catch { return []; }
+      try {
+        return z.array(asset).parse(JSON.parse(bytes.toString('utf8')));
+      } catch {
+        return [];
+      }
     });
   }
 
@@ -252,8 +390,11 @@ export class Projects {
     head(project, input.branch);
     const references = input.references.map((reference) => {
       let revision: FullRevision;
-      try { revision = this.revision(projectId, reference.revision); }
-      catch { throw new ZirbelError(404, 'Note refers to a missing revision.'); }
+      try {
+        revision = this.revision(projectId, reference.revision);
+      } catch {
+        throw new ZirbelError(404, 'Note refers to a missing revision.');
+      }
       return referencesFor(revision, [reference])[0]!;
     });
     if (input.attachments.some((id) => !project.attachments.some((item) => item.id === id)))
@@ -283,7 +424,10 @@ export class Projects {
     const item = current.attachments.find((candidate) => candidate.id === attachmentId);
     if (!item) throw new ZirbelError(404, 'Attachment does not exist.');
     const next = attachment.parse({ ...item, transcript, intent });
-    this.save({ ...current, attachments: current.attachments.map((candidate) => candidate.id === attachmentId ? next : candidate) });
+    this.save({
+      ...current,
+      attachments: current.attachments.map((candidate) => (candidate.id === attachmentId ? next : candidate)),
+    });
     return next;
   }
 
@@ -302,15 +446,18 @@ export class Projects {
 
   readAsset(hash: string) {
     if (!/^[a-f0-9]{64}$/.test(hash)) throw new ZirbelError(400, 'Invalid asset hash.');
-    try { return readFileSync(join(this.root, 'assets', hash)); }
-    catch (error) {
+    try {
+      return readFileSync(join(this.root, 'assets', hash));
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new ZirbelError(422, 'An asset file is missing.');
       throw error;
     }
   }
 
   /** A bundle of the project (bundles.ts). */
-  export(projectId: string) { return exportBundle(this, projectId); }
+  export(projectId: string) {
+    return exportBundle(this, projectId);
+  }
 
   /** A package's metadata with the bytes of its assets and game files (bundles.ts). */
   withAssetFiles<T extends object>(metadata: T, assets: readonly Asset[], gameFiles: readonly string[] = []) {
@@ -318,5 +465,7 @@ export class Projects {
   }
 
   /** A new project from a bundle (bundles.ts). */
-  import(raw: unknown, author?: Ident) { return importBundle(this, raw, author); }
+  import(raw: unknown, author?: Ident) {
+    return importBundle(this, raw, author);
+  }
 }

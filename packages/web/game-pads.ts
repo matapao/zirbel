@@ -9,24 +9,39 @@ import { STANDARD_AXES, STANDARD_BUTTONS, type Pad, type PadEntry } from './pad-
 
 type Button = { readonly pressed: boolean; readonly touched: boolean; readonly value: number };
 type Effect = { duration?: number; startDelay?: number; strongMagnitude?: number; weakMagnitude?: number };
-type Actuator = { readonly type: 'dual-rumble'; readonly effects: readonly string[];
-  playEffect(type: string, effect?: Effect): Promise<'complete' | 'preempted'>; reset(): Promise<'complete'> };
+type Actuator = {
+  readonly type: 'dual-rumble';
+  readonly effects: readonly string[];
+  playEffect(type: string, effect?: Effect): Promise<'complete' | 'preempted'>;
+  reset(): Promise<'complete'>;
+};
 export type PadLike = {
-  readonly id: string; readonly index: number; readonly mapping: GamepadMappingType; readonly connected: boolean;
-  readonly timestamp: number; readonly axes: readonly number[]; readonly buttons: readonly Button[];
-  readonly vibrationActuator: Actuator | GamepadHapticActuator | null; readonly hapticActuators: readonly unknown[];
+  readonly id: string;
+  readonly index: number;
+  readonly mapping: GamepadMappingType;
+  readonly connected: boolean;
+  readonly timestamp: number;
+  readonly axes: readonly number[];
+  readonly buttons: readonly Button[];
+  readonly vibrationActuator: Actuator | GamepadHapticActuator | null;
+  readonly hapticActuators: readonly unknown[];
 };
 /** A device gamepad the page gave a place: the browser's index and id for it. */
 export type LocalPad = { place: number; index: number; id: string };
 type Controller = PadEntry & {
-  pad?: Pad; timestamp: number; shown: boolean; layout: number; snapshot?: PadLike | undefined; actuator: Actuator;
+  pad?: Pad;
+  timestamp: number;
+  shown: boolean;
+  layout: number;
+  snapshot?: PadLike | undefined;
+  actuator: Actuator;
 };
 export type Rumble = { slot: number; duration: number; strong: number; weak: number };
 
 /** The places browsers keep for a device's own gamepads: getGamepads() is at least this long. */
 const PLACES_SHOWN = 4;
 const within = (value: unknown, most: number) =>
-  (typeof value === 'number' && Number.isFinite(value) ? Math.min(most, Math.max(0, value)) : 0);
+  typeof value === 'number' && Number.isFinite(value) ? Math.min(most, Math.max(0, value)) : 0;
 const unit = (value: unknown) => within(value, 1);
 const milliseconds = (value: unknown, most: number) => Math.round(within(value, most));
 
@@ -37,21 +52,41 @@ export function screenPads(rumble: (effect: Rumble) => void, alone = false) {
   let local: LocalPad[] = [];
   const own = typeof navigator.getGamepads === 'function' ? navigator.getGamepads.bind(navigator) : undefined;
   // A frame without the gamepad permission throws: it still has the screen's.
-  const ownPads = (): (Gamepad | null)[] => { try { return own ? [...own()] : []; } catch { return []; } };
+  const ownPads = (): (Gamepad | null)[] => {
+    try {
+      return own ? [...own()] : [];
+    } catch {
+      return [];
+    }
+  };
 
   function actuator(slot: number): Actuator {
     let playing: { done: (result: 'complete' | 'preempted') => void; timer: number } | undefined;
-    const stop = () => { if (playing) { clearTimeout(playing.timer); playing.done('preempted'); playing = undefined; } };
+    const stop = () => {
+      if (playing) {
+        clearTimeout(playing.timer);
+        playing.done('preempted');
+        playing = undefined;
+      }
+    };
     return Object.freeze({
-      type: 'dual-rumble' as const, effects: Object.freeze(['dual-rumble']),
+      type: 'dual-rumble' as const,
+      effects: Object.freeze(['dual-rumble']),
       playEffect(type: string, effect: Effect = {}) {
         if (type !== 'dual-rumble') return Promise.reject(new TypeError('This gamepad plays dual-rumble effects.'));
         stop();
-        const duration = milliseconds(effect.duration, 5000), delay = milliseconds(effect.startDelay, 4000);
+        const duration = milliseconds(effect.duration, 5000),
+          delay = milliseconds(effect.startDelay, 4000);
         return new Promise<'complete' | 'preempted'>((done) => {
           const timer = window.setTimeout(() => {
             rumble({ slot, duration, strong: unit(effect.strongMagnitude), weak: unit(effect.weakMagnitude) });
-            playing = { done, timer: window.setTimeout(() => { playing = undefined; done('complete'); }, duration) };
+            playing = {
+              done,
+              timer: window.setTimeout(() => {
+                playing = undefined;
+                done('complete');
+              }, duration),
+            };
           }, delay);
           playing = { done, timer };
         });
@@ -67,33 +102,61 @@ export function screenPads(rumble: (effect: Rumble) => void, alone = false) {
   function snapshot(controller: Controller): PadLike {
     const pad = controller.pad!;
     return Object.freeze({
-      id: 'Zirbel ' + controller.kind + ' ' + (controller.slot + 1) + ' (' + (pad.standard ? 'STANDARD GAMEPAD' : controller.name || 'gamepad') + ')',
-      index: controller.slot, mapping: pad.standard ? 'standard' as const : '' as const, connected: true, timestamp: controller.timestamp,
+      id:
+        'Zirbel ' +
+        controller.kind +
+        ' ' +
+        (controller.slot + 1) +
+        ' (' +
+        (pad.standard ? 'STANDARD GAMEPAD' : controller.name || 'gamepad') +
+        ')',
+      index: controller.slot,
+      mapping: pad.standard ? ('standard' as const) : ('' as const),
+      connected: true,
+      timestamp: controller.timestamp,
       axes: Object.freeze([...pad.axes]),
-      buttons: Object.freeze(pad.buttons.map(({ pressed, value }) =>
-        Object.freeze({ pressed, touched: pressed || value > 0, value: pressed && !value ? 1 : value }))),
-      vibrationActuator: controller.actuator, hapticActuators: Object.freeze([]),
+      buttons: Object.freeze(
+        pad.buttons.map(({ pressed, value }) =>
+          Object.freeze({ pressed, touched: pressed || value > 0, value: pressed && !value ? 1 : value }),
+        ),
+      ),
+      vibrationActuator: controller.actuator,
+      hapticActuators: Object.freeze([]),
     });
   }
   /** A device's own gamepad at a place: the browser's state, under the place's index. */
-  const placedOwn = (pad: Gamepad, index: number): PadLike => ({ id: pad.id, index, mapping: pad.mapping,
-    connected: pad.connected, timestamp: pad.timestamp, axes: pad.axes, buttons: pad.buttons, vibrationActuator: pad.vibrationActuator ?? null,
-    hapticActuators: (pad as Gamepad & { hapticActuators?: readonly unknown[] }).hapticActuators ?? [] });
+  const placedOwn = (pad: Gamepad, index: number): PadLike => ({
+    id: pad.id,
+    index,
+    mapping: pad.mapping,
+    connected: pad.connected,
+    timestamp: pad.timestamp,
+    axes: pad.axes,
+    buttons: pad.buttons,
+    vibrationActuator: pad.vibrationActuator ?? null,
+    hapticActuators: (pad as Gamepad & { hapticActuators?: readonly unknown[] }).hapticActuators ?? [],
+  });
 
   /** Who is at each place now, with a key that changes when another gamepad takes it. */
   function places() {
     const at: ({ key: string; pad: () => PadLike } | undefined)[] = Array.from({ length: MAX_PLACES }, () => undefined);
     const natives = ownPads().filter((pad): pad is Gamepad => Boolean(pad?.connected));
-    if (alone) for (const pad of natives) {
-      if (pad.index < MAX_PLACES) at[pad.index] = { key: 'own ' + pad.index + ' ' + pad.id, pad: () => placedOwn(pad, pad.index) };
-    }
+    if (alone)
+      for (const pad of natives) {
+        if (pad.index < MAX_PLACES)
+          at[pad.index] = { key: 'own ' + pad.index + ' ' + pad.id, pad: () => placedOwn(pad, pad.index) };
+      }
     for (const { place, index, id } of local) {
-      const pad = natives.find((item) => item.index === index && item.id === id) ?? natives.find((item) => item.id === id);
+      const pad =
+        natives.find((item) => item.index === index && item.id === id) ?? natives.find((item) => item.id === id);
       if (pad) at[place] = { key: 'own ' + index + ' ' + id, pad: () => placedOwn(pad, place) };
     }
     for (const controller of remote.values()) {
       if (!controller.shown) continue;
-      at[controller.slot] = { key: controller.kind + ' ' + controller.layout, pad: () => (controller.snapshot ??= snapshot(controller)) };
+      at[controller.slot] = {
+        key: controller.kind + ' ' + controller.layout,
+        pad: () => (controller.snapshot ??= snapshot(controller)),
+      };
     }
     return at;
   }
@@ -112,15 +175,22 @@ export function screenPads(rumble: (effect: Rumble) => void, alone = false) {
     told.forEach((item, place) => {
       if (item && changed[place]) announce('gamepaddisconnected', Object.freeze({ ...item.pad, connected: false }));
     });
-    now.forEach((item, place) => { if (item && changed[place]) announce('gamepadconnected', item.pad); });
+    now.forEach((item, place) => {
+      if (item && changed[place]) announce('gamepadconnected', item.pad);
+    });
     told = now;
   }
   // The browser's own events name its own index: the game hears of a device's gamepad at its place, from sync.
-  for (const type of ['gamepadconnected', 'gamepaddisconnected']) window.addEventListener(type, (event) => {
-    if (!event.isTrusted) return;
-    event.stopImmediatePropagation();
-    sync();
-  }, true);
+  for (const type of ['gamepadconnected', 'gamepaddisconnected'])
+    window.addEventListener(
+      type,
+      (event) => {
+        if (!event.isTrusted) return;
+        event.stopImmediatePropagation();
+        sync();
+      },
+      true,
+    );
 
   function getGamepads(): (Gamepad | null)[] {
     const pads = places().map((item) => item?.pad() ?? null);
@@ -135,12 +205,21 @@ export function screenPads(rumble: (effect: Rumble) => void, alone = false) {
     list(entries: PadEntry[]) {
       for (const [slot, controller] of remote) {
         const entry = entries.find((item) => item.slot === slot);
-        if (entry?.connected && entry.kind === controller.kind) { controller.name = entry.name; continue; }
+        if (entry?.connected && entry.kind === controller.kind) {
+          controller.name = entry.name;
+          continue;
+        }
         remote.delete(slot);
       }
       for (const entry of entries) {
         if (!entry.connected || remote.has(entry.slot)) continue;
-        remote.set(entry.slot, { ...entry, timestamp: performance.now(), shown: false, layout: 0, actuator: actuator(entry.slot) });
+        remote.set(entry.slot, {
+          ...entry,
+          timestamp: performance.now(),
+          shown: false,
+          layout: 0,
+          actuator: actuator(entry.slot),
+        });
       }
       sync();
     },
@@ -148,12 +227,20 @@ export function screenPads(rumble: (effect: Rumble) => void, alone = false) {
     frame(slot: number, pad: Pad) {
       const controller = remote.get(slot);
       if (!controller) return;
-      const next = pad.standard ? { ...pad, buttons: fit(pad.buttons, STANDARD_BUTTONS, { pressed: false, value: 0 }),
-        axes: fit(pad.axes, STANDARD_AXES, 0) } : pad;
+      const next = pad.standard
+        ? {
+            ...pad,
+            buttons: fit(pad.buttons, STANDARD_BUTTONS, { pressed: false, value: 0 }),
+            axes: fit(pad.axes, STANDARD_AXES, 0),
+          }
+        : pad;
       // A controller keeps the layout it came with: one that changes it comes back as a new gamepad.
       const before = controller.pad;
-      const relaid = before !== undefined && (before.standard !== next.standard || before.buttons.length !== next.buttons.length ||
-        before.axes.length !== next.axes.length);
+      const relaid =
+        before !== undefined &&
+        (before.standard !== next.standard ||
+          before.buttons.length !== next.buttons.length ||
+          before.axes.length !== next.axes.length);
       if (relaid) controller.layout++;
       controller.pad = next;
       controller.timestamp = performance.now();

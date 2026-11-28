@@ -10,13 +10,17 @@ import { body, checkOrigin, reply, typeFor } from './http.ts';
 import { sendImmutable, type LobbyFiles } from './runtime-files.ts';
 
 /** The lobby page runs its own script and style alone, and talks only to its listener. */
-const PAGE_POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
+const PAGE_POLICY =
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 /** The pad page's, which also reaches the pads socket on its own host, over plain ws: as the player page does. */
-const padPolicy = (host: string) => "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
+const padPolicy = (host: string) =>
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
   // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- plain HTTP by design
-  "connect-src 'self' ws://" + host + "; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+  "connect-src 'self' ws://" +
+  host +
+  "; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 /** /pad, or /pad/<code>: a phone as a controller of the screen whose code it has. */
 const PAD_PAGE = /^\/pad(?:\/[A-Za-z0-9-]{1,16})?$/;
 /** The TV page's: the lobby's, and the pads socket on this host for the screen it is. */
@@ -36,21 +40,32 @@ function lobbyFile(pathname: string) {
  *  host name a device reached the lobby by; link: the lobby's address for other devices on the network, as the owner's
  *  side names it (hosting.ts lobbyLink), for the LAN listener's pages to show (the TV page's QR codes). */
 export type LobbyContext = {
-  lobby: Lobby; files: LobbyFiles; pair?: ((host: string) => string) | undefined; edit?: ((host: string) => string) | undefined;
+  lobby: Lobby;
+  files: LobbyFiles;
+  pair?: ((host: string) => string) | undefined;
+  edit?: ((host: string) => string) | undefined;
   link?: ((host: string) => string | null) | undefined;
 };
 
 /** The player page in a room, holding a seat's one-time ticket (a net game's, its space's and a ticket into it): it goes
  *  straight in. */
-const seatLink = (origin: string, room: { id: string; space: { id: string } | null }, ticket: string) => origin + '/join/' + room.id +
+const seatLink = (origin: string, room: { id: string; space: { id: string } | null }, ticket: string) =>
+  origin +
+  '/join/' +
+  room.id +
   (room.space ? '#skalet.space=' + room.space.id + '&skalet.ticket=' + ticket : '#seat=' + ticket);
 /** /lobby/spaces/<id>: the room of a space, for a link the kernel formed (/join#skalet.space=…), which the lobby page at
  *  /join goes on from. */
 const SPACE_ROUTE = /^\/lobby\/spaces\/([0-9a-f]{12})$/;
 
 /** Answers a lobby request on a listener for access, or says it is none. */
-export async function lobbyRequest(context: LobbyContext, access: 'local' | 'lan', request: IncomingMessage, response: ServerResponse,
-  url: URL) {
+export async function lobbyRequest(
+  context: LobbyContext,
+  access: 'local' | 'lan',
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+) {
   const { pathname } = url;
   const method = request.method;
   const file = lobbyFile(pathname);
@@ -67,8 +82,12 @@ export async function lobbyRequest(context: LobbyContext, access: 'local' | 'lan
   if (!pathname.startsWith('/lobby/')) return false;
   const address = request.socket.remoteAddress ?? '';
   if (pathname === '/lobby/state' && method === 'GET') {
-    reply(response, { ...context.lobby.state(access), pair: context.pair?.(url.hostname) ?? null,
-      edit: context.edit?.(url.hostname) ?? null, link: access === 'lan' ? context.link?.(url.hostname) ?? null : null });
+    reply(response, {
+      ...context.lobby.state(access),
+      pair: context.pair?.(url.hostname) ?? null,
+      edit: context.edit?.(url.hostname) ?? null,
+      link: access === 'lan' ? (context.link?.(url.hostname) ?? null) : null,
+    });
     return true;
   }
   if (pathname === '/lobby/sessions' && method === 'POST') {

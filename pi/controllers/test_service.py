@@ -38,23 +38,37 @@ class Frames(unittest.TestCase):
         reader = wire.Reader()
         got = []
         for index in range(len(stream)):
-            got += reader.feed(stream[index:index + 1])
+            got += reader.feed(stream[index : index + 1])
         self.assertEqual(got, [{"type": "rumble", "device": 1}, (2, b"\0" * 8)])
 
     def test_a_frame_that_cant_be_one_is_refused(self):
-        for bad in (b"\0\0", struct.pack("<H", 5000) + b"\0", b"\x02\0\x07x", b"\x03\0\0[]", b"\x03\0\0{x",
-                    struct.pack("<H", 70) + bytes([wire.INPUT]) + bytes(69)):
+        for bad in (
+            b"\0\0",
+            struct.pack("<H", 5000) + b"\0",
+            b"\x02\0\x07x",
+            b"\x03\0\0[]",
+            b"\x03\0\0{x",
+            struct.pack("<H", 70) + bytes([wire.INPUT]) + bytes(69),
+        ):
             with self.assertRaises(wire.FrameError, msg=bad):
                 wire.Reader().feed(bad)
 
 
-PADS = [{"device": 0, "name": "USB gamepad", "kind": "usb"},
-        {"device": 1, "name": "Wireless Controller", "kind": "bluetooth", "address": "A0:B1:C2:D3:E4:F5"}]
-BLUETOOTH = {"bluetooth": True, "scanning": True, "pairing": None, "error": None,
-             "paired": [{"address": "A0:B1:C2:D3:E4:F5", "name": "DualPad", "connected": True},
-                        {"address": "11:22:33:44:55:66", "name": "Arcade stick", "connected": False}],
-             "found": [{"address": "77:88:99:AA:BB:CC", "name": "Pro pad"},
-                       {"address": "A0:B1:C2:D3:E4:F5", "name": "DualPad"}]}
+PADS = [
+    {"device": 0, "name": "USB gamepad", "kind": "usb"},
+    {"device": 1, "name": "Wireless Controller", "kind": "bluetooth", "address": "A0:B1:C2:D3:E4:F5"},
+]
+BLUETOOTH = {
+    "bluetooth": True,
+    "scanning": True,
+    "pairing": None,
+    "error": None,
+    "paired": [
+        {"address": "A0:B1:C2:D3:E4:F5", "name": "DualPad", "connected": True},
+        {"address": "11:22:33:44:55:66", "name": "Arcade stick", "connected": False},
+    ],
+    "found": [{"address": "77:88:99:AA:BB:CC", "name": "Pro pad"}, {"address": "A0:B1:C2:D3:E4:F5", "name": "DualPad"}],
+}
 
 
 class Listing(unittest.TestCase):
@@ -180,8 +194,16 @@ class Service(unittest.TestCase):
         self.assertTrue(service.link.open())
         host.accept()
         device, state, other, _, listing = host.frames(5)
-        self.assertEqual(device, {"type": "device", "device": 0, "name": "USB gamepad", "standard": True,
-                                  "uid": "usb-0000:01:00.0-1.2/input0"})
+        self.assertEqual(
+            device,
+            {
+                "type": "device",
+                "device": 0,
+                "name": "USB gamepad",
+                "standard": True,
+                "uid": "usb-0000:01:00.0-1.2/input0",
+            },
+        )
         self.assertEqual(state[0], 0)
         self.assertEqual(other["device"], 1)
         self.assertEqual(listing["type"], "controllers")
@@ -197,10 +219,12 @@ class Service(unittest.TestCase):
         host.accept()
         host.frames(3)
         host.send({"type": "rumble", "device": 0, "duration": 300, "strong": 1, "weak": 0.5})
-        for bad in ({"type": "rumble", "device": 0, "duration": 9000, "strong": 1, "weak": 1},
-                    {"type": "rumble", "device": 0, "duration": 100, "strong": 2, "weak": 0},
-                    {"type": "rumble", "device": "0", "duration": 100, "strong": 1, "weak": 0},
-                    {"type": "rumble", "device": 0, "duration": 100, "strong": True, "weak": 0}):
+        for bad in (
+            {"type": "rumble", "device": 0, "duration": 9000, "strong": 1, "weak": 1},
+            {"type": "rumble", "device": 0, "duration": 100, "strong": 2, "weak": 0},
+            {"type": "rumble", "device": "0", "duration": 100, "strong": 1, "weak": 0},
+            {"type": "rumble", "device": 0, "duration": 100, "strong": True, "weak": 0},
+        ):
             host.send(bad)
         host.send({"type": "pair", "address": "11:22:33:44:55:66"})
         service.link.readable()
@@ -209,16 +233,23 @@ class Service(unittest.TestCase):
         [answer] = host.frames(1)
         self.assertEqual(answer["error"], view.NO_BLUETOOTH)
         service.bluetooth = FakeBluetooth()
-        for message in ({"type": "scan", "on": True}, {"type": "pair", "address": "11:22:33:44:55:66"},
-                        {"type": "forget", "address": "11:22:33:44:55:66"}, {"type": "scan", "on": "yes"},
-                        {"type": "pair", "address": "11:22:33:44:55:6g"}, {"type": "something"}):
+        for message in (
+            {"type": "scan", "on": True},
+            {"type": "pair", "address": "11:22:33:44:55:66"},
+            {"type": "forget", "address": "11:22:33:44:55:66"},
+            {"type": "scan", "on": "yes"},
+            {"type": "pair", "address": "11:22:33:44:55:6g"},
+            {"type": "something"},
+        ):
             host.send(message)
         service.link.readable()
-        self.assertEqual(service.bluetooth.asked, [("scan", True), ("pair", "11:22:33:44:55:66"),
-                                                   ("forget", "11:22:33:44:55:66")])
+        self.assertEqual(
+            service.bluetooth.asked, [("scan", True), ("pair", "11:22:33:44:55:66"), ("forget", "11:22:33:44:55:66")]
+        )
         answers = host.frames(5)
-        self.assertEqual([answer["error"] for answer in answers],
-                         [None, None, None, zirbel_pads.UNKNOWN, zirbel_pads.UNKNOWN])
+        self.assertEqual(
+            [answer["error"] for answer in answers], [None, None, None, zirbel_pads.UNKNOWN, zirbel_pads.UNKNOWN]
+        )
         self.assertTrue(answers[0]["scanning"])
 
     def test_the_service_connects_again_after_the_host_restarts(self):

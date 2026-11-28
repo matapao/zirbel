@@ -12,8 +12,25 @@ import type { PadsPadMessage, PadsScreenMessage, PadsServiceMessage } from '../s
 import { decodePad } from '../sdk/pads.ts';
 import { CodeTries, newCode, readCode } from './lobby.ts';
 import {
-  A, CLAIM, CLAIMS, free, KEPT, open, PAD_RESUME, PadPlaces, PADS_CLOSE, RESUME, same, SCREENS, slots, type Access, type Device,
-  type Label, type PadsLink, type Phone, type Screen,
+  A,
+  CLAIM,
+  CLAIMS,
+  free,
+  KEPT,
+  open,
+  PAD_RESUME,
+  PadPlaces,
+  PADS_CLOSE,
+  RESUME,
+  same,
+  SCREENS,
+  slots,
+  type Access,
+  type Device,
+  type Label,
+  type PadsLink,
+  type Phone,
+  type Screen,
 } from './pad-places.ts';
 import { secret } from './room.ts';
 
@@ -41,7 +58,9 @@ export class Pads extends PadPlaces {
    *  holds all the screens it may; the link is closed. */
   openScreen(link: PadsLink, access: Access, box: boolean, resume = '') {
     const tv = this.tv(access);
-    let screen = resume ? [...this.screens.values()].find((item) => item.access === access && same(item.resume, resume)) : undefined;
+    let screen = resume
+      ? [...this.screens.values()].find((item) => item.access === access && same(item.resume, resume))
+      : undefined;
     if (screen) {
       screen.link?.close(PADS_CLOSE.replaced);
       Object.assign(screen, { link, lost: 0, box, local: new Set<number>() });
@@ -51,12 +70,26 @@ export class Pads extends PadPlaces {
         link.close(PADS_CLOSE.full);
         return undefined;
       }
-      screen = { id: randomBytes(6).toString('hex'), code: newCode((code) => this.byCode(code) !== undefined), resume: secret(),
-        access, order: ++this.order, box, link, lost: 0, rate: { window: 0, count: 0 }, slots: slots(), labels: slots(), local: new Set(),
-        kept: new Map() };
+      screen = {
+        id: randomBytes(6).toString('hex'),
+        code: newCode((code) => this.byCode(code) !== undefined),
+        resume: secret(),
+        access,
+        order: ++this.order,
+        box,
+        link,
+        lost: 0,
+        rate: { window: 0, count: 0 },
+        slots: slots(),
+        labels: slots(),
+        local: new Set(),
+        kept: new Map(),
+      };
       this.screens.set(screen.id, screen);
       // The box's own screen takes every box gamepad that is on no screen.
-      if (box) for (const device of this.devices.values()) if (!device.on && free(screen) >= 0) this.seat(device, screen, free(screen));
+      if (box)
+        for (const device of this.devices.values())
+          if (!device.on && free(screen) >= 0) this.seat(device, screen, free(screen));
     }
     link.text(this.about(screen));
     this.list(screen);
@@ -71,8 +104,10 @@ export class Pads extends PadPlaces {
     if (screen.link !== link || !this.counts(screen.rate)) return;
     if (message.type === 'claim') {
       const at = this.now();
-      this.claims = [...this.claims.filter((claim) => claim.screen !== screen && at - claim.at < CLAIM), { screen, at, place: message.place }]
-        .slice(-CLAIMS);
+      this.claims = [
+        ...this.claims.filter((claim) => claim.screen !== screen && at - claim.at < CLAIM),
+        { screen, at, place: message.place },
+      ].slice(-CLAIMS);
     } else if (message.type === 'release') {
       const held = screen.slots[message.slot];
       if (!held) return;
@@ -107,7 +142,9 @@ export class Pads extends PadPlaces {
     } else {
       screen.local = new Set(message.places);
       // A place the screen's own gamepad took is no longer to be claimed.
-      this.claims = this.claims.filter((claim) => claim.screen !== screen || claim.place === undefined || !screen.local.has(claim.place));
+      this.claims = this.claims.filter(
+        (claim) => claim.screen !== screen || claim.place === undefined || !screen.local.has(claim.place),
+      );
     }
   }
 
@@ -123,7 +160,10 @@ export class Pads extends PadPlaces {
    *  resume, its old one within 60 s; else place) when that is free, else the first free one. Undefined when it gets
    *  none, and the link is closed: no such screen, a full one, or too many wrong codes. */
   openPad(link: PadsLink, access: Access, address: string, input: string, asked?: number, resume = '') {
-    if (this.tries.blocked(address)) { link.close(PADS_CLOSE.tries); return undefined; }
+    if (this.tries.blocked(address)) {
+      link.close(PADS_CLOSE.tries);
+      return undefined;
+    }
     const code = readCode(input);
     const screen = code === undefined ? undefined : this.byCode(code, access);
     if (!screen) {
@@ -131,9 +171,12 @@ export class Pads extends PadPlaces {
       link.close(PADS_CLOSE.unknown);
       return undefined;
     }
-    let token = '', back: number | undefined;
+    let token = '',
+      back: number | undefined;
     // The same phone again before its old socket was seen to drop: it takes the place over.
-    const live = resume ? screen.slots.find((held): held is Phone => held?.kind === 'phone' && same(held.resume, resume)) : undefined;
+    const live = resume
+      ? screen.slots.find((held): held is Phone => held?.kind === 'phone' && same(held.resume, resume))
+      : undefined;
     if (live) {
       live.gone = true;
       live.link.close(PADS_CLOSE.replaced);
@@ -146,9 +189,20 @@ export class Pads extends PadPlaces {
       [token, back] = [kept, place];
     }
     const place = [back, asked].find((item) => item !== undefined && open(screen, item)) ?? free(screen);
-    if (place < 0) { link.close(PADS_CLOSE.full); return undefined; }
-    const phone: Phone = { kind: 'phone', link, on: screen, resume: token || secret(), place, pressed: 0, rate: { window: 0, count: 0 },
-      gone: false };
+    if (place < 0) {
+      link.close(PADS_CLOSE.full);
+      return undefined;
+    }
+    const phone: Phone = {
+      kind: 'phone',
+      link,
+      on: screen,
+      resume: token || secret(),
+      place,
+      pressed: 0,
+      rate: { window: 0, count: 0 },
+      gone: false,
+    };
     this.seat(phone, screen, place);
     return phone;
   }
@@ -194,14 +248,21 @@ export class Pads extends PadPlaces {
   /** The box's controller service connected: it replaces any other, whose gamepads are gone. */
   attachService(link: PadsLink) {
     const old = this.service;
-    if (old) { this.serviceGone(old); old.close(PADS_CLOSE.done); }
+    if (old) {
+      this.serviceGone(old);
+      old.close(PADS_CLOSE.done);
+    }
     this.service = link;
   }
 
   /** A control message from the service: a gamepad appeared or went, or its view of the controllers. */
   serviceMessage(link: PadsLink, message: PadsServiceMessage) {
     if (link !== this.service) return;
-    if (message.type === 'controllers') { this.controllers = message; this.viewed?.(); return; }
+    if (message.type === 'controllers') {
+      this.controllers = message;
+      this.viewed?.();
+      return;
+    }
     const known = this.devices.get(message.device);
     if (message.type === 'gone') {
       if (known) this.leave(known, true);
@@ -210,13 +271,26 @@ export class Pads extends PadPlaces {
       Object.assign(known, { name: message.name, standard: message.standard, uid: message.uid });
       if (known.on) this.list(known.on);
     } else {
-      const device: Device = { kind: 'box', id: message.device, name: message.name, standard: message.standard, uid: message.uid,
-        place: 0, pressed: 0, rate: { window: 0, count: 0 } };
+      const device: Device = {
+        kind: 'box',
+        id: message.device,
+        name: message.name,
+        standard: message.standard,
+        uid: message.uid,
+        place: 0,
+        pressed: 0,
+        rate: { window: 0, count: 0 },
+      };
       this.devices.set(device.id, device);
       // One that went a moment ago takes its place again, where it is still free; else the box's own screen takes it.
       const back = message.uid === undefined ? undefined : this.away.get(message.uid);
       if (message.uid !== undefined) this.away.delete(message.uid);
-      if (back && this.now() - back.at < PAD_RESUME && this.screens.get(back.screen.id) === back.screen && open(back.screen, back.place))
+      if (
+        back &&
+        this.now() - back.at < PAD_RESUME &&
+        this.screens.get(back.screen.id) === back.screen &&
+        open(back.screen, back.place)
+      )
         this.seat(device, back.screen, back.place);
       else {
         const target = this.newestBox();
@@ -240,7 +314,8 @@ export class Pads extends PadPlaces {
       const at = this.now();
       this.claims = this.claims.filter((claim) => at - claim.at < CLAIM);
       const claim = this.claims.findLast((item) =>
-        item.place === undefined ? free(item.screen) >= 0 : (down & A) !== 0 && open(item.screen, item.place));
+        item.place === undefined ? free(item.screen) >= 0 : (down & A) !== 0 && open(item.screen, item.place),
+      );
       this.claims = this.claims.filter((item) => item !== claim);
       const target = claim?.screen ?? this.newestBox();
       if (target) this.seat(device, target, claim?.place ?? free(target));
@@ -259,7 +334,9 @@ export class Pads extends PadPlaces {
   }
 
   /** Whether the box's controller service is connected. */
-  get connected() { return this.service !== undefined; }
+  get connected() {
+    return this.service !== undefined;
+  }
 
   /** The screen a box gamepad is on now, by its number: its code, whether it is the box's own, and its place there. */
   screenOf(id: number) {
@@ -280,7 +357,8 @@ export class Pads extends PadPlaces {
       if (!screen.link && at - screen.lost >= RESUME) this.end(screen);
       for (const [token, kept] of screen.kept) if (at - kept.at >= PAD_RESUME) screen.kept.delete(token);
     }
-    for (const [uid, away] of this.away) if (at - away.at >= PAD_RESUME || !this.screens.has(away.screen.id)) this.away.delete(uid);
+    for (const [uid, away] of this.away)
+      if (at - away.at >= PAD_RESUME || !this.screens.has(away.screen.id)) this.away.delete(uid);
     this.claims = this.claims.filter((claim) => at - claim.at < CLAIM);
   }
 

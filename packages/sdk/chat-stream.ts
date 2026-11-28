@@ -34,11 +34,12 @@ export type PermissionRequest = {
   folder?: string;
   diff?: string;
 };
-export type HarnessAction = { id: string; title: string } & ActionReach & (
-  | ({ kind: 'permission'; detail?: string; options: { id: string; title: string }[] } & PermissionRequest)
-  | { kind: 'form'; fields: ActionField[] }
-  | { kind: 'link'; url: string }
-);
+export type HarnessAction = { id: string; title: string } & ActionReach &
+  (
+    | ({ kind: 'permission'; detail?: string; options: { id: string; title: string }[] } & PermissionRequest)
+    | { kind: 'form'; fields: ActionField[] }
+    | { kind: 'link'; url: string }
+  );
 export type ActionValue = string | number | boolean | string[];
 export type ChatUpdate =
   | { type: 'progress'; phase: ChatPhase }

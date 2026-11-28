@@ -53,7 +53,11 @@ test('the box’s gamepads go to its own screen, to a screen that claims one, an
   now += CLAIM;
   pads.sweep();
   pads.serviceInput(service, 3, encodePad(state([3])));
-  assert.deepEqual(listed(tvLink), ['0 box Pad A', '1 box Pad B', '2 box Pad C'], 'with no claim, the box’s own screen');
+  assert.deepEqual(
+    listed(tvLink),
+    ['0 box Pad A', '1 box Pad B', '2 box Pad C'],
+    'with no claim, the box’s own screen',
+  );
   // A screen that ends gives its gamepads back to the box's own screen.
   pads.screenMessage(tv, tvLink, { type: 'release', slot: 2 });
   pads.screenMessage(laptop, laptopLink, { type: 'claim' });
@@ -98,14 +102,19 @@ test('a phone takes the place it asks for, takes its old one back within 60 s, a
   pads.padGone(third.held!);
   assert.deepEqual(listed(tv), ['0 phone Phone 1', '1 phone Phone 2']);
   const back = join(5, third.held!.resume);
-  assert.deepEqual(back.phone.texts, [{ type: 'pad', slot: 2, screen: screen.id, resume: third.held!.resume, label: null }]);
+  assert.deepEqual(back.phone.texts, [
+    { type: 'pad', slot: 2, screen: screen.id, resume: third.held!.resume, label: null },
+  ]);
   pads.padGone(back.held!);
   assert.equal(placed(join().phone), 2, 'the place is free, not kept');
   const moved = join(6, third.held!.resume);
   assert.equal(placed(moved.phone), 6);
   // The same phone again before its old socket was seen to drop: it takes its place over.
   const over = join(undefined, third.held!.resume);
-  assert.deepEqual([placed(over.phone), moved.phone.closed, listed(tv).filter((line) => line.startsWith('6 ')).length], [6, 4001, 1]);
+  assert.deepEqual(
+    [placed(over.phone), moved.phone.closed, listed(tv).filter((line) => line.startsWith('6 ')).length],
+    [6, 4001, 1],
+  );
   pads.padGone(moved.held!);
   assert.equal(listed(tv).filter((line) => line.startsWith('6 ')).length, 1, 'the old socket closing leaves the place');
   // An old resume, past its 60 s.
@@ -120,8 +129,10 @@ test('a phone takes the place it asks for, takes its old one back within 60 s, a
   pads.padMessage(over.held!, { type: 'place', place: 4 });
   assert.equal(placed(over.phone), 6);
   pads.padMessage(over.held!, { type: 'place', place: 5 });
-  assert.deepEqual([placed(over.phone), listed(tv)], [5, ['0 phone Phone 1', '1 phone Phone 2', '2 phone Phone 3', '3 phone Phone 4',
-    '5 phone Phone 6']]);
+  assert.deepEqual(
+    [placed(over.phone), listed(tv)],
+    [5, ['0 phone Phone 1', '1 phone Phone 2', '2 phone Phone 3', '3 phone Phone 4', '5 phone Phone 6']],
+  );
   // A new phone skips the screen's own places.
   assert.equal(placed(join().phone), 6);
   assert.equal(placed(join(4).phone), 7);
@@ -148,13 +159,31 @@ test('a screen swaps two places, labels each place, and its phones hear their ow
   const told = phone.texts.length;
   pads.screenMessage(screen, tv, { type: 'move', from: 3, to: 4 });
   assert.equal(phone.texts.length, told, 'two empty places');
-  pads.screenMessage(screen, tv, { type: 'labels', labels: [{ place: 0, name: 'Red car', color: '#ff0000' }, { place: 6, name: 'Blue', color: '#0000ff' }] });
-  assert.deepEqual(phone.texts.at(-1), { type: 'pad', slot: 0, screen: screen.id, resume: held.resume, label: { name: 'Red car', color: '#ff0000' } });
+  pads.screenMessage(screen, tv, {
+    type: 'labels',
+    labels: [
+      { place: 0, name: 'Red car', color: '#ff0000' },
+      { place: 6, name: 'Blue', color: '#0000ff' },
+    ],
+  });
+  assert.deepEqual(phone.texts.at(-1), {
+    type: 'pad',
+    slot: 0,
+    screen: screen.id,
+    resume: held.resume,
+    label: { name: 'Red car', color: '#ff0000' },
+  });
   assert.deepEqual(listed(tv), ['0 phone Phone 1 · Red car', '6 box Pad · Blue']);
   assert.deepEqual((tv.last('pads')!.pads as Listed[])[0]!.label, { name: 'Red car', color: '#ff0000' });
   // Labels that don't change say nothing; the places left out lose theirs.
   const said = [phone.texts.length, tv.texts.length];
-  pads.screenMessage(screen, tv, { type: 'labels', labels: [{ place: 6, name: 'Blue', color: '#0000ff' }, { place: 0, name: 'Red car', color: '#ff0000' }] });
+  pads.screenMessage(screen, tv, {
+    type: 'labels',
+    labels: [
+      { place: 6, name: 'Blue', color: '#0000ff' },
+      { place: 0, name: 'Red car', color: '#ff0000' },
+    ],
+  });
   assert.deepEqual([phone.texts.length, tv.texts.length], said);
   pads.screenMessage(screen, tv, { type: 'labels', labels: [{ place: 6, name: 'Blue', color: '#0000ff' }] });
   assert.deepEqual([phone.last('pad')?.label, listed(tv)], [null, ['0 phone Phone 1', '6 box Pad · Blue']]);

@@ -10,7 +10,10 @@ import { ONE_GAME } from './box-editors.ts';
 import type { Access } from './box-routes.ts';
 
 export type ApiRoute = {
-  method?: string | undefined; resource?: string | undefined; pathID?: string | undefined; action?: string | undefined;
+  method?: string | undefined;
+  resource?: string | undefined;
+  pathID?: string | undefined;
+  action?: string | undefined;
   tail?: string | undefined;
 };
 
@@ -18,7 +21,7 @@ export type ApiRoute = {
  *  an owner, or an editor of one game. */
 export function whoIs(access: Access) {
   if (access.editor) return { role: 'editor' as const, game: access.editor.game };
-  return { role: access.local ? 'box' as const : 'owner' as const };
+  return { role: access.local ? ('box' as const) : ('owner' as const) };
 }
 
 /** Refuses an editor a route of another game, or one owners alone use. roomGame: the game an open room plays. */
@@ -32,12 +35,28 @@ function gameRoute(method: string | undefined, action: string | undefined) {
   const write = method === 'POST';
   if (!action) return read;
   if (['proposals', 'media', 'grants'].includes(action)) return read || write;
-  if (['apply', 'discard', 'restore', 'title', 'notes', 'asset', 'playtest', 'development-room', 'update-from-source'].includes(action))
+  if (
+    [
+      'apply',
+      'discard',
+      'restore',
+      'title',
+      'notes',
+      'asset',
+      'playtest',
+      'development-room',
+      'update-from-source',
+    ].includes(action)
+  )
     return write;
   return ['export', 'revisions', 'clone'].includes(action) && read;
 }
 
-function editorMay(game: string, { method, resource, pathID, action, tail }: ApiRoute, roomGame: (room: string) => string | undefined) {
+function editorMay(
+  game: string,
+  { method, resource, pathID, action, tail }: ApiRoute,
+  roomGame: (room: string) => string | undefined,
+) {
   if (resource === 'health' || resource === 'me') return true;
   if (resource === 'lobby') return method === 'GET' && !pathID;
   if (resource === 'projects') return pathID ? pathID === game && gameRoute(method, action) : method === 'GET';

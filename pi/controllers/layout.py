@@ -17,9 +17,25 @@ import struct
 
 import evdev as ev
 
-STANDARD_BUTTONS = [ev.BTN_SOUTH, ev.BTN_EAST, ev.BTN_WEST, ev.BTN_NORTH, ev.BTN_TL, ev.BTN_TR, ev.BTN_TL2, ev.BTN_TR2,
-                    ev.BTN_SELECT, ev.BTN_START, ev.BTN_THUMBL, ev.BTN_THUMBR, ev.BTN_DPAD_UP, ev.BTN_DPAD_DOWN,
-                    ev.BTN_DPAD_LEFT, ev.BTN_DPAD_RIGHT, ev.BTN_MODE]
+STANDARD_BUTTONS = [
+    ev.BTN_SOUTH,
+    ev.BTN_EAST,
+    ev.BTN_WEST,
+    ev.BTN_NORTH,
+    ev.BTN_TL,
+    ev.BTN_TR,
+    ev.BTN_TL2,
+    ev.BTN_TR2,
+    ev.BTN_SELECT,
+    ev.BTN_START,
+    ev.BTN_THUMBL,
+    ev.BTN_THUMBR,
+    ev.BTN_DPAD_UP,
+    ev.BTN_DPAD_DOWN,
+    ev.BTN_DPAD_LEFT,
+    ev.BTN_DPAD_RIGHT,
+    ev.BTN_MODE,
+]
 STANDARD_AXES = [ev.ABS_X, ev.ABS_Y, ev.ABS_RX, ev.ABS_RY]
 LT, RT, UP, DOWN, LEFT, RIGHT = 6, 7, 12, 13, 14, 15
 MAX_BUTTONS, MAX_AXES = 32, 8
@@ -45,8 +61,11 @@ def trigger(value: int, axis: ev.Axis) -> int:
 
 
 def encode(standard: bool, values: list[int], pressed: int, axes: list[int], slot: int = 0) -> bytes:
-    return HEAD.pack(slot, FLAG_STANDARD if standard else 0, len(values), len(axes), pressed) + bytes(values) + \
-        struct.pack(f"<{len(axes)}h", *axes)
+    return (
+        HEAD.pack(slot, FLAG_STANDARD if standard else 0, len(values), len(axes), pressed)
+        + bytes(values)
+        + struct.pack(f"<{len(axes)}h", *axes)
+    )
 
 
 def decode(data: bytes) -> tuple[bool, list[int], int, list[int]]:
@@ -61,7 +80,7 @@ def decode(data: bytes) -> tuple[bool, list[int], int, list[int]]:
         or len(data) != HEAD.size + buttons + 2 * axes
     ):
         raise ValueError("not a pad state")
-    values = list(data[HEAD.size:HEAD.size + buttons])
+    values = list(data[HEAD.size : HEAD.size + buttons])
     return bool(flags), values, pressed, list(struct.unpack_from(f"<{axes}h", data, HEAD.size + buttons))
 
 
@@ -75,8 +94,9 @@ class Layout:
         if self.standard:
             self.buttons = list(STANDARD_BUTTONS)
             self.axis_codes = list(STANDARD_AXES)
-            self.triggers = {code: index for code, index in ((ev.ABS_Z, LT), (ev.ABS_RZ, RT)) if code in axes} or \
-                {code: index for code, index in ((ev.ABS_HAT2Y, LT), (ev.ABS_HAT2X, RT)) if code in axes}
+            self.triggers = {code: index for code, index in ((ev.ABS_Z, LT), (ev.ABS_RZ, RT)) if code in axes} or {
+                code: index for code, index in ((ev.ABS_HAT2Y, LT), (ev.ABS_HAT2X, RT)) if code in axes
+            }
             self.hats = {code for code in (ev.ABS_HAT0X, ev.ABS_HAT0Y) if code in axes}
         else:
             self.buttons = [key for key in info.keys if key >= ev.BTN_MISC][:MAX_BUTTONS]
@@ -118,8 +138,12 @@ class Layout:
         the d-pad its hat's direction or its own button."""
         values = [255 if held else analog for held, analog in zip(self.held, self.analog, strict=True)]
         if self.standard:
-            for index, on in ((UP, self.hat[ev.ABS_HAT0Y] < 0), (DOWN, self.hat[ev.ABS_HAT0Y] > 0),
-                              (LEFT, self.hat[ev.ABS_HAT0X] < 0), (RIGHT, self.hat[ev.ABS_HAT0X] > 0)):
+            for index, on in (
+                (UP, self.hat[ev.ABS_HAT0Y] < 0),
+                (DOWN, self.hat[ev.ABS_HAT0Y] > 0),
+                (LEFT, self.hat[ev.ABS_HAT0X] < 0),
+                (RIGHT, self.hat[ev.ABS_HAT0X] > 0),
+            ):
                 if on:
                     values[index] = 255
         pressed = 0

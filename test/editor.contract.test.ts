@@ -12,8 +12,9 @@ import { hostsUnderTest, launch, statusForHost, stopHost, tempDir } from './help
 const editors = hostsUnderTest();
 
 async function startEditor(t: TestContext, command: string[], data: string) {
-  const { child, ready } = launch(t, command, ['--data', data, '--port', '0', '--enable-mcp'],
-    (line) => typeof line.editor === 'string' ? line.editor : undefined);
+  const { child, ready } = launch(t, command, ['--data', data, '--port', '0', '--enable-mcp'], (line) =>
+    typeof line.editor === 'string' ? line.editor : undefined,
+  );
   return { editor: await ready, stop: () => stopHost(child) };
 }
 
@@ -25,14 +26,15 @@ function normalizer() {
     if (!ids.has(value)) ids.set(value, '<' + kind + ids.size + '>');
     return ids.get(value)!;
   };
-  const text = (value: string) => value
-    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, (id) => name(id, 'id'))
-    // Revisions are commits (AGENTS.md: The git store), each named by its hash.
-    .replace(/\b[0-9a-f]{40}\b/g, (commit) => name(commit, 'commit'))
-    .replace(/\b\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\b/g, '<date>')
-    .replace(/127\.0\.0\.1:\d+/g, '127.0.0.1:<port>')
-    .replace(/\/join\/[a-f0-9]{12}#[\w-]{32}/g, '/join/<room>#<invite>')
-    .replace(/\.[\w-]{32}$/, '.<token>');
+  const text = (value: string) =>
+    value
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, (id) => name(id, 'id'))
+      // Revisions are commits (AGENTS.md: The git store), each named by its hash.
+      .replace(/\b[0-9a-f]{40}\b/g, (commit) => name(commit, 'commit'))
+      .replace(/\b\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\b/g, '<date>')
+      .replace(/127\.0\.0\.1:\d+/g, '127.0.0.1:<port>')
+      .replace(/\/join\/[a-f0-9]{12}#[\w-]{32}/g, '/join/<room>#<invite>')
+      .replace(/\.[\w-]{32}$/, '.<token>');
   const walk = (value: unknown, key = ''): unknown => {
     // The Scene app page embeds Function.toString() of its script, which each
     // TypeScript stripper formats differently; compare its markup only.
@@ -42,11 +44,16 @@ function normalizer() {
     if (typeof value === 'number' && key === 'expires') return '<expires>';
     if (Array.isArray(value)) return value.map((item) => walk(item));
     if (value && typeof value === 'object') {
-      return Object.fromEntries(Object.keys(value).sort().map((field) => [field, walk((value as Record<string, unknown>)[field], field)]));
+      return Object.fromEntries(
+        Object.keys(value)
+          .sort()
+          .map((field) => [field, walk((value as Record<string, unknown>)[field], field)]),
+      );
     }
     return value;
   };
-  return (step: Step) => step.status >= 300 ? { status: step.status } : { status: step.status, body: walk(step.body) };
+  return (step: Step) =>
+    step.status >= 300 ? { status: step.status } : { status: step.status, body: walk(step.body) };
 }
 
 // Each editor's run is a step of one test, and the comparisons its last: steps keep their order, whatever order
@@ -59,12 +66,17 @@ test('every editor runs the scripted session, both answer it identically, and ea
       assert.equal(await statusForHost(editor + '/api/health', 'evil.example'), 403);
       const result = await session(editor);
       for (const [index, step] of result.steps.entries()) {
-        assert.ok(step.status < 500, 'step ' + index + ' failed with ' + step.status + ': ' + JSON.stringify(step.body));
+        assert.ok(
+          step.status < 500,
+          'step ' + index + ' failed with ' + step.status + ': ' + JSON.stringify(step.body),
+        );
       }
       // The keys come in the release's game, in their inputs' order, and each place's fields in theirs.
-      assert.equal(JSON.stringify((result.keysRelease as { game: { controls?: unknown } }).game.controls),
+      assert.equal(
+        JSON.stringify((result.keysRelease as { game: { controls?: unknown } }).game.controls),
         '{"keys":{"a":"Space","b":"ShiftLeft","left":"KeyA","start":"Enter","up":"ArrowUp"},' +
-        '"players":[{"keys":{"a":"KeyF","up":"KeyW"},"name":"Red car","color":"#d03030"},{"color":"#3050d0"}]}');
+          '"players":[{"keys":{"a":"KeyF","up":"KeyW"},"name":"Red car","color":"#d03030"},{"color":"#3050d0"}]}',
+      );
       results.set(host.name, result);
     });
   }
@@ -77,8 +89,12 @@ test('every editor runs the scripted session, both answer it identically, and ea
   });
 
   await t.test('a release published by either editor imports into the other', async (t) => {
-    const start = async (name: string) => startEditor(t, editors.find((item) => item.name === name)!.command, join(tempDir(t, 'zirbel-cross-'), 'data'));
-    for (const [from, to] of [['node', 'go'], ['go', 'node']] as const) {
+    const start = async (name: string) =>
+      startEditor(t, editors.find((item) => item.name === name)!.command, join(tempDir(t, 'zirbel-cross-'), 'data'));
+    for (const [from, to] of [
+      ['node', 'go'],
+      ['go', 'node'],
+    ] as const) {
       const { release, templateRelease, builtRelease, netRelease, keysRelease } = results.get(from)!;
       const target = await start(to);
       const api = client(target.editor);
@@ -110,7 +126,7 @@ if (editors.length > 1) {
       const list = (await api.get('/api/projects')).body as { id: string }[];
       if (previous) {
         const project = await api.get('/api/projects/' + previous);
-        assert.equal(project.status, 200, host.name + ' could not read the other editor\'s project');
+        assert.equal(project.status, 200, host.name + " could not read the other editor's project");
         assert.ok(list.some((item) => item.id === previous));
       }
       previous = ((await api.post('/api/projects', { title: 'From ' + host.name })).body as { id: string }).id;

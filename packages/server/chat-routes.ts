@@ -19,28 +19,62 @@ import { projectThread, workspaceThread, type Threads } from './threads.ts';
 import type { Ident } from '../core/git.ts';
 
 export type ChatContext = {
-  projects: Projects; harnesses: Processors; chat: ChatRuns; activity: ActivityStore; threads: Threads;
+  projects: Projects;
+  harnesses: Processors;
+  chat: ChatRuns;
+  activity: ActivityStore;
+  threads: Threads;
   /** What every turn gets: the places it may read, node_modules' links in its folder, and its own MCP server. */
-  tools: TurnTools; links: ToolLink[]; views?: TurnServers;
+  tools: TurnTools;
+  links: ToolLink[];
+  views?: TurnServers;
 };
 
 /** A turn's tools for the game it starts from: its folder readied (game/ from that revision, node_modules linked), and
  *  its view_game server for that folder. */
-function toolsFor({ tools, links, projects, views }: ChatContext, title: string, game: GameDocument | undefined, assets: Asset[]): TurnTools {
-  return { ...tools, prepare: (folder) => prepareFolder(folder, game, (hash) => projects.readAsset(hash), links),
-    ...(views ? { server: (folder: string) => views.open(folder, { title, assets, maxPlayers: game?.maxPlayers ?? 1, ...(game?.net ? { net: true as const } : {}) }) } : {}) };
+function toolsFor(
+  { tools, links, projects, views }: ChatContext,
+  title: string,
+  game: GameDocument | undefined,
+  assets: Asset[],
+): TurnTools {
+  return {
+    ...tools,
+    prepare: (folder) => prepareFolder(folder, game, (hash) => projects.readAsset(hash), links),
+    ...(views
+      ? {
+          server: (folder: string) =>
+            views.open(folder, {
+              title,
+              assets,
+              maxPlayers: game?.maxPlayers ?? 1,
+              ...(game?.net ? { net: true as const } : {}),
+            }),
+        }
+      : {}),
+  };
 }
 
 const text = z.string().trim().min(1).max(3000);
-const workspaceInput = z.strictObject({ text, provider: processorId, conversation: workspaceHistory.default([]),
-  registerObjects: z.boolean().default(true), modelSettings: modelSelection.optional(),
+const workspaceInput = z.strictObject({
+  text,
+  provider: processorId,
+  conversation: workspaceHistory.default([]),
+  registerObjects: z.boolean().default(true),
+  modelSettings: modelSelection.optional(),
   /** The chat's own id, which the editor keeps so it can come back to a turn that is running. */
-  thread: id.optional() });
+  thread: id.optional(),
+});
 const promptInput = z.object({ branch: id.default('main'), baseRevision: id }).extend({
-  text, references: z.array(z.unknown()).max(32).default([]),
-  attachments: z.array(id).max(12).default([]), proposalId: id.optional(),
-  provider: processorId, registerObjects: z.boolean().default(true), modelSettings: modelSelection.optional(),
-  objects: objectRegistry.optional(), markedIds: z.array(z.string().max(120)).max(32).optional(),
+  text,
+  references: z.array(z.unknown()).max(32).default([]),
+  attachments: z.array(id).max(12).default([]),
+  proposalId: id.optional(),
+  provider: processorId,
+  registerObjects: z.boolean().default(true),
+  modelSettings: modelSelection.optional(),
+  objects: objectRegistry.optional(),
+  markedIds: z.array(z.string().max(120)).max(32).optional(),
 });
 
 async function harnessName(harnesses: Processors, provider: string) {
@@ -54,36 +88,75 @@ function threadView({ chat, threads }: ChatContext, key: string): ThreadView {
   const state = threads.read(key);
   const interrupted = !running && state?.turn?.state === 'interrupted' ? state.turn : undefined;
   return {
-    ...(running ? { turn: { id: running.id, name: running.name, text: running.text, noteId: running.note?.id, startedAt: running.startedAt } } : {}),
-    ...(interrupted ? { interrupted: { text: interrupted.text, harness: interrupted.harness, noteId: interrupted.noteId } } : {}),
+    ...(running
+      ? {
+          turn: {
+            id: running.id,
+            name: running.name,
+            text: running.text,
+            noteId: running.note?.id,
+            startedAt: running.startedAt,
+          },
+        }
+      : {}),
+    ...(interrupted
+      ? { interrupted: { text: interrupted.text, harness: interrupted.harness, noteId: interrupted.noteId } }
+      : {}),
     ...(state?.conversation ? { conversation: state.conversation } : {}),
     ...(state?.project ? { project: state.project } : {}),
   };
 }
 
 /** /api/chat/…: the chat before a project, a turn's stream, Stop and answers. */
-export async function chatRequest(ctx: ChatContext, request: IncomingMessage, response: ServerResponse,
-  pathID: string | undefined, action: string | undefined, tail: string | undefined) {
+export async function chatRequest(
+  ctx: ChatContext,
+  request: IncomingMessage,
+  response: ServerResponse,
+  pathID: string | undefined,
+  action: string | undefined,
+  tail: string | undefined,
+) {
   const { chat, harnesses, projects, threads, activity } = ctx;
   const method = request.method;
   if (!pathID && method === 'POST') {
     const input = workspaceInput.parse(await body(request));
     const key = workspaceThread(input.thread ?? newId());
     if (threads.read(key)?.project) throw new ZirbelError(409, 'This chat already became a game. Open it to go on.');
-    if (chat.running(key)) throw new ZirbelError(409, 'A turn is already running in this thread. Stop it, or wait for it to end.');
+    if (chat.running(key))
+      throw new ZirbelError(409, 'A turn is already running in this thread. Stop it, or wait for it to end.');
     if (response.destroyed) return true;
-    const turn = chat.start(key, { name: await harnessName(harnesses, input.provider), text: input.text }, async (run, turn) => {
-      const result = await inThread(threads, harnesses, key, { id: turn.id, harness: input.provider, text: input.text },
-        toolsFor(ctx, 'New game', undefined, []), run.signal, (harness, folder) => runWorkspaceChat(harness, input.provider, projects, input.text,
-          input.conversation, { ...run, selection: input.modelSettings }, input.registerObjects, folder));
-      if ('projectId' in result) {
-        threads.moveToProject(key, result.projectId);
-        // A turn that created a game keeps its activity under the message that started it, in the new project.
-        const started = projects.read(result.projectId).notes.findLast(({ role }) => role === 'creator');
-        if (started) activity.save(result.projectId, started.id, turn.log);
-      } else threads.update(key, { conversation: result.conversation });
-      return result;
-    });
+    const turn = chat.start(
+      key,
+      { name: await harnessName(harnesses, input.provider), text: input.text },
+      async (run, turn) => {
+        const result = await inThread(
+          threads,
+          harnesses,
+          key,
+          { id: turn.id, harness: input.provider, text: input.text },
+          toolsFor(ctx, 'New game', undefined, []),
+          run.signal,
+          (harness, folder) =>
+            runWorkspaceChat(
+              harness,
+              input.provider,
+              projects,
+              input.text,
+              input.conversation,
+              { ...run, selection: input.modelSettings },
+              input.registerObjects,
+              folder,
+            ),
+        );
+        if ('projectId' in result) {
+          threads.moveToProject(key, result.projectId);
+          // A turn that created a game keeps its activity under the message that started it, in the new project.
+          const started = projects.read(result.projectId).notes.findLast(({ role }) => role === 'creator');
+          if (started) activity.save(result.projectId, started.id, turn.log);
+        } else threads.update(key, { conversation: result.conversation });
+        return result;
+      },
+    );
     await streamTurn(request, response, turn);
     return true;
   }
@@ -113,8 +186,16 @@ export async function chatRequest(ctx: ChatContext, request: IncomingMessage, re
 }
 
 /** /api/projects/<id>/…: a turn in one of the project's threads, what a thread has, and a turn's kept steps. */
-export async function projectChat(ctx: ChatContext, request: IncomingMessage, response: ServerResponse, url: URL,
-  projectId: string, action: string | undefined, tail: string | undefined, author?: Ident) {
+export async function projectChat(
+  ctx: ChatContext,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  projectId: string,
+  action: string | undefined,
+  tail: string | undefined,
+  author?: Ident,
+) {
   const { chat, harnesses, projects, threads, activity } = ctx;
   const method = request.method;
   if (action === 'prompt' && method === 'POST' && !tail) {
@@ -124,17 +205,36 @@ export async function projectChat(ctx: ChatContext, request: IncomingMessage, re
     const project = projects.read(projectId);
     const base = head(project, input.branch);
     const key = projectThread(projectId, input.branch);
-    if (chat.running(key)) throw new ZirbelError(409, 'A turn is already running in this thread. Stop it, or wait for it to end.');
+    if (chat.running(key))
+      throw new ZirbelError(409, 'A turn is already running in this thread. Stop it, or wait for it to end.');
     if (response.destroyed) return true;
     const name = await harnessName(harnesses, input.provider);
-    const note = projects.addNote(projectId, { text: input.text, branch: input.branch, role: 'creator', references, attachments: [] });
+    const note = projects.addNote(projectId, {
+      text: input.text,
+      branch: input.branch,
+      role: 'creator',
+      references,
+      attachments: [],
+    });
     const turn = chat.start(key, { name, text: input.text, note }, async (run, turn) => {
       const kept = activity.keep(projectId, note.id, turn.log, () => projects.has(projectId));
       try {
-        return await inThread(threads, harnesses, key, { id: turn.id, harness: input.provider, text: input.text, noteId: note.id },
-          toolsFor(ctx, project.title, base.game, base.assets), run.signal, (harness, folder) => runHarnessChat(harness, input.provider, projects, project,
-            base, { ...input, folder, author }, references, { ...run, selection: input.modelSettings }));
-      } finally { kept.close(); }
+        return await inThread(
+          threads,
+          harnesses,
+          key,
+          { id: turn.id, harness: input.provider, text: input.text, noteId: note.id },
+          toolsFor(ctx, project.title, base.game, base.assets),
+          run.signal,
+          (harness, folder) =>
+            runHarnessChat(harness, input.provider, projects, project, base, { ...input, folder, author }, references, {
+              ...run,
+              selection: input.modelSettings,
+            }),
+        );
+      } finally {
+        kept.close();
+      }
     });
     await streamTurn(request, response, turn, 201);
     return true;

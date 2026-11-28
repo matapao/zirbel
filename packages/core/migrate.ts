@@ -16,7 +16,13 @@ const secondsOf = (date: string) => Math.floor(Date.parse(date) / 1000);
 /** Writes revisions as commits: each old id's commit, and the SHA-256s of the blobs written. author: who made them
  *  all (a bundle's own author names otherwise, then Zirbel); trailer: whether each names its old id. A restore's
  *  target must be written before its trailer can name it, so the revisions go in runs that end before a restore. */
-export function writeRevisions(repo: string, revisions: FullRevision[], read: (hash: string) => Buffer, author?: Ident, trailer = false) {
+export function writeRevisions(
+  repo: string,
+  revisions: FullRevision[],
+  read: (hash: string) => Buffer,
+  author?: Ident,
+  trailer = false,
+) {
   const commits = new Map<string, string>();
   const hashes: [string, string][] = [];
   let index = 0;
@@ -28,17 +34,25 @@ export function writeRevisions(repo: string, revisions: FullRevision[], read: (h
       // A restore of a revision written in this stretch waits for the next, which can name its commit; one of a
       // revision the project doesn't have (a damaged file) is written without the trailer instead of never.
       if (revision.restoredFrom && !commits.has(revision.restoredFrom) && marks.has(revision.restoredFrom)) break;
-      const from = revision.parent ? marks.get(revision.parent) ?? commits.get(revision.parent) : undefined;
+      const from = revision.parent ? (marks.get(revision.parent) ?? commits.get(revision.parent)) : undefined;
       if (!from) stream.reset(IMPORTING);
       const written = treeChanges([], () => undefined, revision, read, stream);
       hashes.push(...written.hashes);
       const trailers: [string, string][] = [
         ...(revision.restoredFrom && commits.has(revision.restoredFrom)
-          ? [['Zirbel-Restored-From', commits.get(revision.restoredFrom)!] as [string, string]] : []),
-        ...(trailer ? [['Zirbel-Revision', revision.id] as [string, string]] : [])];
+          ? [['Zirbel-Restored-From', commits.get(revision.restoredFrom)!] as [string, string]]
+          : []),
+        ...(trailer ? [['Zirbel-Revision', revision.id] as [string, string]] : []),
+      ];
       const by = author ?? (revision.author ? ident(revision.author, COMMITTER.email) : COMMITTER);
-      marks.set(revision.id, stream.commit(IMPORTING, { author: by, time: secondsOf(revision.date),
-        message: commitMessage(revision.label, trailers), from }, ['deleteall', ...written.changes]));
+      marks.set(
+        revision.id,
+        stream.commit(
+          IMPORTING,
+          { author: by, time: secondsOf(revision.date), message: commitMessage(revision.label, trailers), from },
+          ['deleteall', ...written.changes],
+        ),
+      );
     }
     const ids = stream.run(repo);
     for (const [old, mark] of marks) commits.set(old, ids.get(mark)!);
@@ -52,18 +66,32 @@ export function migrateProject(projects: Projects, old: ProjectBundle) {
   const { root } = projects;
   const aside = join(root, 'migrated-projects');
   mkdirSync(aside, { recursive: true, mode: 0o700 });
-  if (!existsSync(join(aside, old.id + '.json'))) copyFileSync(join(root, 'projects', old.id + '.json'), join(aside, old.id + '.json'));
+  if (!existsSync(join(aside, old.id + '.json')))
+    copyFileSync(join(root, 'projects', old.id + '.json'), join(aside, old.id + '.json'));
   const read = (hash: string) => projects.readAsset(hash);
   const repo = projects.repository(old.id);
   const making = repo + '.migrating';
   initRepository(making);
   const { commits, hashes } = writeRevisions(making, old.revisions, read, COMMITTER, true);
-  updateRefs(making, Object.entries(old.branches).map(([branch, revision]) => ({ ref: 'refs/heads/' + branch, to: commits.get(revision)! })));
+  updateRefs(
+    making,
+    Object.entries(old.branches).map(([branch, revision]) => ({
+      ref: 'refs/heads/' + branch,
+      to: commits.get(revision)!,
+    })),
+  );
 
   // Pending proposals: each a commit on its own ref, its base the new commit (also when a migration ran before).
   const mapped = new Map([...commits].map(([oldId, commit]) => [commit, oldId]));
-  const pending = readdirSync(join(root, 'proposals')).filter((file) => file.startsWith(old.id + '.') && file.endsWith('.json'))
-    .flatMap((file) => { try { return [projects.getProposal(old.id, file.slice(old.id.length + 1, -5))]; } catch { return []; } });
+  const pending = readdirSync(join(root, 'proposals'))
+    .filter((file) => file.startsWith(old.id + '.') && file.endsWith('.json'))
+    .flatMap((file) => {
+      try {
+        return [projects.getProposal(old.id, file.slice(old.id.length + 1, -5))];
+      } catch {
+        return [];
+      }
+    });
   const stream = new FastImport();
   const rebased = [];
   for (const proposal of pending) {
@@ -72,11 +100,18 @@ export function migrateProject(projects: Projects, old: ProjectBundle) {
     const commit = commits.get(baseId);
     if (!base || !commit) continue;
     let applied;
-    try { applied = applyOperations(base, proposal.operations); } catch { continue; }
+    try {
+      applied = applyOperations(base, proposal.operations);
+    } catch {
+      continue;
+    }
     const written = treeChanges([], () => undefined, applied, read, stream);
     hashes.push(...written.hashes);
-    stream.commit('refs/zirbel/proposals/' + proposal.id, { author: COMMITTER, time: secondsOf(proposal.date),
-      message: commitMessage(proposal.label), from: commit }, ['deleteall', ...written.changes]);
+    stream.commit(
+      'refs/zirbel/proposals/' + proposal.id,
+      { author: COMMITTER, time: secondsOf(proposal.date), message: commitMessage(proposal.label), from: commit },
+      ['deleteall', ...written.changes],
+    );
     rebased.push({ ...proposal, baseRevision: commit });
   }
   if (rebased.length) stream.run(making);
@@ -85,9 +120,22 @@ export function migrateProject(projects: Projects, old: ProjectBundle) {
   projects.history.learn(repo, hashes);
   for (const proposal of rebased) projects.saveProposal(proposal);
 
-  const notes = old.notes.map((note) => ({ ...note, references: note.references.map((reference) =>
-    ({ ...reference, revision: commits.get(reference.revision) ?? reference.revision })) }));
+  const notes = old.notes.map((note) => ({
+    ...note,
+    references: note.references.map((reference) => ({
+      ...reference,
+      revision: commits.get(reference.revision) ?? reference.revision,
+    })),
+  }));
   const { id, title, template, attachments, upstream, imported } = old;
-  projects.save({ version: 2, id, title, ...(template ? { template } : {}), notes, attachments,
-    ...(upstream ? { upstream } : {}), ...(imported ? { imported } : {}) });
+  projects.save({
+    version: 2,
+    id,
+    title,
+    ...(template ? { template } : {}),
+    notes,
+    attachments,
+    ...(upstream ? { upstream } : {}),
+    ...(imported ? { imported } : {}),
+  });
 }

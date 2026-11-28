@@ -85,8 +85,13 @@ def follow_setting(nm, own: own_network.Credentials | None, before_up=lambda: No
     editor.clear_network_wake()
     step = own_network.apply(nm, editor.own_network(), own, before_up)
     if step:
-        log({own_network.UP: "The box's own Wi-Fi is up.", own_network.DOWN: "The box's own Wi-Fi is gone.",
-             own_network.FAILED: "The box's own Wi-Fi did not start."}[step])
+        log(
+            {
+                own_network.UP: "The box's own Wi-Fi is up.",
+                own_network.DOWN: "The box's own Wi-Fi is gone.",
+                own_network.FAILED: "The box's own Wi-Fi did not start.",
+            }[step]
+        )
     return step
 
 
@@ -161,8 +166,12 @@ class Setup:
             requested=self.requested, since_use=since_use
         ):
             return self._finish()
-        if policy.retry_saved(saved=self.nm.saved_wifi(), requested=self.requested,
-                              since_retry=time.monotonic() - self.last_retry, since_use=since_use):
+        if policy.retry_saved(
+            saved=self.nm.saved_wifi(),
+            requested=self.requested,
+            since_retry=time.monotonic() - self.last_retry,
+            since_use=since_use,
+        ):
             self._in_worker(self._retry_saved)
         else:
             self._hotspot_up()

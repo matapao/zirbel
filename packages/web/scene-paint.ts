@@ -5,21 +5,29 @@ export type Point = [number, number];
 
 export function polygon(ctx: CTX, points: Point[], fill: string, stroke?: string) {
   ctx.beginPath();
-  points.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+  points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
   ctx.closePath();
   ctx.fillStyle = fill;
   ctx.fill();
-  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); }
+  if (stroke) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 }
 
 export function ellipse(ctx: CTX, x: number, y: number, rx: number, ry: number, fill: string | CanvasGradient) {
-  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fillStyle = fill; ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
 }
 
 export function tint(hex: string, amount: number) {
   const base = hex.replace('#', '');
-  const channels = [0, 2, 4].map((i) => Math.min(255, Math.max(0, Math.round(Number.parseInt(base.slice(i, i + 2), 16) * amount))));
+  const channels = [0, 2, 4].map((i) =>
+    Math.min(255, Math.max(0, Math.round(Number.parseInt(base.slice(i, i + 2), 16) * amount))),
+  );
   return 'rgb(' + channels.join(',') + ')';
 }
 

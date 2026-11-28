@@ -107,7 +107,8 @@ async function confirmQuit() {
     cancelId: 1,
     message: 'A turn is running. Quit anyway? You can continue it later.',
   };
-  const answer = main && !main.isDestroyed() ? await dialog.showMessageBox(main, options) : await dialog.showMessageBox(options);
+  const answer =
+    main && !main.isDestroyed() ? await dialog.showMessageBox(main, options) : await dialog.showMessageBox(options);
   return answer.response === 0;
 }
 

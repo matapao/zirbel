@@ -18,7 +18,10 @@ test('chat creates and edits an original executable game with a live inspector',
   });
   const { page, editor, data, errors, browser, restart } = await openEditor(t, async (context, res, run) => {
     // What the turn's game/ held as it started: the revision it works on.
-    calls.push({ ...context, started: readFileSync(join(run.cwd, 'game', 'index.html'), { encoding: 'utf8', flag: 'a+' }) });
+    calls.push({
+      ...context,
+      started: readFileSync(join(run.cwd, 'game', 'index.html'), { encoding: 'utf8', flag: 'a+' }),
+    });
     if (context.message === 'Make the harness fail.') {
       res.writeHead(502);
       res.end(JSON.stringify({ error: 'Fixture failure' }));
@@ -30,19 +33,27 @@ test('chat creates and edits an original executable game with a live inspector',
       return;
     }
     await (context.game ? allowEdit.promise : allowBuild.promise);
-    answer(res, context.game ? { action: 'edit', message: 'Updated the counter.', game: { html: counterSource(3) } } :
-      { action: 'create', title: 'Prism counter', message: 'Built the counter.', game: { html: counterSource(1) } });
+    answer(
+      res,
+      context.game
+        ? { action: 'edit', message: 'Updated the counter.', game: { html: counterSource(3) } }
+        : { action: 'create', title: 'Prism counter', message: 'Built the counter.', game: { html: counterSource(1) } },
+    );
   });
   const ui = controls(page);
   const { feed, prompt, status, stop, game } = ui;
   const requestStarted = Promise.withResolvers();
   const releaseRequest = Promise.withResolvers();
   t.after(() => releaseRequest.resolve());
-  await page.route(editor + '/api/chat', async (route) => {
-    requestStarted.resolve();
-    await releaseRequest.promise;
-    await route.abort().catch(() => {});
-  }, { times: 1 });
+  await page.route(
+    editor + '/api/chat',
+    async (route) => {
+      requestStarted.resolve();
+      await releaseRequest.promise;
+      await route.abort().catch(() => {});
+    },
+    { times: 1 },
+  );
   const earlyPrompt = 'Stop this turn before the harness responds.';
   await ui.send(earlyPrompt);
   await requestStarted.promise;
@@ -69,8 +80,9 @@ test('chat creates and edits an original executable game with a live inspector',
   assert.equal(calls[0].started, '', 'a new game starts with an empty game/');
   await game.locator('#counter[data-seat="player"]').waitFor();
   // The game runs in the middle, with the thread beside it.
-  const [stage, thread] = await Promise.all(['game', 'thread'].map((view) =>
-    page.locator(`.vindu-pane[data-view="${view}"]`).boundingBox()));
+  const [stage, thread] = await Promise.all(
+    ['game', 'thread'].map((view) => page.locator(`.vindu-pane[data-view="${view}"]`).boundingBox()),
+  );
   assert.ok(stage && thread && stage.x + stage.width <= thread.x && stage.width > thread.width * 2);
   assert.equal(await page.locator('#game-source').isVisible(), false);
   assert.equal(calls[0].registerObjects, true);
@@ -139,8 +151,13 @@ test('chat creates and edits an original executable game with a live inspector',
   try {
     await fresh.goto(editor);
     await controls(fresh).choose('Prism counter');
-    await fresh.locator('#messages').getByText(/Updated the counter/).waitFor();
-  } finally { await fresh.close(); }
+    await fresh
+      .locator('#messages')
+      .getByText(/Updated the counter/)
+      .waitFor();
+  } finally {
+    await fresh.close();
+  }
 
   const published = await page.request.post(editor + '/api/projects/' + projectId + '/release', {
     data: { branch: 'main', permissions: { play: true, remix: true, download: true } },
@@ -174,7 +191,11 @@ test('chat creates and edits an original executable game with a live inspector',
   assert.equal(await offer.isDisabled(), true);
   await page.keyboard.press('Escape');
   await ui.choose('Library…');
-  await page.locator('.library-project').filter({ hasText: 'Prism counter' }).getByRole('button', { name: 'Remove…' }).click();
+  await page
+    .locator('.library-project')
+    .filter({ hasText: 'Prism counter' })
+    .getByRole('button', { name: 'Remove…' })
+    .click();
   await page.getByRole('button', { name: 'Remove project', exact: true }).click();
   await page.getByRole('heading', { name: 'Game library' }).waitFor();
   assert.equal(await page.locator('.library-project').count(), 0);
@@ -189,13 +210,21 @@ test('model settings dismiss without getting in the way of chat', { timeout: 30_
   const changed = Promise.withResolvers();
   t.after(() => changed.resolve());
   const choices = {
-    model: { name: 'Model', currentValue: 'default',
-      options: [{ value: 'default', name: 'Default model' }, { value: 'alternate', name: 'Alternate model' }] },
+    model: {
+      name: 'Model',
+      currentValue: 'default',
+      options: [
+        { value: 'default', name: 'Default model' },
+        { value: 'alternate', name: 'Alternate model' },
+      ],
+    },
     effort: { name: 'Reasoning effort', currentValue: 'medium', options: [{ value: 'medium', name: 'Medium' }] },
   };
-  await page.route(editor + '/api/processors', (route) => route.fulfill({
-    json: { processors: [{ id: 'codex', name: 'Test harness', modelSettings: true }] },
-  }));
+  await page.route(editor + '/api/processors', (route) =>
+    route.fulfill({
+      json: { processors: [{ id: 'codex', name: 'Test harness', modelSettings: true }] },
+    }),
+  );
   await page.route(editor + '/api/processors/codex/model-settings', async (route) => {
     if (route.request().postDataJSON().model === 'alternate') await changed.promise;
     await route.fulfill({ json: choices });
@@ -236,16 +265,24 @@ test('model settings dismiss without getting in the way of chat', { timeout: 30_
 
 test('new projects can start turns while another project is building', { timeout: 45_000 }, async (t) => {
   const fixture = (order) => ({
-    title: 'Project ' + order, prompt: 'Build game ' + order + '.', reply: 'Built game ' + order + '.',
-    reached: Promise.withResolvers(), ready: Promise.withResolvers(),
+    title: 'Project ' + order,
+    prompt: 'Build game ' + order + '.',
+    reply: 'Built game ' + order + '.',
+    reached: Promise.withResolvers(),
+    ready: Promise.withResolvers(),
   });
   const first = fixture(1);
   const second = fixture(2);
   const runs = new Map([first, second].map((run) => [run.prompt, run]));
-  t.after(() => { for (const run of runs.values()) run.ready.resolve(); });
+  t.after(() => {
+    for (const run of runs.values()) run.ready.resolve();
+  });
   const { page, errors } = await openEditor(t, async (context, res) => {
     const run = runs.get(context.message);
-    if (!run) { res.writeHead(400).end('{}'); return; }
+    if (!run) {
+      res.writeHead(400).end('{}');
+      return;
+    }
     run.reached.resolve(context.game?.title);
     await run.ready.promise;
     answer(res, { action: 'edit', message: run.reply, game: { html: counterSource(1) } });
@@ -292,10 +329,14 @@ test('new projects can start turns while another project is building', { timeout
   await feed.getByText(second.prompt, { exact: true }).waitFor();
   first.ready.resolve();
   // A background turn is complete when its assistant reply is in the project's history.
-  await page.waitForFunction(async ({ id, reply }) => {
-    const project = await (await fetch('/api/projects/' + id)).json();
-    return project.notes.some(note => note.role === 'assistant' && note.text.startsWith(reply));
-  }, { id: firstId, reply: first.reply }, { polling: 100 });
+  await page.waitForFunction(
+    async ({ id, reply }) => {
+      const project = await (await fetch('/api/projects/' + id)).json();
+      return project.notes.some((note) => note.role === 'assistant' && note.text.startsWith(reply));
+    },
+    { id: firstId, reply: first.reply },
+    { polling: 100 },
+  );
   assert.equal(await ui.title(), second.title);
   assert.equal(await send.isDisabled(), true);
   assert.equal(await stop.isVisible(), true);
@@ -317,7 +358,10 @@ test('a built game folder imports from the empty desk and opens as a project', {
   t.after(() => rm(parent, { recursive: true, force: true }));
   const folder = join(parent, 'Lantern Run');
   await mkdir(join(folder, 'assets'), { recursive: true });
-  await writeFile(join(folder, 'index.html'), '<!doctype html><p>built</p><script type="module" src="./assets/main.js"></script>');
+  await writeFile(
+    join(folder, 'index.html'),
+    '<!doctype html><p>built</p><script type="module" src="./assets/main.js"></script>',
+  );
   await writeFile(join(folder, 'assets', 'main.js'), 'document.body.dataset.ready = "yes";');
   await writeFile(join(folder, '.DS_Store'), 'not a game file');
   await page.getByRole('button', { name: 'Import a game folder' }).click();
@@ -326,6 +370,10 @@ test('a built game folder imports from the empty desk and opens as a project', {
   await page.locator('#status').filter({ hasText: 'Imported 2 files. Skipped: .DS_Store.' }).waitFor();
   // The new project is the one the switcher shows, and it runs.
   await page.locator('#game-title').filter({ hasText: 'Lantern Run' }).waitFor();
-  await page.frameLocator('#playframe').frameLocator('iframe.authored-game').locator('body[data-ready="yes"]').waitFor();
+  await page
+    .frameLocator('#playframe')
+    .frameLocator('iframe.authored-game')
+    .locator('body[data-ready="yes"]')
+    .waitFor();
   assert.deepEqual(errors, []);
 });

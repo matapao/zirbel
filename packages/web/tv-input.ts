@@ -7,7 +7,14 @@ export type Command = 'up' | 'down' | 'left' | 'right' | 'choose' | 'back';
 export type PadInput = { standard: boolean; pressed: number; axes: readonly number[] };
 
 /** The standard layout's buttons: A, B, Select, Start, and the d-pad. */
-const A = 0, B = 1, SELECT = 8, START = 9, UP = 12, DOWN = 13, LEFT = 14, RIGHT = 15;
+const A = 0,
+  B = 1,
+  SELECT = 8,
+  START = 9,
+  UP = 12,
+  DOWN = 13,
+  LEFT = 14,
+  RIGHT = 15;
 const STICK = 0.5;
 const held = (input: PadInput, button: number) => (input.pressed & (1 << button)) !== 0;
 
@@ -19,7 +26,8 @@ export function direction(input: PadInput): Command | undefined {
     if (held(input, LEFT)) return 'left';
     if (held(input, RIGHT)) return 'right';
   }
-  const x = input.axes[0] ?? 0, y = input.axes[1] ?? 0;
+  const x = input.axes[0] ?? 0,
+    y = input.axes[1] ?? 0;
   if (Math.max(Math.abs(x), Math.abs(y)) < STICK) return undefined;
   if (Math.abs(x) >= Math.abs(y)) return x > 0 ? 'right' : 'left';
   return y > 0 ? 'down' : 'up';
@@ -43,10 +51,13 @@ export class PadNavigator {
   /** A gamepad's state now, or none once it is gone. */
   update(source: string, input: PadInput | undefined, now: number) {
     const before = this.pads.get(source);
-    if (!input) { this.pads.delete(source); return; }
+    if (!input) {
+      this.pads.delete(source);
+      return;
+    }
     const pressed = (button: number) => held(input, button) && !(before && held(before.input, button));
     const going = direction(input);
-    const next = going && going !== before?.direction ? now + this.delay : before?.next ?? 0;
+    const next = going && going !== before?.direction ? now + this.delay : (before?.next ?? 0);
     this.pads.set(source, { input, direction: going, next });
     if (going && going !== before?.direction) this.emit(going, source);
     if (pressed(A) || (input.standard && pressed(START))) this.emit('choose', source);
@@ -63,18 +74,37 @@ export class PadNavigator {
   }
 
   /** Whether a gamepad has any button down (it takes a place on its first press). */
-  static pressing(input: PadInput) { return input.pressed !== 0; }
+  static pressing(input: PadInput) {
+    return input.pressed !== 0;
+  }
 }
 
 /** A key's command: arrows move, Enter (a remote's OK) chooses, Escape, Backspace and the Back keys TVs send go back. */
 export function keyCommand(event: { key: string; keyCode?: number | undefined }): Command | undefined {
   switch (event.key) {
-    case 'ArrowUp': case 'Up': return 'up';
-    case 'ArrowDown': case 'Down': return 'down';
-    case 'ArrowLeft': case 'Left': return 'left';
-    case 'ArrowRight': case 'Right': return 'right';
-    case 'Enter': case 'Accept': case 'Select': return 'choose';
-    case 'Escape': case 'Esc': case 'Backspace': case 'GoBack': case 'BrowserBack': case 'XF86Back': return 'back';
+    case 'ArrowUp':
+    case 'Up':
+      return 'up';
+    case 'ArrowDown':
+    case 'Down':
+      return 'down';
+    case 'ArrowLeft':
+    case 'Left':
+      return 'left';
+    case 'ArrowRight':
+    case 'Right':
+      return 'right';
+    case 'Enter':
+    case 'Accept':
+    case 'Select':
+      return 'choose';
+    case 'Escape':
+    case 'Esc':
+    case 'Backspace':
+    case 'GoBack':
+    case 'BrowserBack':
+    case 'XF86Back':
+      return 'back';
   }
   // webOS's Back and Tizen's Return send no key name.
   return event.keyCode === 461 || event.keyCode === 10009 ? 'back' : undefined;
@@ -82,7 +112,11 @@ export function keyCommand(event: { key: string; keyCode?: number | undefined })
 
 /** A gamepad as the navigator reads it: a device's own (the Gamepad API, standard by its mapping) or a screen's
  *  controller's state from its pad frame (sdk/pads.ts). */
-export function padInput(pad: { standard: boolean; buttons: readonly { pressed: boolean }[]; axes: readonly number[] }): PadInput {
+export function padInput(pad: {
+  standard: boolean;
+  buttons: readonly { pressed: boolean }[];
+  axes: readonly number[];
+}): PadInput {
   let pressed = 0;
   for (let i = 0; i < pad.buttons.length && i < 32; i++) if (pad.buttons[i]?.pressed) pressed |= 1 << i;
   return { standard: pad.standard, pressed: pressed >>> 0, axes: pad.axes };

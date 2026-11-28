@@ -60,7 +60,8 @@ export class CodeTries {
 
   /** Counts a wrong code from the address. */
   miss(input: string) {
-    const address = plainAddress(input), at = this.now();
+    const address = plainAddress(input),
+      at = this.now();
     for (const [counted, tries] of this.wrong) if (at - tries.since >= MINUTE) this.wrong.delete(counted);
     const tries = this.wrong.get(address);
     this.wrong.delete(address);
@@ -93,15 +94,22 @@ export class Lobby {
     this.file = file;
     this.tries = new CodeTries(now);
     let text = '';
-    try { text = readFileSync(this.file, 'utf8'); } catch (error) {
+    try {
+      text = readFileSync(this.file, 'utf8');
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
-    try { this.offers = text ? lobbyFile.parse(JSON.parse(text)).offered : []; }
-    catch { throw new Error('lobby.json in the data directory is not a lobby; move it aside to start with an empty one.'); }
+    try {
+      this.offers = text ? lobbyFile.parse(JSON.parse(text)).offered : [];
+    } catch {
+      throw new Error('lobby.json in the data directory is not a lobby; move it aside to start with an empty one.');
+    }
   }
 
   /** The offered releases, in the order they were offered. */
-  offered() { return [...this.offers]; }
+  offered() {
+    return [...this.offers];
+  }
 
   /** Puts a release in the lobby last, in place of any other release of its game, or takes it out: the new list. */
   offer(releaseId: string, offered: boolean) {
@@ -110,7 +118,11 @@ export class Lobby {
       const manifest = this.manifest(releaseId);
       if (!manifest.permissions.play) throw new ZirbelError(403, 'The creator has disabled play for this release.');
       const sameGame = (item: string) => {
-        try { return this.manifest(item).gameId === manifest.gameId; } catch { return false; }
+        try {
+          return this.manifest(item).gameId === manifest.gameId;
+        } catch {
+          return false;
+        }
       };
       next = [...next.filter((item) => !sameGame(item)), releaseId];
     }
@@ -120,7 +132,9 @@ export class Lobby {
   }
 
   /** Whether games with their own netcode are played together here now: while the spaces kernel runs. */
-  private get spaces() { return Boolean(this.rooms.kernel?.available); }
+  private get spaces() {
+    return Boolean(this.rooms.kernel?.available);
+  }
 
   /** A release is played together: one with a simulation, and one with its own netcode while the kernel runs. */
   private together(manifest: Manifest) {
@@ -131,17 +145,36 @@ export class Lobby {
    *  first, and whether games with their own netcode are played together here now (spaces). Neither codes nor seats'
    *  names are in it. */
   state(access: Room['access']) {
-    const games = this.offered().flatMap((release) => {
-      let manifest: Manifest;
-      try { manifest = this.manifest(release); } catch { return []; }
-      if (!manifest.permissions.play) return [];
-      return [{ release, title: manifest.title, players: { min: manifest.players.min, max: manifest.players.max },
-        multiplayer: this.together(manifest) }];
-    }).sort((a, b) => byTitle(a.title, b.title));
-    const sessions = this.rooms.open().filter((room) => room.code && room.access === access).reverse().map((room) => ({
-      id: room.session, title: room.release.manifest.title, players: room.players, max: room.release.manifest.players.max,
-      started: new Date(room.started).toISOString(),
-    }));
+    const games = this.offered()
+      .flatMap((release) => {
+        let manifest: Manifest;
+        try {
+          manifest = this.manifest(release);
+        } catch {
+          return [];
+        }
+        if (!manifest.permissions.play) return [];
+        return [
+          {
+            release,
+            title: manifest.title,
+            players: { min: manifest.players.min, max: manifest.players.max },
+            multiplayer: this.together(manifest),
+          },
+        ];
+      })
+      .sort((a, b) => byTitle(a.title, b.title));
+    const sessions = this.rooms
+      .open()
+      .filter((room) => room.code && room.access === access)
+      .reverse()
+      .map((room) => ({
+        id: room.session,
+        title: room.release.manifest.title,
+        players: room.players,
+        max: room.release.manifest.players.max,
+        started: new Date(room.started).toISOString(),
+      }));
     return { games, sessions, spaces: this.spaces };
   }
 
@@ -157,8 +190,13 @@ export class Lobby {
     if (!loopback(from) && open.filter((room) => room.startedBy === from).length >= SESSIONS_PER_ADDRESS)
       throw new ZirbelError(429, 'You have three sessions open. Join one, or wait until one ends.');
     const release = this.releases.read(releaseId);
-    const room = await this.rooms.withSpace(this.rooms.create(release, !this.together(release.manifest), access, false, from));
-    return { room, ticket: room.space ? await this.rooms.spaceTicket(room, name, 'participant') : room.seat(name, 'player') };
+    const room = await this.rooms.withSpace(
+      this.rooms.create(release, !this.together(release.manifest), access, false, from),
+    );
+    return {
+      room,
+      ticket: room.space ? await this.rooms.spaceTicket(room, name, 'participant') : room.seat(name, 'player'),
+    };
   }
 
   /** Seats the person at address in the open session with this code, on this listener: a player's seat while there is
@@ -176,7 +214,9 @@ export class Lobby {
 
   /** The room a space is of, on this listener: for a link the kernel formed, which names the space alone. */
   roomOf(access: Room['access'], space: string) {
-    const room = this.rooms.open().find((item) => item.space?.id === space && item.access === access && isNet(item.release));
+    const room = this.rooms
+      .open()
+      .find((item) => item.space?.id === space && item.access === access && isNet(item.release));
     if (!room) throw new ZirbelError(404, 'This session has ended.');
     return room.id;
   }
@@ -184,7 +224,7 @@ export class Lobby {
   // A release never changes under its id, so its manifest is read once.
   private manifest(releaseId: string) {
     let manifest = this.manifests.get(releaseId);
-    if (!manifest) this.manifests.set(releaseId, manifest = this.releases.read(releaseId).manifest);
+    if (!manifest) this.manifests.set(releaseId, (manifest = this.releases.read(releaseId).manifest));
     return manifest;
   }
 }

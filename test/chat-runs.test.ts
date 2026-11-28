@@ -22,12 +22,21 @@ function streamed(t: TestContext) {
     return true;
   });
   t.mock.method(response, 'end', () => response);
-  const next = (match: (event: ChatEvent<unknown>) => boolean) => new Promise<ChatEvent<unknown>>((resolve) => {
-    const seen = frames.find(match);
-    if (seen) { resolve(seen); return; }
-    const listener = (event: ChatEvent<unknown>) => { if (match(event)) { listeners.delete(listener); resolve(event); } };
-    listeners.add(listener);
-  });
+  const next = (match: (event: ChatEvent<unknown>) => boolean) =>
+    new Promise<ChatEvent<unknown>>((resolve) => {
+      const seen = frames.find(match);
+      if (seen) {
+        resolve(seen);
+        return;
+      }
+      const listener = (event: ChatEvent<unknown>) => {
+        if (match(event)) {
+          listeners.delete(listener);
+          resolve(event);
+        }
+      };
+      listeners.add(listener);
+    });
   return { request, response, frames, next, close: () => response.emit('close') };
 }
 
@@ -38,25 +47,54 @@ test('a turn runs on its own: requests stream it, attach to it with its steps an
   const turn = chat.start('project.main', { name: 'Codex', text: 'Make it' }, async ({ ask, signal, update }) => {
     assert.ok(ask && signal && update);
     update({ type: 'activity', entry: { id: 'tool:1', kind: 'tool', title: 'execute', detail: 'npm test' } });
-    const selected = await ask({ call: 'choice', title: 'Create a scratch file?', tool: 'Write', input: { path: 'index.html' },
-      reason: 'It writes outside the sandbox.',
-      options: [{ optionId: 'yes', name: 'Allow once', kind: 'allow_once' },
-        { optionId: 'no', name: 'Reject', kind: 'reject_once' }] }, signal);
+    const selected = await ask(
+      {
+        call: 'choice',
+        title: 'Create a scratch file?',
+        tool: 'Write',
+        input: { path: 'index.html' },
+        reason: 'It writes outside the sandbox.',
+        options: [
+          { optionId: 'yes', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'no', name: 'Reject', kind: 'reject_once' },
+        ],
+      },
+      signal,
+    );
     assert.deepEqual(selected, { option: 'yes' });
-    const form = await ask({ call: 'form', title: 'Choose the player count', tool: '', options: [],
-      form: { message: 'Choose the player count', fields: [{ name: 'players', title: 'Players', type: 'integer', required: true }] } }, signal);
+    const form = await ask(
+      {
+        call: 'form',
+        title: 'Choose the player count',
+        tool: '',
+        options: [],
+        form: {
+          message: 'Choose the player count',
+          fields: [{ name: 'players', title: 'Players', type: 'integer', required: true }],
+        },
+      },
+      signal,
+    );
     assert.deepEqual(form, { accept: true, content: { players: 2 } });
     responded.resolve();
-    return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(abortError(signal)), { once: true }));
+    return new Promise((_resolve, reject) =>
+      signal.addEventListener('abort', () => reject(abortError(signal)), { once: true }),
+    );
   });
-  assert.throws(() => chat.start('project.main', { name: 'Codex', text: 'Again' }, async () => ({})), /already running/);
+  assert.throws(
+    () => chat.start('project.main', { name: 'Codex', text: 'Again' }, async () => ({})),
+    /already running/,
+  );
   assert.equal(chat.count, 1);
   const first = streamed(t);
   const streaming = streamTurn(first.request, first.response, turn);
   const asked = await first.next((event) => event.type === 'action');
   assert.ok(asked.type === 'action' && asked.action.kind === 'permission');
   assert.deepEqual(first.frames[0], { type: 'run', id: turn.id });
-  assert.deepEqual(asked.action.options, [{ id: 'yes', title: 'Allow once' }, { id: 'no', title: 'Reject' }]);
+  assert.deepEqual(asked.action.options, [
+    { id: 'yes', title: 'Allow once' },
+    { id: 'no', title: 'Reject' },
+  ]);
   assert.equal(asked.action.summary, 'Edit index.html');
   assert.equal(asked.action.reason, 'It writes outside the sandbox.');
   // Each request is a step of the turn too: waiting while open, then with the answer it got.
@@ -69,17 +107,24 @@ test('a turn runs on its own: requests stream it, attach to it with its steps an
   assert.equal(turn.running, true);
   const again = streamed(t);
   const attached = streamTurn(again.request, again.response, chat.get(turn.id));
-  assert.deepEqual(again.frames.map(({ type }) => type), ['run', 'activity', 'activity', 'action']);
+  assert.deepEqual(
+    again.frames.map(({ type }) => type),
+    ['run', 'activity', 'activity', 'action'],
+  );
   assert.throws(() => chat.answer(turn.id, asked.action.id, { choice: 'option', option: 'always' }), /offered/);
   chat.answer(turn.id, asked.action.id, { choice: 'option', option: 'yes' });
   assert.throws(() => chat.answer(turn.id, asked.action.id, { choice: 'option', option: 'yes' }), /no longer open/);
   const form = await again.next((event) => event.type === 'action' && event.action.kind === 'form');
   assert.ok(form.type === 'action');
-  assert.throws(() => chat.answer(turn.id, form.action.id, { choice: 'submit', values: { players: 1.5 } }), /Check the value/);
+  assert.throws(
+    () => chat.answer(turn.id, form.action.id, { choice: 'submit', values: { players: 1.5 } }),
+    /Check the value/,
+  );
   chat.answer(turn.id, form.action.id, { choice: 'submit', values: { players: 2 } });
   await responded.promise;
-  const answered = again.frames.filter((event) => event.type === 'activity' && event.entry.state === 'completed')
-    .map((event) => event.type === 'activity' ? event.entry.detail?.split('\n')[0] : '');
+  const answered = again.frames
+    .filter((event) => event.type === 'activity' && event.entry.state === 'completed')
+    .map((event) => (event.type === 'activity' ? event.entry.detail?.split('\n')[0] : ''));
   assert.deepEqual(answered, ['Answered: Allow once', 'Sent']);
   chat.stop(turn.id);
   await attached;
@@ -96,8 +141,14 @@ test('a closed connection starts no stream, and the editor stopping interrupts i
   const { ChatRuns, EditorStopping, streamTurn } = await import('../packages/server/chat-runs.ts');
   const chat = new ChatRuns();
   let reason: unknown;
-  const turn = chat.start('project.main', { name: 'Codex', text: 'Make it' }, ({ signal }) =>
-    new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(reason = abortError(signal)), { once: true })));
+  const turn = chat.start(
+    'project.main',
+    { name: 'Codex', text: 'Make it' },
+    ({ signal }) =>
+      new Promise((_resolve, reject) =>
+        signal?.addEventListener('abort', () => reject((reason = abortError(signal))), { once: true }),
+      ),
+  );
   const closed = streamed(t);
   closed.response.destroy();
   await streamTurn(closed.request, closed.response, turn);

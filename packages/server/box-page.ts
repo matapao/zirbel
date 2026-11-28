@@ -23,10 +23,12 @@ export const escape = (text: string) => text.replace(/[&<>"']/g, (c) => '&#' + c
 
 export function sendPage(response: ServerResponse, status: number, html: string) {
   response.writeHead(status, {
-    'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
     // A form posted under no-referrer carries the origin "null": this page's own forms carry its origin.
     'referrer-policy': 'same-origin',
-    'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+    'content-security-policy':
+      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
   });
   response.end(html);
 }

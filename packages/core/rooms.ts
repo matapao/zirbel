@@ -17,7 +17,10 @@ export interface SpaceKernel {
   readonly available: boolean;
   open(options: { participants: number; code?: string }): Promise<{ space: string; invite: string }>;
   ticket(space: string, name: string, role: 'participant' | 'observer'): Promise<string>;
-  member(space: string, proof: string): Promise<{ id: string; n: number; name: string; role: 'participant' | 'observer' }>;
+  member(
+    space: string,
+    proof: string,
+  ): Promise<{ id: string; n: number; name: string; role: 'participant' | 'observer' }>;
   close(space: string): void;
 }
 /** A game with its own netcode, which plays over a space of the spaces kernel. */
@@ -47,7 +50,10 @@ export class Rooms {
     }
     if (solo && access === 'lan' && !lobby) throw new ZirbelError(400, 'Solo playtests use the local player service.');
     // A net game's code goes to its space as that opens (withSpace).
-    const code = !solo && release.manifest.simulation !== null && !isNet(release) && (lobby || access === 'lan') ? this.freeCode() : null;
+    const code =
+      !solo && release.manifest.simulation !== null && !isNet(release) && (lobby || access === 'lan')
+        ? this.freeCode()
+        : null;
     // The player serves runtime files from the host's own verified build, so a room
     // does not keep the release's embedded copy (about 3 MB per room).
     const room = new Room({ ...release, files: {} }, solo, access, development, code, startedBy);
@@ -72,11 +78,18 @@ export class Rooms {
         const code = coded ? this.freeCode() : undefined;
         if (code) this.opening.add(code);
         let opened: { space: string; invite: string };
-        try { opened = await kernel.open({ participants: room.release.manifest.players.max, ...(code ? { code } : {}) }); } catch (error) {
+        try {
+          opened = await kernel.open({ participants: room.release.manifest.players.max, ...(code ? { code } : {}) });
+        } catch (error) {
           if ((error as { code?: unknown }).code === 'taken' && tries < CODE_TRIES) continue;
           throw error;
-        } finally { if (code) this.opening.delete(code); }
-        if (!this.rooms.has(room.id)) { kernel.close(opened.space); throw new ZirbelError(404, 'This room has closed.'); }
+        } finally {
+          if (code) this.opening.delete(code);
+        }
+        if (!this.rooms.has(room.id)) {
+          kernel.close(opened.space);
+          throw new ZirbelError(404, 'This room has closed.');
+        }
         room.space = { id: opened.space, invite: opened.invite };
         room.spaceOpened = performance.now();
         room.code = code ?? null;
@@ -85,18 +98,20 @@ export class Rooms {
     } catch (error) {
       this.close(room.id);
       if (error instanceof ZirbelError) throw error;
-      throw new ZirbelError(503, 'Multiplayer isn\'t available on this host now. Try again soon.');
+      throw new ZirbelError(503, "Multiplayer isn't available on this host now. Try again soon.");
     }
   }
 
   /** A one-time ticket into a room's space for someone: a player's place while one is free, else an observer's. */
   async spaceTicket(room: Room, name: string, role?: 'participant' | 'observer') {
     const kernel = this.kernel;
-    if (!room.space || !kernel) throw new ZirbelError(503, 'Multiplayer isn\'t available on this host now.');
-    for (const asked of role ? [role] : ['participant', 'observer'] as const) {
-      try { return await kernel.ticket(room.space.id, name, asked); } catch (error) {
+    if (!room.space || !kernel) throw new ZirbelError(503, "Multiplayer isn't available on this host now.");
+    for (const asked of role ? [role] : (['participant', 'observer'] as const)) {
+      try {
+        return await kernel.ticket(room.space.id, name, asked);
+      } catch (error) {
         const why = (error as { code?: unknown }).code;
-        if (why === 'unavailable') throw new ZirbelError(503, 'Multiplayer isn\'t available on this host now.');
+        if (why === 'unavailable') throw new ZirbelError(503, "Multiplayer isn't available on this host now.");
         if (why !== 'full') throw new ZirbelError(410, 'This session has ended.');
       }
     }
@@ -107,8 +122,12 @@ export class Rooms {
    *  says; the proof is used up. A space's id, in every link, is no credential. */
   async proven(room: Room, proof: string) {
     if (!room.space || !this.kernel || !PROOF.test(proof)) return false;
-    try { await this.kernel.member(room.space.id, proof); return true; } catch (error) {
-      if ((error as { code?: unknown }).code === 'unavailable') throw new ZirbelError(503, 'Multiplayer isn\'t available on this host now.');
+    try {
+      await this.kernel.member(room.space.id, proof);
+      return true;
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 'unavailable')
+        throw new ZirbelError(503, "Multiplayer isn't available on this host now.");
       return false;
     }
   }
@@ -120,12 +139,18 @@ export class Rooms {
   }
 
   /** The open room with this id, if there is one. */
-  find(id: string) { return this.rooms.get(id); }
+  find(id: string) {
+    return this.rooms.get(id);
+  }
 
-  list() { return [...this.rooms.values()].filter((room) => !room.solo).map((room) => room.summary()); }
+  list() {
+    return [...this.rooms.values()].filter((room) => !room.solo).map((room) => room.summary());
+  }
 
   /** Every open room, oldest first. */
-  open() { return [...this.rooms.values()]; }
+  open() {
+    return [...this.rooms.values()];
+  }
 
   close(id: string) {
     const room = this.rooms.get(id);
@@ -152,5 +177,8 @@ export class Rooms {
     }
   }
 
-  dispose() { clearInterval(this.timer); for (const id of this.rooms.keys()) this.close(id); }
+  dispose() {
+    clearInterval(this.timer);
+    for (const id of this.rooms.keys()) this.close(id);
+  }
 }

@@ -10,8 +10,21 @@ export const hosts = hostsUnderTest();
 // the game canvas is the author's content and is left out.
 export async function accessibility(page: Page) {
   const result = await new AxeBuilder({ page }).exclude('canvas').exclude('iframe').analyze();
-  return result.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical')
-    .map((item) => item.id + ': ' + item.help + ' (' + item.nodes.map((node) => node.target.join(' ')).slice(0, 3).join(', ') + ')');
+  return result.violations
+    .filter((item) => item.impact === 'serious' || item.impact === 'critical')
+    .map(
+      (item) =>
+        item.id +
+        ': ' +
+        item.help +
+        ' (' +
+        item.nodes
+          .map((node) => node.target.join(' '))
+          .slice(0, 3)
+          .join(', ') +
+        ')',
+    );
 }
 
-export const encoded = (files: Record<string, string>) => Object.fromEntries(Object.entries(files).map(([path, text]) => [path, Buffer.from(text).toString('base64')]));
+export const encoded = (files: Record<string, string>) =>
+  Object.fromEntries(Object.entries(files).map(([path, text]) => [path, Buffer.from(text).toString('base64')]));

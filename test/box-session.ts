@@ -11,7 +11,11 @@ const lan = address;
 export async function session(_t: TestContext, { editor: base, wake, own, network, tv }: Started) {
   const steps: Step[] = [];
   const box = client(base);
-  const record = async (step: Promise<Step>) => { const result = await step; steps.push(result); return result; };
+  const record = async (step: Promise<Step>) => {
+    const result = await step;
+    steps.push(result);
+    return result;
+  };
   const ping = { jsonrpc: '2.0', id: 1, method: 'ping' };
 
   // From the box itself, as its setup service asks: no pairing.
@@ -85,13 +89,17 @@ export async function session(_t: TestContext, { editor: base, wake, own, networ
   assert.equal((lobbyAddress.body as { link: string }).link, door.location);
   await record(device('PUT', '/api/box/settings', { json: { onboarded: false }, session: first }));
   await record(device('PUT', '/api/box/settings', { json: { onboarded: false }, session: first, origin: true }));
-  const code = ((await record(device('POST', '/api/pairing', { json: {}, session: first, origin: true }))).body as { code: string }).code;
+  const code = (
+    (await record(device('POST', '/api/pairing', { json: {}, session: first, origin: true }))).body as { code: string }
+  ).code;
   await record(device('POST', '/pair', { form: { code: 'ZZZZ-ZZZZ' }, origin: true }));
   await record(device('POST', '/pair', { form: { code: code.toLowerCase().replace('-', '') }, origin: true }));
   const second = token(steps.at(-1)!);
   await record(device('POST', '/pair', { form: { code }, origin: true }));
   const listed = await record(device('GET', '/api/pairing/devices', { session: second }));
-  const secondId = (listed.body as { devices: { id: string; current: boolean }[] }).devices.find((item) => item.current)!.id;
+  const secondId = (listed.body as { devices: { id: string; current: boolean }[] }).devices.find(
+    (item) => item.current,
+  )!.id;
   await record(device('DELETE', '/api/pairing/devices/' + secondId, { session: first, origin: true }));
   await record(device('GET', '/api/projects', { session: second }));
   await record(device('DELETE', '/api/pairing/devices/' + secondId, { session: first, origin: true }));
@@ -108,18 +116,28 @@ export async function session(_t: TestContext, { editor: base, wake, own, networ
 
   // External MCP access: off, the network gets no MCP; on, a project grant opens it.
   await record(device('POST', '/mcp', { json: ping }));
-  await record(box('POST', '/api/projects/' + project.id + '/grants', { json: { write: false, hours: 1 }, origin: true }));
+  await record(
+    box('POST', '/api/projects/' + project.id + '/grants', { json: { write: false, hours: 1 }, origin: true }),
+  );
   await record(box('PUT', '/api/box/settings', { json: { externalMcp: true } }));
-  const grant = (await record(box('POST', '/api/projects/' + project.id + '/grants', { json: { write: false, hours: 1 }, origin: true }))).body as { token: string };
-  const mcp = (credential: string) => fetch(base.replace('127.0.0.1', lan) + '/mcp', { method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + credential }, body: JSON.stringify(ping) })
-    .then(async (response) => ({ status: response.status, body: await response.json() as unknown }));
+  const grant = (
+    await record(
+      box('POST', '/api/projects/' + project.id + '/grants', { json: { write: false, hours: 1 }, origin: true }),
+    )
+  ).body as { token: string };
+  const mcp = (credential: string) =>
+    fetch(base.replace('127.0.0.1', lan) + '/mcp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + credential },
+      body: JSON.stringify(ping),
+    }).then(async (response) => ({ status: response.status, body: (await response.json()) as unknown }));
   await record(mcp(grant.token));
   await record(mcp('nope'));
   await record(box('PUT', '/api/box/settings', { json: { externalMcp: false } }));
   await record(mcp(grant.token));
 
   // Wrong codes from one address: ten in a minute, then none.
-  for (let tries = 0; tries < 10; tries++) await record(device('POST', '/pair', { form: { code: 'ZZZZ-ZZZY' }, origin: true }));
+  for (let tries = 0; tries < 10; tries++)
+    await record(device('POST', '/pair', { form: { code: 'ZZZZ-ZZZY' }, origin: true }));
   return steps;
 }

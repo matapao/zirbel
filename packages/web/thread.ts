@@ -24,8 +24,11 @@ let shownThread = '';
 function interruptedRow() {
   const row = el('div', undefined, 'interrupted');
   row.setAttribute('role', 'status');
-  row.append(el('strong', 'Interrupted'), el('span', 'The editor stopped while this turn was running.'),
-    action('Continue', () => continueTurn(), 'primary'));
+  row.append(
+    el('strong', 'Interrupted'),
+    el('span', 'The editor stopped while this turn was running.'),
+    action('Continue', () => continueTurn(), 'primary'),
+  );
   return row;
 }
 
@@ -71,8 +74,10 @@ function keptSteps(projectId: string, noteId: string) {
 /** The steps under a creator's note: the conversation's, or in a project the running turn's or the kept ones. */
 function stepsOf(note: Note | WorkspaceMessage, project: Project | undefined, turn: ActivityTurn | undefined) {
   if (!project)
-    return conversationSteps.get(note.text) ??
-      (turn && !turn.showPrompt && turn.text === note.text ? liveSteps(turn) : undefined);
+    return (
+      conversationSteps.get(note.text) ??
+      (turn && !turn.showPrompt && turn.text === note.text ? liveSteps(turn) : undefined)
+    );
   if ('id' in note && turn?.note?.id === note.id) return liveSteps(turn);
   return 'id' in note ? keptSteps(project.id, note.id) : undefined;
 }
@@ -120,8 +125,13 @@ export function renderMessages() {
   const children: HTMLElement[] = [];
   for (const note of notes) {
     children.push(
-      bubble(note.text, note.role === 'assistant', 'references' in note ? note.references : [], note.usage,
-        'id' in note ? note.id : undefined),
+      bubble(
+        note.text,
+        note.role === 'assistant',
+        'references' in note ? note.references : [],
+        note.usage,
+        'id' in note ? note.id : undefined,
+      ),
     );
     if (note.role === 'assistant') continue;
     const steps = stepsOf(note, project, turn);

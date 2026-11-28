@@ -9,10 +9,17 @@ import { padLink, readPad, type LinkState } from './pad-link.ts';
 import { down, inkOn, restingPad, slotColour, type Pad } from './pad-state.ts';
 
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const join = byId('join'), pad = byId('pad'), form = byId<HTMLFormElement>('code-form'), input = byId<HTMLInputElement>('code');
-const message = byId('message'), status = byId('status'), placeButton = byId<HTMLButtonElement>('place');
-const places = byId('places'), placeList = byId('place-list');
-const stick = byId('stick'), knob = byId('knob');
+const join = byId('join'),
+  pad = byId('pad'),
+  form = byId<HTMLFormElement>('code-form'),
+  input = byId<HTMLInputElement>('code');
+const message = byId('message'),
+  status = byId('status'),
+  placeButton = byId<HTMLButtonElement>('place');
+const places = byId('places'),
+  placeList = byId('place-list');
+const stick = byId('stick'),
+  knob = byId('knob');
 
 const normalized = (text: string) => text.toUpperCase().replace(/[^0-9A-Z]/g, '');
 const asked = new URLSearchParams(location.search).get('place');
@@ -30,15 +37,20 @@ function touchPad(): Pad {
 }
 function shown() {
   const held = new Set(buttons.values());
-  for (const element of pad.querySelectorAll<HTMLElement>('[data-button]')) element.classList.toggle('held', held.has(Number(element.dataset.button)));
+  for (const element of pad.querySelectorAll<HTMLElement>('[data-button]'))
+    element.classList.toggle('held', held.has(Number(element.dataset.button)));
   stick.classList.toggle('held', stickPointer !== undefined);
 }
 function steer(event: PointerEvent) {
   const box = stick.getBoundingClientRect();
   const radius = box.width / 2;
-  let x = (event.clientX - box.left - radius) / radius, y = (event.clientY - box.top - radius) / radius;
+  let x = (event.clientX - box.left - radius) / radius,
+    y = (event.clientY - box.top - radius) / radius;
   const length = Math.hypot(x, y);
-  if (length > 1) { x /= length; y /= length; }
+  if (length > 1) {
+    x /= length;
+    y /= length;
+  }
   axes[0] = x;
   axes[1] = y;
   knob.style.transform = `translate(calc(-50% + ${x * radius * 0.6}px), calc(-50% + ${y * radius * 0.6}px))`;
@@ -53,35 +65,48 @@ pad.addEventListener('pointerdown', (event) => {
   event.preventDefault();
   if (stick.contains(event.target as Node) && stickPointer === undefined) {
     stickPointer = event.pointerId;
-    try { stick.setPointerCapture(event.pointerId); } catch { /* the finger is the stick's either way */ }
+    try {
+      stick.setPointerCapture(event.pointerId);
+    } catch {
+      /* the finger is the stick's either way */
+    }
     steer(event);
-  }
-  else {
+  } else {
     const button = buttonAt(event);
     if (button !== undefined) buttons.set(event.pointerId, button);
   }
   shown();
 });
 pad.addEventListener('pointermove', (event) => {
-  if (event.pointerId === stickPointer) { steer(event); return; }
+  if (event.pointerId === stickPointer) {
+    steer(event);
+    return;
+  }
   if (!buttons.has(event.pointerId)) return;
   const button = buttonAt(event);
-  if (button === undefined) buttons.delete(event.pointerId); else buttons.set(event.pointerId, button);
+  if (button === undefined) buttons.delete(event.pointerId);
+  else buttons.set(event.pointerId, button);
   shown();
 });
-for (const type of ['pointerup', 'pointercancel'] as const) pad.addEventListener(type, (event) => {
-  if (event.pointerId === stickPointer) {
-    stickPointer = undefined;
-    axes[0] = axes[1] = 0;
-    knob.style.transform = '';
-  }
-  buttons.delete(event.pointerId);
-  shown();
-});
+for (const type of ['pointerup', 'pointercancel'] as const)
+  pad.addEventListener(type, (event) => {
+    if (event.pointerId === stickPointer) {
+      stickPointer = undefined;
+      axes[0] = axes[1] = 0;
+      knob.style.transform = '';
+    }
+    buttons.delete(event.pointerId);
+    shown();
+  });
 // No scrolling, pinching, double-tap zoom or a long press's menu on the pad.
-for (const type of ['touchstart', 'touchmove'] as const) pad.addEventListener(type, (event) => {
-  if (!places.contains(event.target as Node) && event.target !== placeButton) event.preventDefault();
-}, { passive: false });
+for (const type of ['touchstart', 'touchmove'] as const)
+  pad.addEventListener(
+    type,
+    (event) => {
+      if (!places.contains(event.target as Node) && event.target !== placeButton) event.preventDefault();
+    },
+    { passive: false },
+  );
 pad.addEventListener('contextmenu', (event) => event.preventDefault());
 document.addEventListener('gesturestart', (event) => event.preventDefault());
 
@@ -91,7 +116,10 @@ function fill() {
   if (document.fullscreenElement || typeof document.documentElement.requestFullscreen !== 'function') return;
   void document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
 }
-for (const type of ['pointerup', 'keydown'] as const) document.addEventListener(type, () => { if (!pad.hidden) fill(); });
+for (const type of ['pointerup', 'keydown'] as const)
+  document.addEventListener(type, () => {
+    if (!pad.hidden) fill();
+  });
 
 let link: ReturnType<typeof padLink> | undefined;
 let stopReading: (() => void) | undefined;
@@ -104,7 +132,8 @@ function showPlace(at: number, label: PlaceLabel | null) {
   document.documentElement.style.setProperty('--place-ink', inkOn(colour));
   placeButton.textContent = 'P' + (at + 1) + (label?.name ? ' · ' + label.name : '');
   placeButton.setAttribute('aria-label', placeButton.textContent + ': move to another place');
-  for (const button of placeList.querySelectorAll<HTMLButtonElement>('button')) button.setAttribute('aria-pressed', String(Number(button.dataset.place) === at));
+  for (const button of placeList.querySelectorAll<HTMLButtonElement>('button'))
+    button.setAttribute('aria-pressed', String(Number(button.dataset.place) === at));
 }
 function onState(code: string, state: LinkState) {
   if (state.state === 'joining') status.textContent = 'Joining ' + code + '…';
@@ -133,11 +162,16 @@ function start(code: string) {
   message.textContent = '';
   history.replaceState(null, '', '/pad/' + code + location.search);
   document.title = 'Zirbel · Controller ' + code;
-  link = padLink(code, (state) => onState(code, state),
-    { place: offered });
+  link = padLink(code, (state) => onState(code, state), { place: offered });
   // The phone's own gamepad while one is connected, else the touch pad.
-  stopReading = readPad(touchPad, (state) => link?.update(state),
-    (gamepad) => { pad.classList.toggle('gamepad', Boolean(gamepad)); status.textContent = gamepad ? 'Sending your gamepad: ' + gamepad : ''; });
+  stopReading = readPad(
+    touchPad,
+    (state) => link?.update(state),
+    (gamepad) => {
+      pad.classList.toggle('gamepad', Boolean(gamepad));
+      status.textContent = gamepad ? 'Sending your gamepad: ' + gamepad : '';
+    },
+  );
 }
 
 // Another place, where it is free: the host moves this pad, or leaves it where it is.
@@ -166,12 +200,18 @@ placeButton.addEventListener('click', () => {
   places.hidden = !places.hidden;
   placeButton.setAttribute('aria-expanded', String(!places.hidden));
 });
-byId('places-close').addEventListener('click', () => { places.hidden = true; placeButton.setAttribute('aria-expanded', 'false'); });
+byId('places-close').addEventListener('click', () => {
+  places.hidden = true;
+  placeButton.setAttribute('aria-expanded', 'false');
+});
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
   const code = normalized(input.value);
-  if (code.length !== 4) { message.textContent = 'A screen’s code has four letters and numbers.'; return; }
+  if (code.length !== 4) {
+    message.textContent = 'A screen’s code has four letters and numbers.';
+    return;
+  }
   start(code);
 });
 const fromAddress = normalized(decodeURIComponent(location.pathname.split('/')[2] ?? ''));

@@ -7,10 +7,18 @@ import type { modelPicker } from './model-picker.ts';
 
 /** What /api/health says of a box (box mode): its switches, whether harnesses can run on it, and its memory. */
 export type BoxHealth = {
-  harnesses: boolean; externalMcp: boolean; onboarded: boolean; setupRequested: boolean; ownNetwork: boolean;
-  canRunHarnesses: boolean; harnessesUnavailable?: string; memoryMB: number; name: string;
+  harnesses: boolean;
+  externalMcp: boolean;
+  onboarded: boolean;
+  setupRequested: boolean;
+  ownNetwork: boolean;
+  canRunHarnesses: boolean;
+  harnessesUnavailable?: string;
+  memoryMB: number;
+  name: string;
   /** Whether a TV plugged into the box shows its lobby, and whether this box has the console that does it. */
-  tv: boolean; canShowTv: boolean;
+  tv: boolean;
+  canShowTv: boolean;
 };
 /** Who this page is, as /api/me says on a box: the box itself, an owner, or an editor of one game. */
 export type Me = { role: 'box' | 'owner' | 'editor'; game?: string };
@@ -22,11 +30,22 @@ export type WorkspaceMessage = { role: 'creator' | 'assistant'; text: string; us
 export type ChatReply = { projectId?: string; branch?: string; conversation?: WorkspaceMessage[]; proposalId?: string };
 export type ProjectCard = Pick<Project, 'id' | 'title' | 'template'>;
 export type ActivityTurn = {
-  name: string; text: string; references: Reference[]; status: string; pending: boolean; showPrompt: boolean;
-  connection?: AbortController; id?: string; note?: Note; failed?: boolean; stopping?: boolean;
+  name: string;
+  text: string;
+  references: Reference[];
+  status: string;
+  pending: boolean;
+  showPrompt: boolean;
+  connection?: AbortController;
+  id?: string;
+  note?: Note;
+  failed?: boolean;
+  stopping?: boolean;
   /** Stop was pressed before the turn's id arrived: it is sent once the id does. */
   stopRequested?: boolean;
-  startedAt: number; log: TurnLog; actions: Map<string, HarnessAction>;
+  startedAt: number;
+  log: TurnLog;
+  actions: Map<string, HarnessAction>;
   /** The turn's steps as the thread draws them, kept while the turn is shown. */
   steps?: HTMLElement;
 };
@@ -69,12 +88,12 @@ export const ws = {
 
 export const activityTurns = new Map<string, ActivityTurn>();
 export const promptDrafts = new Map<string, string>();
-export const threadKey = (id: string | undefined, name: string) => id ? id + '/' + name : '';
+export const threadKey = (id: string | undefined, name: string) => (id ? id + '/' + name : '');
 export const activityKey = () => threadKey(ws.project?.id, ws.branch);
 export const visibleTurn = () => activityTurns.get(activityKey());
 export const chatBusy = () => visibleTurn()?.pending === true;
 /** The one game this page edits, when it is an editor's on a box. */
-export const editorOf = () => ws.me.role === 'editor' ? ws.me.game : undefined;
+export const editorOf = () => (ws.me.role === 'editor' ? ws.me.game : undefined);
 export const lastProjectKey = 'zirbel-last-project-v1';
 export const workspaceThreadKey = 'zirbel-workspace-thread-v1';
 export const recentProjectsKey = 'zirbel-recent-projects-v1';

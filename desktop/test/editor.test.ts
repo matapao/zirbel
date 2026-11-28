@@ -30,7 +30,13 @@ ${code}\n`,
   return file;
 }
 const started = () =>
-  JSON.parse(readFileSync(RECORD, 'utf8')) as { args: string[]; asNode?: string; pid: number; channel: boolean; views?: string };
+  JSON.parse(readFileSync(RECORD, 'utf8')) as {
+    args: string[];
+    asNode?: string;
+    pid: number;
+    channel: boolean;
+    views?: string;
+  };
 const announce = (fields: object) => `console.log(JSON.stringify(${JSON.stringify({ editor: ADDRESS, ...fields })}));`;
 const KEEP_RUNNING = 'setInterval(() => {}, 1000);';
 
@@ -120,33 +126,37 @@ test('an editor that names no address in time is stopped', async () => {
 const REPO = path.join(import.meta.dirname, '..', '..', '..');
 const SERVER = path.join(REPO, 'dist', 'server.mjs');
 
-test('the real editor ends with the app that started it, even when the app is killed', { skip: !existsSync(SERVER) && 'pnpm build in the repository first' }, async (t) => {
-  const data = path.join(folder, 'data');
-  const editorModule = path.join(import.meta.dirname, '..', 'src', 'editor.js');
-  const app = spawn(
-    process.execPath,
-    [
-      '--input-type=module',
-      '-e',
-      `import { startEditor } from ${JSON.stringify(editorModule)};
+test(
+  'the real editor ends with the app that started it, even when the app is killed',
+  { skip: !existsSync(SERVER) && 'pnpm build in the repository first' },
+  async (t) => {
+    const data = path.join(folder, 'data');
+    const editorModule = path.join(import.meta.dirname, '..', 'src', 'editor.js');
+    const app = spawn(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import { startEditor } from ${JSON.stringify(editorModule)};
 const editor = await startEditor({ runtime: process.execPath, server: ${JSON.stringify(SERVER)} });
 console.log(editor.url);
 setInterval(() => {}, 1000);`,
-    ],
-    {
-      env: { ...process.env, ZIRBEL_DATA: data, ZIRBEL_ACCOUNT_DIR: path.join(folder, 'account') },
-      stdio: ['ignore', 'pipe', 'inherit'],
-    },
-  );
-  t.after(() => app.kill('SIGKILL'));
-  const first = await createInterface({ input: app.stdout })[Symbol.asyncIterator]().next();
-  assert.match(String(first.value), /^http:\/\/127\.0\.0\.1:\d+$/);
-  const owner = await until(() => claim(data), "the editor's claim on the data folder");
-  assert.ok(alive(owner.pid));
-  app.kill('SIGKILL');
-  await until(() => !alive(owner.pid), 'the editor to end with its app');
-  assert.equal(claim(data), undefined, 'it released the data folder as it ended');
-});
+      ],
+      {
+        env: { ...process.env, ZIRBEL_DATA: data, ZIRBEL_ACCOUNT_DIR: path.join(folder, 'account') },
+        stdio: ['ignore', 'pipe', 'inherit'],
+      },
+    );
+    t.after(() => app.kill('SIGKILL'));
+    const first = await createInterface({ input: app.stdout })[Symbol.asyncIterator]().next();
+    assert.match(String(first.value), /^http:\/\/127\.0\.0\.1:\d+$/);
+    const owner = await until(() => claim(data), "the editor's claim on the data folder");
+    assert.ok(alive(owner.pid));
+    app.kill('SIGKILL');
+    await until(() => !alive(owner.pid), 'the editor to end with its app');
+    assert.equal(claim(data), undefined, 'it released the data folder as it ended');
+  },
+);
 
 test('the app asks the editor how many turns are running before it quits', async () => {
   let turns: unknown = 2;
@@ -161,7 +171,10 @@ test('the app asks the editor how many turns are running before it quits', async
     assert.equal(await runningTurns(url), 2);
     // A running turn: the person is asked, and their answer decides. A signal, or an editor the app didn't start, isn't.
     let asked = 0;
-    const answer = (yes: boolean) => async () => { asked++; return yes; };
+    const answer = (yes: boolean) => async () => {
+      asked++;
+      return yes;
+    };
     assert.equal(await mayQuit({ owned: true, url }, false, answer(false)), false);
     assert.equal(await mayQuit({ owned: true, url }, false, answer(true)), true);
     assert.equal(await mayQuit({ owned: true, url }, true, answer(false)), true);

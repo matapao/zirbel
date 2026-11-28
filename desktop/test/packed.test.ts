@@ -43,35 +43,49 @@ test('the packed app, started from its bundle', { timeout: 10 * 60_000 }, async 
   page = await app.firstWindow();
   await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/$/, { timeout: 60_000 });
 
-  await t.test('the bundle is signed, and holds the built dist/ and the Codex SDK, linked to nothing outside it', () => {
-    assert.equal(spawnSync('codesign', ['--verify', '--deep', '--strict', BUNDLE]).status, 0, 'valid as signed');
-    const built = files(path.join(REPO, 'dist')).filter((file) => !file.endsWith('.DS_Store'));
-    const different = built.filter(
-      (file) => !fs.readFileSync(path.join(EDITOR, file)).equals(fs.readFileSync(path.join(REPO, 'dist', file))),
-    );
-    assert.deepEqual(different, [], "the checkout's dist/, as built");
-    const modules = path.join(EDITOR, 'node_modules');
-    assert.ok(fs.existsSync(path.join(modules, '@openai', 'codex-sdk', 'package.json')), 'the Codex SDK');
-    // What a harness turn's node_modules links to: three.js in the built dist/, TypeScript and esbuild with their binaries.
-    assert.ok(fs.existsSync(path.join(EDITOR, 'web', 'three', 'package.json')), 'three.js as a package');
-    for (const name of ['typescript', `@typescript/typescript-darwin-${process.arch}`, 'esbuild', `@esbuild/darwin-${process.arch}`])
-      assert.ok(fs.existsSync(path.join(modules, name, 'package.json')), name);
-    assert.ok(!fs.existsSync(path.join(modules, '@openai', `codex-darwin-${process.arch}`)), 'no copy of Codex: the person’s own runs');
-    const scopes = fs.readdirSync(modules).filter((name) => name.startsWith('@'));
-    const packages = scopes.flatMap((scope) =>
-      fs.readdirSync(path.join(modules, scope)).map((name) => `${scope}/${name}`),
-    );
-    assert.ok(!packages.some((name) => name.startsWith('@anthropic-ai/')), "nothing under Anthropic's terms");
-    const links = fs
-      .readdirSync(path.join(BUNDLE, 'Contents', 'Resources'), { recursive: true, withFileTypes: true })
-      .filter((entry) => entry.isSymbolicLink())
-      .map((entry) => path.join(entry.parentPath, entry.name))
-      .filter((link) => !fs.existsSync(link) || !fs.realpathSync(link).startsWith(BUNDLE + path.sep));
-    assert.deepEqual(links, [], 'no link out of the bundle');
-    assert.ok(!fs.existsSync(path.join(BUNDLE, 'Contents', 'Resources', 'default_app.asar')), 'no Electron default app');
-    const licences = ['LICENSE.txt', 'LICENSE.electron.txt', 'LICENSES.chromium.html'];
-    for (const file of licences) assert.ok(fs.existsSync(path.join(BUNDLE, 'Contents', 'Resources', file)), file);
-  });
+  await t.test(
+    'the bundle is signed, and holds the built dist/ and the Codex SDK, linked to nothing outside it',
+    () => {
+      assert.equal(spawnSync('codesign', ['--verify', '--deep', '--strict', BUNDLE]).status, 0, 'valid as signed');
+      const built = files(path.join(REPO, 'dist')).filter((file) => !file.endsWith('.DS_Store'));
+      const different = built.filter(
+        (file) => !fs.readFileSync(path.join(EDITOR, file)).equals(fs.readFileSync(path.join(REPO, 'dist', file))),
+      );
+      assert.deepEqual(different, [], "the checkout's dist/, as built");
+      const modules = path.join(EDITOR, 'node_modules');
+      assert.ok(fs.existsSync(path.join(modules, '@openai', 'codex-sdk', 'package.json')), 'the Codex SDK');
+      // What a harness turn's node_modules links to: three.js in the built dist/, TypeScript and esbuild with their binaries.
+      assert.ok(fs.existsSync(path.join(EDITOR, 'web', 'three', 'package.json')), 'three.js as a package');
+      for (const name of [
+        'typescript',
+        `@typescript/typescript-darwin-${process.arch}`,
+        'esbuild',
+        `@esbuild/darwin-${process.arch}`,
+      ])
+        assert.ok(fs.existsSync(path.join(modules, name, 'package.json')), name);
+      assert.ok(
+        !fs.existsSync(path.join(modules, '@openai', `codex-darwin-${process.arch}`)),
+        'no copy of Codex: the person’s own runs',
+      );
+      const scopes = fs.readdirSync(modules).filter((name) => name.startsWith('@'));
+      const packages = scopes.flatMap((scope) =>
+        fs.readdirSync(path.join(modules, scope)).map((name) => `${scope}/${name}`),
+      );
+      assert.ok(!packages.some((name) => name.startsWith('@anthropic-ai/')), "nothing under Anthropic's terms");
+      const links = fs
+        .readdirSync(path.join(BUNDLE, 'Contents', 'Resources'), { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isSymbolicLink())
+        .map((entry) => path.join(entry.parentPath, entry.name))
+        .filter((link) => !fs.existsSync(link) || !fs.realpathSync(link).startsWith(BUNDLE + path.sep));
+      assert.deepEqual(links, [], 'no link out of the bundle');
+      assert.ok(
+        !fs.existsSync(path.join(BUNDLE, 'Contents', 'Resources', 'default_app.asar')),
+        'no Electron default app',
+      );
+      const licences = ['LICENSE.txt', 'LICENSE.electron.txt', 'LICENSES.chromium.html'];
+      for (const file of licences) assert.ok(fs.existsSync(path.join(BUNDLE, 'Contents', 'Resources', file)), file);
+    },
+  );
 
   await t.test('started from its bundle, the app opens the editor that runs inside it', async () => {
     const owner = await until(() => claim(made.data), "the editor's claim on the data folder");

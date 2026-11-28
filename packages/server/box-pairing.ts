@@ -23,7 +23,11 @@ export const SESSION_COOKIE = 'zirbel_session';
 
 const iso = z.iso.datetime();
 const device = z.strictObject({
-  id, label: z.string().max(80), tokenHash: z.string().regex(/^[0-9a-f]{64}$/), createdAt: iso, lastSeen: iso,
+  id,
+  label: z.string().max(80),
+  tokenHash: z.string().regex(/^[0-9a-f]{64}$/),
+  createdAt: iso,
+  lastSeen: iso,
 });
 /** claimed: a device has been paired before. Until one is, the first device on the network may claim the box. */
 const store = z.strictObject({ version: z.literal(1), claimed: z.boolean(), devices: z.array(device).max(DEVICES) });
@@ -38,9 +42,21 @@ export function normalizeCode(input: string) {
 }
 
 /** Browsers and systems by a mark in the User-Agent, in order: the first that matches names it. */
-const BROWSERS = [[/Edg\//, 'Edge'], [/Firefox\//, 'Firefox'], [/Chrome\//, 'Chrome'], [/Safari\//, 'Safari']] as const;
-const SYSTEMS = [[/iPhone/, 'iPhone'], [/iPad/, 'iPad'], [/Android/, 'Android'], [/CrOS/, 'ChromeOS'],
-  [/Mac OS X/, 'Mac'], [/Windows/, 'Windows'], [/Linux/, 'Linux']] as const;
+const BROWSERS = [
+  [/Edg\//, 'Edge'],
+  [/Firefox\//, 'Firefox'],
+  [/Chrome\//, 'Chrome'],
+  [/Safari\//, 'Safari'],
+] as const;
+const SYSTEMS = [
+  [/iPhone/, 'iPhone'],
+  [/iPad/, 'iPad'],
+  [/Android/, 'Android'],
+  [/CrOS/, 'ChromeOS'],
+  [/Mac OS X/, 'Mac'],
+  [/Windows/, 'Windows'],
+  [/Linux/, 'Linux'],
+] as const;
 
 /** A short name for the device a browser runs on, from its User-Agent. */
 export function deviceLabel(agent = '') {
@@ -105,7 +121,9 @@ export class Pairing {
 
   /** Whether the box can still be claimed: no device was ever paired with it. Once one has been, it stays closed, also
    *  after every device is removed; then only a code pairs, from a paired device or the box itself. */
-  get claimable() { return !this.read().claimed; }
+  get claimable() {
+    return !this.read().claimed;
+  }
 
   /** Pairs the first device, while the box can be claimed: its session's token. */
   claim(agent?: string) {
@@ -115,10 +133,17 @@ export class Pairing {
 
   private pair(agent?: string) {
     const { devices } = this.read();
-    if (devices.length >= DEVICES) throw new ZirbelError(409, 'This box has as many paired devices as it keeps. Remove one first.');
+    if (devices.length >= DEVICES)
+      throw new ZirbelError(409, 'This box has as many paired devices as it keeps. Remove one first.');
     const token = randomBytes(32).toString('base64url');
     const stamp = new Date(this.now()).toISOString();
-    devices.push({ id: newId(), label: deviceLabel(agent), tokenHash: sha256(token).toString('hex'), createdAt: stamp, lastSeen: stamp });
+    devices.push({
+      id: newId(),
+      label: deviceLabel(agent),
+      tokenHash: sha256(token).toString('hex'),
+      createdAt: stamp,
+      lastSeen: stamp,
+    });
     this.write(devices, true);
     return token;
   }
@@ -149,7 +174,9 @@ export class Pairing {
     this.write(kept, claimed);
   }
 
-  get count() { return this.read().devices.length; }
+  get count() {
+    return this.read().devices.length;
+  }
 
   private prune() {
     const at = this.now();
@@ -159,11 +186,18 @@ export class Pairing {
 
   private read() {
     let text: string;
-    try { text = readFileSync(this.file, 'utf8'); } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1 as const, claimed: false, devices: [] as Device[] };
+    try {
+      text = readFileSync(this.file, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+        return { version: 1 as const, claimed: false, devices: [] as Device[] };
       throw error;
     }
-    try { return store.parse(JSON.parse(text)); } catch { throw new ZirbelError(500, 'The paired devices could not be read.'); }
+    try {
+      return store.parse(JSON.parse(text));
+    } catch {
+      throw new ZirbelError(500, 'The paired devices could not be read.');
+    }
   }
 
   private write(devices: Device[], claimed: boolean) {

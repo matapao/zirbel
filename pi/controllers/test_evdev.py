@@ -32,22 +32,72 @@ HAT = (0, -1, 1)
 # A USB pad as the xpad driver reports one: standard codes, triggers 0 to 255 on ABS_Z and ABS_RZ, the d-pad as a hat.
 USB_PAD = Recorded(
     "USB gamepad",
-    keys=[ev.BTN_SOUTH, ev.BTN_EAST, ev.BTN_NORTH, ev.BTN_WEST, ev.BTN_TL, ev.BTN_TR, ev.BTN_SELECT, ev.BTN_START,
-          ev.BTN_MODE, ev.BTN_THUMBL, ev.BTN_THUMBR],
-    axes={ev.ABS_X: STICK, ev.ABS_Y: STICK, ev.ABS_Z: (0, 0, 255), ev.ABS_RX: STICK, ev.ABS_RY: STICK,
-          ev.ABS_RZ: (0, 0, 255), ev.ABS_HAT0X: HAT, ev.ABS_HAT0Y: HAT},
-    ff=[ev.FF_RUMBLE, 0x51, 0x52, 0x53])
+    keys=[
+        ev.BTN_SOUTH,
+        ev.BTN_EAST,
+        ev.BTN_NORTH,
+        ev.BTN_WEST,
+        ev.BTN_TL,
+        ev.BTN_TR,
+        ev.BTN_SELECT,
+        ev.BTN_START,
+        ev.BTN_MODE,
+        ev.BTN_THUMBL,
+        ev.BTN_THUMBR,
+    ],
+    axes={
+        ev.ABS_X: STICK,
+        ev.ABS_Y: STICK,
+        ev.ABS_Z: (0, 0, 255),
+        ev.ABS_RX: STICK,
+        ev.ABS_RY: STICK,
+        ev.ABS_RZ: (0, 0, 255),
+        ev.ABS_HAT0X: HAT,
+        ev.ABS_HAT0Y: HAT,
+    },
+    ff=[ev.FF_RUMBLE, 0x51, 0x52, 0x53],
+)
 # A Bluetooth pad as hid-playstation reports one, sticks 0 to 255 centred at 128; its motion sensors and touchpad are
 # devices of their own.
 BT_PAD = Recorded(
-    "Wireless Controller", bus=ev.BUS_BLUETOOTH, uniq="a0:b1:c2:d3:e4:f5", phys="b8:27:eb:00:00:01",
-    keys=[ev.BTN_SOUTH, ev.BTN_EAST, ev.BTN_NORTH, ev.BTN_WEST, ev.BTN_TL, ev.BTN_TR, ev.BTN_TL2, ev.BTN_TR2,
-          ev.BTN_SELECT, ev.BTN_START, ev.BTN_MODE, ev.BTN_THUMBL, ev.BTN_THUMBR],
-    axes={ev.ABS_X: (128, 0, 255), ev.ABS_Y: (128, 0, 255), ev.ABS_Z: (0, 0, 255), ev.ABS_RX: (128, 0, 255),
-          ev.ABS_RY: (128, 0, 255), ev.ABS_RZ: (0, 0, 255), ev.ABS_HAT0X: HAT, ev.ABS_HAT0Y: HAT},
-    ff=[ev.FF_RUMBLE])
-BT_PAD_MOTION = Recorded("Wireless Controller Motion Sensors", bus=ev.BUS_BLUETOOTH, uniq="a0:b1:c2:d3:e4:f5",
-                         axes={code: (0, -32768, 32767) for code in range(6)}, props=[ev.INPUT_PROP_ACCELEROMETER])
+    "Wireless Controller",
+    bus=ev.BUS_BLUETOOTH,
+    uniq="a0:b1:c2:d3:e4:f5",
+    phys="b8:27:eb:00:00:01",
+    keys=[
+        ev.BTN_SOUTH,
+        ev.BTN_EAST,
+        ev.BTN_NORTH,
+        ev.BTN_WEST,
+        ev.BTN_TL,
+        ev.BTN_TR,
+        ev.BTN_TL2,
+        ev.BTN_TR2,
+        ev.BTN_SELECT,
+        ev.BTN_START,
+        ev.BTN_MODE,
+        ev.BTN_THUMBL,
+        ev.BTN_THUMBR,
+    ],
+    axes={
+        ev.ABS_X: (128, 0, 255),
+        ev.ABS_Y: (128, 0, 255),
+        ev.ABS_Z: (0, 0, 255),
+        ev.ABS_RX: (128, 0, 255),
+        ev.ABS_RY: (128, 0, 255),
+        ev.ABS_RZ: (0, 0, 255),
+        ev.ABS_HAT0X: HAT,
+        ev.ABS_HAT0Y: HAT,
+    },
+    ff=[ev.FF_RUMBLE],
+)
+BT_PAD_MOTION = Recorded(
+    "Wireless Controller Motion Sensors",
+    bus=ev.BUS_BLUETOOTH,
+    uniq="a0:b1:c2:d3:e4:f5",
+    axes={code: (0, -32768, 32767) for code in range(6)},
+    props=[ev.INPUT_PROP_ACCELEROMETER],
+)
 BT_PAD_TOUCHPAD = Recorded(
     "Wireless Controller Touchpad",
     bus=ev.BUS_BLUETOOTH,
@@ -57,19 +107,51 @@ BT_PAD_TOUCHPAD = Recorded(
 )
 KEYBOARD = Recorded("USB keyboard", keys=list(range(1, 128)))
 # A flight stick as hid-generic reports one: joystick buttons from BTN_TRIGGER, a twist on ABS_RZ and a throttle.
-FLIGHT_STICK = Recorded("Flight stick", keys=list(range(0x120, 0x12C)),
-                        axes={ev.ABS_X: (512, 0, 1023), ev.ABS_Y: (512, 0, 1023), ev.ABS_RZ: (128, 0, 255),
-                              0x06: (0, 0, 255), ev.ABS_HAT0X: HAT, ev.ABS_HAT0Y: HAT})
+FLIGHT_STICK = Recorded(
+    "Flight stick",
+    keys=list(range(0x120, 0x12C)),
+    axes={
+        ev.ABS_X: (512, 0, 1023),
+        ev.ABS_Y: (512, 0, 1023),
+        ev.ABS_RZ: (128, 0, 255),
+        0x06: (0, 0, 255),
+        ev.ABS_HAT0X: HAT,
+        ev.ABS_HAT0Y: HAT,
+    },
+)
 # A generic HID pad: gamepad buttons, and its right stick on ABS_Z and ABS_RZ.
-HID_PAD = Recorded("Generic gamepad",
-                   keys=[ev.BTN_SOUTH, ev.BTN_EAST, 0x132, ev.BTN_NORTH, ev.BTN_WEST, 0x135, ev.BTN_TL, ev.BTN_TR,
-                         ev.BTN_TL2, ev.BTN_TR2, ev.BTN_SELECT, ev.BTN_START],
-                   axes={ev.ABS_X: (128, 0, 255), ev.ABS_Y: (128, 0, 255), ev.ABS_Z: (128, 0, 255),
-                         ev.ABS_RZ: (128, 0, 255), ev.ABS_HAT0X: HAT, ev.ABS_HAT0Y: HAT})
+HID_PAD = Recorded(
+    "Generic gamepad",
+    keys=[
+        ev.BTN_SOUTH,
+        ev.BTN_EAST,
+        0x132,
+        ev.BTN_NORTH,
+        ev.BTN_WEST,
+        0x135,
+        ev.BTN_TL,
+        ev.BTN_TR,
+        ev.BTN_TL2,
+        ev.BTN_TR2,
+        ev.BTN_SELECT,
+        ev.BTN_START,
+    ],
+    axes={
+        ev.ABS_X: (128, 0, 255),
+        ev.ABS_Y: (128, 0, 255),
+        ev.ABS_Z: (128, 0, 255),
+        ev.ABS_RZ: (128, 0, 255),
+        ev.ABS_HAT0X: HAT,
+        ev.ABS_HAT0Y: HAT,
+    },
+)
 # A wheel: its own buttons, the wheel on ABS_X and pedals.
-WHEEL = Recorded("Racing wheel", keys=[*range(0x120, 0x130), 0x2C0, 0x2C1],
-                 axes={ev.ABS_X: (32768, 0, 65535), ev.ABS_Y: (255, 0, 255), ev.ABS_Z: (255, 0, 255),
-                       ev.ABS_RZ: (255, 0, 255)}, ff=[0x52])
+WHEEL = Recorded(
+    "Racing wheel",
+    keys=[*range(0x120, 0x130), 0x2C0, 0x2C1],
+    axes={ev.ABS_X: (32768, 0, 65535), ev.ABS_Y: (255, 0, 255), ev.ABS_Z: (255, 0, 255), ev.ABS_RZ: (255, 0, 255)},
+    ff=[0x52],
+)
 
 
 def bitmap(codes, length: int) -> bytes:
@@ -123,8 +205,9 @@ class FakeKernel:
         elif number == 0x18:
             answer = bitmap(self.held[fd], size)
         elif number == 0x20:
-            kinds = [ev.EV_SYN] + [kind for kind, has in ((ev.EV_KEY, device.keys), (ev.EV_ABS, device.axes),
-                                                          (ev.EV_FF, device.ff)) if has]
+            kinds = [ev.EV_SYN] + [
+                kind for kind, has in ((ev.EV_KEY, device.keys), (ev.EV_ABS, device.axes), (ev.EV_FF, device.ff)) if has
+            ]
             answer = bitmap(kinds, size)
         elif number == 0x20 + ev.EV_KEY:
             answer = bitmap(device.keys, size)

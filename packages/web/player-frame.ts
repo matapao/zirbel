@@ -8,8 +8,13 @@ import { bridgeFrame, gameFrame as sandboxedFrame, localSpace, type PageSpace } 
 
 /** What the frame needs of the page: its room and seats as they are now, its controllers, and the room to send to. */
 type Page = {
-  room: string; error: HTMLElement; info: () => RoomInfo; seat: () => SeatInfo | undefined; seats: () => SeatInfo[];
-  controllers: () => Controllers | undefined; send: (value: unknown) => void;
+  room: string;
+  error: HTMLElement;
+  info: () => RoomInfo;
+  seat: () => SeatInfo | undefined;
+  seats: () => SeatInfo[];
+  controllers: () => Controllers | undefined;
+  send: (value: unknown) => void;
 };
 
 /** The page's authored game: none until a session's space or open makes its frame, and none again after close. */
@@ -35,7 +40,9 @@ export function gameFrame({ room, error, info, seat: self, seats, controllers, s
     // A WindowProxy survives navigation. This port belongs to the document that opened it.
     gamePort?.close();
     gamePort = port;
-    port.onmessage = ({ data }) => { if (gamePort === port) receiveGameMessage(data); };
+    port.onmessage = ({ data }) => {
+      if (gamePort === port) receiveGameMessage(data);
+    };
     updateRoom();
     controllers()?.attach(port);
   });
@@ -46,15 +53,24 @@ export function gameFrame({ room, error, info, seat: self, seats, controllers, s
   let stateTimer: ReturnType<typeof setTimeout> | undefined;
   function sendLatestState(value: unknown) {
     latestState = value;
-    stateTimer ??= setTimeout(() => { stateTimer = undefined; send(latestState); }, 50);
+    stateTimer ??= setTimeout(() => {
+      stateTimer = undefined;
+      send(latestState);
+    }, 50);
   }
 
   function receiveGameMessage(data: MessageEvent['data']) {
     const { type, value } = data ?? {};
     if (type === 'zirbel.rumble' || type === 'zirbel.place') controllers()?.fromGame(type, value);
     if (type === 'zirbel.error' && typeof value === 'string') error.textContent = value.slice(0, 500);
-    if (type === 'zirbel.state' && info().manifest.simulation === 'shared-state-v1' && self()?.role === 'player' &&
-        boundedJson(value) && JSON.stringify(value).length <= 4096) sendLatestState(value);
+    if (
+      type === 'zirbel.state' &&
+      info().manifest.simulation === 'shared-state-v1' &&
+      self()?.role === 'player' &&
+      boundedJson(value) &&
+      JSON.stringify(value).length <= 4096
+    )
+      sendLatestState(value);
     if (type === 'zirbel.objects' && window.parent !== window && info().solo && info().registerObjects !== false) {
       const objects = objectRegistry.safeParse(value);
       // frame-ancestors lets only the editor frame the player, so the parent is the editor; the payload is the validated registry.
@@ -76,8 +92,10 @@ export function gameFrame({ room, error, info, seat: self, seats, controllers, s
      *  which loads once the page has the room's info (open). gone hears when the game left the space and didn't come back
      *  in time. */
     share: async (space: PageSpace, gone: () => void) => {
-      const frame = authoredFrame = sandboxedFrame();
-      endBridge = await bridgeFrame(frame, space, () => { if (frame === authoredFrame) gone(); });
+      const frame = (authoredFrame = sandboxedFrame());
+      endBridge = await bridgeFrame(frame, space, () => {
+        if (frame === authoredFrame) gone();
+      });
     },
     /** Opens the game at gameUrl in a frame first in the view (a session's own, else a new one); a net game that plays
      *  alone shares a space of the page's own with it. */

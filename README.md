@@ -48,12 +48,12 @@ The app's editor needs git 2.38 or later (on a Mac, the Command Line Tools' git:
 
 A revision is one HTML document, or a built web folder imported with its files. Module scripts can `import * as THREE from 'three'`, and three.js's addons from `three/addons/...` (for example `three/addons/loaders/GLTFLoader.js`); the host serves both from its own build, with the Draco, Basis and meshopt decoders the addons load. Every game gets the same sandbox: WebAssembly, workers, and `data:` and `blob:` URLs, but no network. The sandbox provides:
 
-| API | Purpose |
-| --- | --- |
+| API                                             | Purpose                                                                      |
+| ----------------------------------------------- | ---------------------------------------------------------------------------- |
 | `zirbel.register(id, props)` / `unregister(id)` | Show or update an object in the inspector (max 512 entries, 4096 chars each) |
-| `zirbel.assets[id]` | Data URL for an imported image |
-| `zirbel.send(state)` | Share this player's JSON state |
-| `zirbel.onRoom(cb)` | Get seat, room seats and state per seat. Returns an unsubscribe function |
+| `zirbel.assets[id]`                             | Data URL for an imported image                                               |
+| `zirbel.send(state)`                            | Share this player's JSON state                                               |
+| `zirbel.onRoom(cb)`                             | Get seat, room seats and state per seat. Returns an unsubscribe function     |
 
 A game can bring its own netcode instead, for up to 16 players: its document says `net: true`, or the built folder it was imported from has a `zirbel.json` whose `players.max` is above 1. A session of it is a **space** of the spaces kernel, which each host runs beside it as a child process (its binary from `deps/`, or `--spaces-binary`, `ZIRBEL_SPACES_BINARY`): the space's members are the session's players, one of them leads, and the space carries their messages without reading them. The host passes `/.skalet/*` on its listeners to the kernel. The player page joins the space with the invitation or ticket in its link and shares it with the game's frame, and the game joins it through its parent with the net module, which it imports from `/.skalet/net.js`; its sandbox may reach that module, `/.skalet/spaces.js` and `/.skalet/spaces`, and nothing else on the network. Its `zirbel.json` can also name an adapter, `"multiplayer": { "adapter": "zirbel-adapter.js" }`, one of the folder's `.js` or `.mjs` files: the game page loads it as a module after the game's own document, so the game itself carries nothing of Zirbel's. [`skills/zirbel-multiplayer/SKILL.md`](skills/zirbel-multiplayer/SKILL.md) shows how, and [`packages/server/guides/net-api.md`](packages/server/guides/net-api.md) describes the net module's API. Without the kernel's binary, the lobby says multiplayer isn't available and these games play alone; under a host that runs the kernel already (its socket in `SKALET_SPACES`), Zirbel runs none and uses that one.
 
@@ -78,7 +78,6 @@ A box made from `pi/` (`node pi/image/build.mjs`) comes online through its own W
 A box made from `pi/` also takes gamepads, joysticks and wheels: plugged into its USB, or paired over Bluetooth in Box settings' Controllers, where **Pair a Bluetooth controller** looks for 30 seconds and lists the gamepads it finds, and **Forget** lets one go. Each plays on a screen as a standard gamepad, and Controllers shows which screen and place it has. A service of its own reads them, never as root and with no network of its own, and hands them to the host; their input is never kept. Every player listener also serves the lobby's TV page at `/tv`, for a TV's own browser, a console's or a laptop cast to a TV: big tiles moved around with a remote's arrows, OK and Back or any gamepad, and places P1 to P8 that phones take by a QR code and gamepads by pressing A. Starting or joining a session there plays the game on that screen, and leaving it comes back.
 
 Box settings has three switches. **Harnesses** runs Claude Code or Codex on the box. It starts on where they are made for the system and the box has at least 2 GB of memory, and while it is off nothing of theirs runs. **External MCP access** lets agents elsewhere on the network use the box's games at `/mcp`, each with a project grant from the game's Agent access. It starts off, and while off `/mcp` answers only the box itself. **Show the lobby on a TV** shows the lobby on a TV or monitor plugged into the box's HDMI: on a 64-bit box, Chromium runs full screen on the lobby's TV page as a user of its own, whenever a display is plugged in and the switch is on. It starts on where the box has at least 2 GB of memory. The Go host takes `--box` too (`zirbel-host --box --port 80`), with the same pairing, switches and files. It runs no harnesses, so it suits a box whose system Claude Code and Codex are not made for, such as a 32-bit board: agents on your own computer use its games over MCP, and it shows a pairing link and code without a QR code.
-
 
 ### What Zirbel trusts
 

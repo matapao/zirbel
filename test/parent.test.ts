@@ -11,7 +11,12 @@ import { tempDir } from './helpers.ts';
 const SERVER = resolve('dist/server.mjs');
 
 function alive(pid: number) {
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function until(check: () => boolean, what: string, ms = 20_000) {
@@ -40,14 +45,22 @@ for (const [way, stdio, env] of [
   ['its IPC channel closes', "['ignore', 'pipe', 'inherit', 'ipc']", {}],
   ['its stdin ends, when asked to', "['pipe', 'pipe', 'inherit']", { ZIRBEL_EXIT_WITH_STDIN: '1' }],
 ] as const) {
-  test('the editor ends when the program that started it is killed: ' + way, { skip: !existsSync(SERVER) && 'pnpm build first' }, async (t) => {
-    const { parent, data } = parentOf(stdio, env, t);
-    const first = await createInterface({ input: parent.stdout })[Symbol.asyncIterator]().next();
-    const editor = Number(first.value);
-    assert.ok(alive(editor), 'the editor started');
-    await until(() => existsSync(join(data, 'service.json')), 'the editor to claim its data folder');
-    parent.kill('SIGKILL');
-    await until(() => !alive(editor), 'the editor to end');
-    assert.equal(existsSync(join(data, 'service.json')), false, 'it stopped as on SIGTERM, releasing its data folder');
-  });
+  test(
+    'the editor ends when the program that started it is killed: ' + way,
+    { skip: !existsSync(SERVER) && 'pnpm build first' },
+    async (t) => {
+      const { parent, data } = parentOf(stdio, env, t);
+      const first = await createInterface({ input: parent.stdout })[Symbol.asyncIterator]().next();
+      const editor = Number(first.value);
+      assert.ok(alive(editor), 'the editor started');
+      await until(() => existsSync(join(data, 'service.json')), 'the editor to claim its data folder');
+      parent.kill('SIGKILL');
+      await until(() => !alive(editor), 'the editor to end');
+      assert.equal(
+        existsSync(join(data, 'service.json')),
+        false,
+        'it stopped as on SIGTERM, releasing its data folder',
+      );
+    },
+  );
 }

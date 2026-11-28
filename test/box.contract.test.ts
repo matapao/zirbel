@@ -18,10 +18,18 @@ import { padsService } from './pads-service.ts';
 
 const hosts = hostsUnderTest();
 
-const VIEW = { type: 'controllers', scanning: false, bluetooth: true, pairing: null, error: null,
-  devices: [{ name: 'USB gamepad', kind: 'usb', connected: true, device: 0 },
-    { name: 'Arcade stick', kind: 'bluetooth', connected: false, address: '11:22:33:44:55:66' }],
-  found: [{ address: '77:88:99:AA:BB:CC', name: 'Pro pad' }] };
+const VIEW = {
+  type: 'controllers',
+  scanning: false,
+  bluetooth: true,
+  pairing: null,
+  error: null,
+  devices: [
+    { name: 'USB gamepad', kind: 'usb', connected: true, device: 0 },
+    { name: 'Arcade stick', kind: 'bluetooth', connected: false, address: '11:22:33:44:55:66' },
+  ],
+  found: [{ address: '77:88:99:AA:BB:CC', name: 'Pro pad' }],
+};
 
 /** The box's controllers (box-controllers.ts), which owners list and pair in Box settings: with no controller service on
  *  the box, there are none to list or pair (503), and a request is checked first; with one on its local socket, its
@@ -29,43 +37,69 @@ const VIEW = { type: 'controllers', scanning: false, bluetooth: true, pairing: n
 async function controllersSession(t: TestContext, { editor: base, pads }: Started) {
   const steps: Step[] = [];
   const box = client(base);
-  const record = async (step: Promise<Step>) => { const result = await step; steps.push(result); return result; };
+  const record = async (step: Promise<Step>) => {
+    const result = await step;
+    steps.push(result);
+    return result;
+  };
   const none = await record(box('GET', '/api/box/controllers'));
   assert.deepEqual(none.body, { error: 'The box’s controller service isn’t running.' });
   await record(box('POST', '/api/box/controllers/scan', { json: { on: true }, origin: true }));
   await record(box('POST', '/api/box/controllers/pair', { json: { address: 'A0:B1:C2:D3:E4:F5' }, origin: true }));
   await record(box('POST', '/api/box/controllers/forget', { json: { address: 'a0:b1:c2:d3:e4:f5' }, origin: true }));
   await record(box('POST', '/api/box/controllers/scan', { json: { on: 'yes' }, origin: true }));
-  await record(box('POST', '/api/box/controllers/pair', { raw: '{"address":"A0:B1:C2:D3:E4:F5","more":1}', origin: true }));
+  await record(
+    box('POST', '/api/box/controllers/pair', { raw: '{"address":"A0:B1:C2:D3:E4:F5","more":1}', origin: true }),
+  );
   await record(box('GET', '/api/box/controllers/scan'));
   await record(box('POST', '/api/box/controllers/connect', { json: {}, origin: true }));
   if (process.platform === 'win32') return steps;
-  const service = await padsService(t, pads, (message) => message.type === 'device' || message.type === 'controllers' ? undefined
-    : { ...VIEW, scanning: message.type === 'scan' && message.on === true, pairing: message.type === 'pair' ? message.address : null });
+  const service = await padsService(t, pads, (message) =>
+    message.type === 'device' || message.type === 'controllers'
+      ? undefined
+      : {
+          ...VIEW,
+          scanning: message.type === 'scan' && message.on === true,
+          pairing: message.type === 'pair' ? message.address : null,
+        },
+  );
   service.json({ type: 'device', device: 0, name: 'USB gamepad', standard: true, uid: 'usb-0000:01:00.0-1.2/input0' });
   service.json(VIEW);
   // The box's own screen (the TV), on its LAN listener from loopback, takes the box's gamepad.
   const lobby = new URL(((await box('GET', '/api/lobby')).body as { link: string }).link);
   const tv = new WebSocket('ws://127.0.0.1:' + lobby.port + '/pads?role=screen');
   t.after(() => tv.terminate());
-  const code = await new Promise<string>((resolve) => tv.on('message', (data: Buffer, binary) => {
-    const message = binary ? undefined : JSON.parse(data.toString('utf8')) as { type: string; code?: string };
-    if (message?.type === 'screen') resolve(message.code!);
-  }));
+  const code = await new Promise<string>((resolve) =>
+    tv.on('message', (data: Buffer, binary) => {
+      const message = binary ? undefined : (JSON.parse(data.toString('utf8')) as { type: string; code?: string });
+      if (message?.type === 'screen') resolve(message.code!);
+    }),
+  );
   const listed = async (step: Promise<Step>) => {
     const result = await step;
     steps.push({ ...result, body: JSON.parse(JSON.stringify(result.body).replaceAll('"' + code + '"', '"<screen>"')) });
     return result;
   };
   const seen = await listed(box('GET', '/api/box/controllers'));
-  assert.deepEqual((seen.body as { devices: { screen: unknown }[] }).devices.map((item) => item.screen),
-    [{ code, tv: true, place: 0 }, null]);
-  assert.equal(((await listed(box('POST', '/api/box/controllers/scan', { json: { on: true }, origin: true }))).body as
-    { scanning: boolean }).scanning, true);
+  assert.deepEqual(
+    (seen.body as { devices: { screen: unknown }[] }).devices.map((item) => item.screen),
+    [{ code, tv: true, place: 0 }, null],
+  );
+  assert.equal(
+    (
+      (await listed(box('POST', '/api/box/controllers/scan', { json: { on: true }, origin: true }))).body as {
+        scanning: boolean;
+      }
+    ).scanning,
+    true,
+  );
   await listed(box('POST', '/api/box/controllers/pair', { json: { address: '77:88:99:AA:BB:CC' }, origin: true }));
   await listed(box('POST', '/api/box/controllers/forget', { json: { address: '11:22:33:44:55:66' }, origin: true }));
-  assert.deepEqual(service.heard, [{ type: 'scan', on: true }, { type: 'pair', address: '77:88:99:AA:BB:CC' },
-    { type: 'forget', address: '11:22:33:44:55:66' }]);
+  assert.deepEqual(service.heard, [
+    { type: 'scan', on: true },
+    { type: 'pair', address: '77:88:99:AA:BB:CC' },
+    { type: 'forget', address: '11:22:33:44:55:66' },
+  ]);
   // The service gone, its controllers go with it.
   await service.close();
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -73,7 +107,11 @@ async function controllersSession(t: TestContext, { editor: base, pads }: Starte
   return steps;
 }
 
-const SESSIONS = [['session', session], ['editors session', editorsSession], ['controllers session', controllersSession]] as const;
+const SESSIONS = [
+  ['session', session],
+  ['editors session', editorsSession],
+  ['controllers session', controllersSession],
+] as const;
 
 // Each host's run is a step of one test, and the comparison its last: steps keep their order, whatever order
 // --test-randomize gives the file's tests.
@@ -84,8 +122,11 @@ for (const [name, run] of SESSIONS) {
       await t.test(host.name + ' box runs the scripted ' + name, async (t) => {
         const steps = await run(t, await startBox(t, host.command));
         // No controllers service runs beside these hosts: its routes say so.
-        for (const [index, step] of steps.entries()) assert.ok(step.status < 500 || (step.status === 503 && name === 'controllers session'),
-          'step ' + index + ': ' + step.status + ' ' + JSON.stringify(step.body));
+        for (const [index, step] of steps.entries())
+          assert.ok(
+            step.status < 500 || (step.status === 503 && name === 'controllers session'),
+            'step ' + index + ': ' + step.status + ' ' + JSON.stringify(step.body),
+          );
         kept.set(host.name, steps);
       });
     }
@@ -103,7 +144,10 @@ for (const [name, run] of SESSIONS) {
 test('the Go box runs no harnesses and says why', { skip: !hosts.some((host) => host.name === 'go') }, async (t) => {
   const { editor } = await startBox(t, hosts.find((host) => host.name === 'go')!.command);
   const box = client(editor);
-  const status = (await box('GET', '/api/box/status')).body as { capabilities: { harnesses: boolean }; settings: { harnesses: boolean } };
+  const status = (await box('GET', '/api/box/status')).body as {
+    capabilities: { harnesses: boolean };
+    settings: { harnesses: boolean };
+  };
   assert.equal(status.capabilities.harnesses, false);
   assert.equal(status.settings.harnesses, false);
   const refused = await box('PUT', '/api/box/settings', { json: { harnesses: true } });

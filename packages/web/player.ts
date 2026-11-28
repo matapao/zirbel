@@ -13,7 +13,9 @@ import { controls, keys, motion } from './player-keys.ts';
 import { lanternQuest } from './player-quest.ts';
 import { handOver, joinSpace, spaceLink, type PageSpace, type Role } from './player-space.ts';
 
-function byId<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
+function byId<T extends HTMLElement>(id: string) {
+  return document.getElementById(id) as T;
+}
 const room = location.pathname.split('/').at(-1) ?? '';
 // A net game's space with its credential (player-space.ts); else an invitation, or a seat the lobby held for this person
 // (#seat=<ticket>), which goes straight in.
@@ -49,16 +51,29 @@ let space: PageSpace | undefined;
 let handedOver = false;
 const quest = lanternQuest({ byId, canvas, score });
 
-function saved() { try { return sessionStorage.getItem(savedKey) ?? ''; } catch { return ''; } }
+function saved() {
+  try {
+    return sessionStorage.getItem(savedKey) ?? '';
+  } catch {
+    return '';
+  }
+}
 function remember(credential?: string) {
   try {
     if (credential) sessionStorage.setItem(savedKey, credential);
     else sessionStorage.removeItem(savedKey);
-  } catch { /* Sessions can still play when browser storage is disabled. */ }
+  } catch {
+    /* Sessions can still play when browser storage is disabled. */
+  }
 }
 
 function move(key: string, down: boolean) {
-  if (!controls.includes(key) || (!quest.playing() && info?.manifest.template !== 'mosslight') || seat?.role !== 'player') return;
+  if (
+    !controls.includes(key) ||
+    (!quest.playing() && info?.manifest.template !== 'mosslight') ||
+    seat?.role !== 'player'
+  )
+    return;
   if (keys.has(key) === down) return;
   if (down) keys.add(key);
   else keys.delete(key);
@@ -72,14 +87,26 @@ function movement() {
 window.addEventListener('keydown', (event) => {
   const key = event.key.toLowerCase();
   if (key === 'e' && !event.repeat) quest.interact();
-  if (!game.hidden && controls.includes(key)) { event.preventDefault(); move(key, true); }
+  if (!game.hidden && controls.includes(key)) {
+    event.preventDefault();
+    move(key, true);
+  }
 });
 window.addEventListener('keyup', (event) => move(event.key.toLowerCase(), false));
-window.addEventListener('blur', () => { if (keys.size) { keys.clear(); movement(); } });
+window.addEventListener('blur', () => {
+  if (keys.size) {
+    keys.clear();
+    movement();
+  }
+});
 for (const button of document.querySelectorAll<HTMLButtonElement>('#touch button')) {
   const key = button.dataset.key!.toLowerCase();
-  button.addEventListener('pointerdown', (event) => { button.setPointerCapture(event.pointerId); move(key, true); });
-  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, () => move(key, false));
+  button.addEventListener('pointerdown', (event) => {
+    button.setPointerCapture(event.pointerId);
+    move(key, true);
+  });
+  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'])
+    button.addEventListener(name, () => move(key, false));
 }
 
 byId('full').addEventListener('click', () => {
@@ -94,18 +121,34 @@ let panel: { draw(): void } | undefined;
 function toggleControllers(open = controllersPanel.hidden) {
   controllersPanel.hidden = !open;
   controllersButton.setAttribute('aria-expanded', String(open));
-  if (open) void import('./controllers-panel.ts').then(({ controllersPanel: drawn }) => {
-    panel ??= drawn(controllersPanel, controllers!, { showOnTv: () => void showOnTv(), close: () => toggleControllers(false) });
-    panel.draw();
-  });
+  if (open)
+    void import('./controllers-panel.ts').then(({ controllersPanel: drawn }) => {
+      panel ??= drawn(controllersPanel, controllers!, {
+        showOnTv: () => void showOnTv(),
+        close: () => toggleControllers(false),
+      });
+      panel.draw();
+    });
 }
 controllersButton.addEventListener('click', () => toggleControllers());
 function startControllers() {
   if (controllers) return;
   const open = document.body.dataset.preview === undefined;
-  controllers = screenControllers({ open, onChange: () => { if (!controllersPanel.hidden) panel?.draw(); }, onShown: onTv,
+  controllers = screenControllers({
+    open,
+    onChange: () => {
+      if (!controllersPanel.hidden) panel?.draw();
+    },
+    onShown: onTv,
     // The TV goes to a game shown on it: the member it holds here leaves, so the SDK seats it by the link's ticket.
-    onLeaving: () => { if (space) { handedOver = true; void space.leave(); space = undefined; } } });
+    onLeaving: () => {
+      if (space) {
+        handedOver = true;
+        void space.leave();
+        space = undefined;
+      }
+    },
+  });
   controllersButton.hidden = !open;
 }
 // Show on TV: the box's screen takes this seat (a net game's member hands its place over), and this page controls it.
@@ -123,7 +166,10 @@ function onTv(code: string) {
   client?.stop(false);
   remember();
   // The TV takes this member's place, which this page doesn't leave: the kernel ends its connection as replaced.
-  if (space) { handedOver = true; space = undefined; }
+  if (space) {
+    handedOver = true;
+    space = undefined;
+  }
   showLobby();
   controllers?.close();
   controllers = undefined;
@@ -131,7 +177,9 @@ function onTv(code: string) {
   controllersButton.hidden = true;
   lobby.hidden = true;
   byId('tv-pad').hidden = false;
-  void import('./tv-pad.ts').then(({ controlTv }) => controlTv(code, { place: byId('tv-pad-place'), status: byId('tv-pad-status') }));
+  void import('./tv-pad.ts').then(({ controlTv }) =>
+    controlTv(code, { place: byId('tv-pad-place'), status: byId('tv-pad-status') }),
+  );
 }
 
 // A game the TV page went into goes back there when it is left, and its lobby link too.
@@ -139,15 +187,28 @@ if (fromTv()) byId<HTMLAnchorElement>('to-lobby').href = TV_PAGE;
 function leaveRoom(message = 'You left the room.') {
   client?.stop();
   remember();
-  if (space) { void space.leave(); space = undefined; }
-  if (fromTv()) { location.assign(TV_PAGE); return; }
+  if (space) {
+    void space.leave();
+    space = undefined;
+  }
+  if (fromTv()) {
+    location.assign(TV_PAGE);
+    return;
+  }
   showLobby(message);
 }
 byId('leave').addEventListener('click', () => leaveRoom());
 reset.addEventListener('click', () => client?.send({ type: 'reset' }));
 
-const authored = gameFrame({ room, error, info: () => info, seat: () => seat, seats: () => seats,
-  controllers: () => controllers, send: (value) => client?.send(value) });
+const authored = gameFrame({
+  room,
+  error,
+  info: () => info,
+  seat: () => seat,
+  seats: () => seats,
+  controllers: () => controllers,
+  send: (value) => client?.send(value),
+});
 
 function showLobby(message = '') {
   authored.close();
@@ -215,12 +276,17 @@ async function showGame() {
       const hasSimulation = info.manifest.template === 'mosslight';
       byId('touch').hidden = !hasSimulation || seat?.role === 'spectator';
       const movementTip = matchMedia('(pointer: coarse)').matches ? 'Use the arrows' : 'Move with WASD or arrow keys';
-      byId('instructions').textContent = hasSimulation ? movementTip + ' · gather the valley lights' : 'Local scene preview';
+      byId('instructions').textContent = hasSimulation
+        ? movementTip + ' · gather the valley lights'
+        : 'Local scene preview';
       const ctx = canvas.getContext('2d')!;
       function render(time: number) {
         drawScene(ctx, legacyScene(info), {
-          time, blank: !hasSimulation, collected: new Set(moss?.collected),
-          explorers: hasSimulation ? moss?.explorers ?? [] : undefined, currentSeat: seat?.id,
+          time,
+          blank: !hasSimulation,
+          collected: new Set(moss?.collected),
+          explorers: hasSimulation ? (moss?.explorers ?? []) : undefined,
+          currentSeat: seat?.id,
         });
         frame = requestAnimationFrame(render);
       }
@@ -229,9 +295,13 @@ async function showGame() {
   }
 }
 
-const ENDED: Record<string, string> = { replaced: 'This seat is in use on another screen now.',
-  lost: 'The connection to this session was lost.', 'credential-expired': 'This seat has expired. Join again from the lobby.',
-  refused: 'This seat has expired. Join again from the lobby.', left: 'You left the room.' };
+const ENDED: Record<string, string> = {
+  replaced: 'This seat is in use on another screen now.',
+  lost: 'The connection to this session was lost.',
+  'credential-expired': 'This seat has expired. Join again from the lobby.',
+  refused: 'This seat has expired. Join again from the lobby.',
+  left: 'You left the room.',
+};
 /** Joins a net game's space, as the link says or as the join form asks, proves to the host which member this page is,
  *  for the room's info, and starts the game in it. */
 async function enterSpace(asked?: { name: string; role: Role }) {
@@ -240,9 +310,16 @@ async function enterSpace(asked?: { name: string; role: Role }) {
   const joined = await joinSpace(netLink, asked);
   // Shared with the game's frame at once, so what the others send waits for the game, which loads once the page has the
   // room's info. A game that left the session and didn't come back gives up this page's place in it too.
-  await authored.share(joined, () => { if (joined === space) leaveRoom('The game left the session.'); });
-  try { info = await fetchRoom<RoomInfo>(room, 'info', undefined, await joined.proof()); }
-  catch (reason) { void joined.leave(); showLobby(); throw reason; }
+  await authored.share(joined, () => {
+    if (joined === space) leaveRoom('The game left the session.');
+  });
+  try {
+    info = await fetchRoom<RoomInfo>(room, 'info', undefined, await joined.proof());
+  } catch (reason) {
+    void joined.leave();
+    showLobby();
+    throw reason;
+  }
   describe();
   space = joined;
   joined.on('status', (status) => {
@@ -259,43 +336,58 @@ async function enterSpace(asked?: { name: string; role: Role }) {
 }
 
 function connect(credential: string) {
-  client = new RoomClient(room, info.manifest.releaseId, credential, (message) => {
-    switch (message.type) {
-      case 'welcome':
-        seat = message.seat;
-        seatCredential = message.resume;
-        remember(message.resume);
-        error.textContent = '';
-        if (keys.size) movement();
-        authored.update();
-        void showGame();
-        break;
-      case 'snapshot': {
-        seats = message.seats;
-        if (info.gameUrl) { authored.states(message.state); break; }
-        const mossUpdate = mossState.safeParse(message.state);
-        if (mossUpdate.success && info.manifest.simulation === 'mosslight-v1') {
-          moss = mossUpdate.data;
-          score.textContent = moss.finished ? 'All lights collected!' : moss.collected.length + ' / ' + moss.total + ' lights';
+  client = new RoomClient(
+    room,
+    info.manifest.releaseId,
+    credential,
+    (message) => {
+      switch (message.type) {
+        case 'welcome':
+          seat = message.seat;
+          seatCredential = message.resume;
+          remember(message.resume);
+          error.textContent = '';
+          if (keys.size) movement();
+          authored.update();
+          void showGame();
+          break;
+        case 'snapshot': {
+          seats = message.seats;
+          if (info.gameUrl) {
+            authored.states(message.state);
+            break;
+          }
+          const mossUpdate = mossState.safeParse(message.state);
+          if (mossUpdate.success && info.manifest.simulation === 'mosslight-v1') {
+            moss = mossUpdate.data;
+            score.textContent = moss.finished
+              ? 'All lights collected!'
+              : moss.collected.length + ' / ' + moss.total + ' lights';
+          }
+          const tileUpdate = tileState.safeParse(message.state);
+          if (tileUpdate.success && info.manifest.simulation === 'tessellate-v1') {
+            tile = tileUpdate.data;
+            showBoard();
+          }
+          break;
         }
-        const tileUpdate = tileState.safeParse(message.state);
-        if (tileUpdate.success && info.manifest.simulation === 'tessellate-v1') {
-          tile = tileUpdate.data;
-          showBoard();
-        }
-        break;
+        case 'closed':
+          remember();
+          showLobby(message.message);
+          form.hidden = true;
+          break;
+        case 'error':
+          if (message.code === 'expired') {
+            remember();
+            showLobby(message.message);
+          } else error.textContent = message.message;
+          break;
       }
-      case 'closed':
-        remember();
-        showLobby(message.message);
-        form.hidden = true;
-        break;
-      case 'error':
-        if (message.code === 'expired') { remember(); showLobby(message.message); }
-        else error.textContent = message.message;
-        break;
-    }
-  }, (status) => { connection.textContent = status; });
+    },
+    (status) => {
+      connection.textContent = status;
+    },
+  );
   connection.textContent = 'Connecting…';
   client.open();
 }
@@ -309,14 +401,24 @@ async function reserveSeat(event: SubmitEvent) {
   error.textContent = '';
   try {
     const name = values.get('name');
-    if (netLink) await enterSpace({ name: typeof name === 'string' ? name.trim() : '',
-      role: values.get('role') === 'spectator' ? 'observer' : 'participant' });
+    if (netLink)
+      await enterSpace({
+        name: typeof name === 'string' ? name.trim() : '',
+        role: values.get('role') === 'spectator' ? 'observer' : 'participant',
+      });
     else {
-      const { ticket } = await fetchRoom<{ ticket: string }>(room, 'reserve', { invite, name: values.get('name'), role: values.get('role') });
+      const { ticket } = await fetchRoom<{ ticket: string }>(room, 'reserve', {
+        invite,
+        name: values.get('name'),
+        role: values.get('role'),
+      });
       connect(ticket);
     }
-  } catch (reason) { error.textContent = (reason as Error).message; }
-  finally { submit.disabled = false; }
+  } catch (reason) {
+    error.textContent = (reason as Error).message;
+  } finally {
+    submit.disabled = false;
+  }
 }
 
 /** The badge beside the title: the session's code, else which playtest this is. */
@@ -331,7 +433,8 @@ function describe() {
   document.title = info.manifest.title + ' · Zirbel';
   byId('game-title').textContent = info.manifest.title;
   byId('lobby-title').textContent = info.manifest.title;
-  byId('lobby-description').textContent = info.gameUrl || !info.manifest.template ? '' : templates[info.manifest.template].description;
+  byId('lobby-description').textContent =
+    info.gameUrl || !info.manifest.template ? '' : templates[info.manifest.template].description;
   byId('badge').textContent = badgeText(info);
 }
 
@@ -343,9 +446,11 @@ try {
     const link = ticket || invite;
     let credential = saved() || link;
     if (!credential) throw new Error('Open the complete invitation link from the room owner.');
-    try { info = await fetchRoom<RoomInfo>(room, 'info', undefined, credential); }
-    catch (error) {
-      if (!link || credential === link) throw ticket ? new Error('This seat has expired. Join again from the lobby.') : error;
+    try {
+      info = await fetchRoom<RoomInfo>(room, 'info', undefined, credential);
+    } catch (error) {
+      if (!link || credential === link)
+        throw ticket ? new Error('This seat has expired. Join again from the lobby.') : error;
       remember();
       credential = link;
       info = await fetchRoom<RoomInfo>(room, 'info', undefined, credential);
@@ -353,7 +458,11 @@ try {
     describe();
     if (credential !== invite) connect(credential);
     else if (info.solo) {
-      const { ticket } = await fetchRoom<{ ticket: string }>(room, 'reserve', { invite, name: 'Explorer', role: 'player' });
+      const { ticket } = await fetchRoom<{ ticket: string }>(room, 'reserve', {
+        invite,
+        name: 'Explorer',
+        role: 'player',
+      });
       connect(ticket);
     } else showLobby();
   }

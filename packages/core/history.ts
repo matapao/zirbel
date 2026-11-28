@@ -19,15 +19,28 @@ export type AssetStore = { hasAsset(hash: string): boolean; storeAsset(bytes: Bu
 /** Commits by id, as `git log` lists them from some tips: newest first, children before parents. */
 export function logCommits(repo: string, tips: string[], max?: number): CommitInfo[] {
   if (!tips.length) return [];
-  const out = git(repo, ['log', '--topo-order', '-z', '--format=%H%n%T%n%P%n%an%n%ct%n%B',
-    ...(max ? ['--max-count=' + max] : []), ...tips, '--']).stdout.toString('utf8');
+  const out = git(repo, [
+    'log',
+    '--topo-order',
+    '-z',
+    '--format=%H%n%T%n%P%n%an%n%ct%n%B',
+    ...(max ? ['--max-count=' + max] : []),
+    ...tips,
+    '--',
+  ]).stdout.toString('utf8');
   const commits: CommitInfo[] = [];
   for (const record of out.split('\0')) {
     if (!record.trim()) continue;
     const lines = record.replace(/^\n/, '').split('\n');
     const [id, tree, parents, author, time] = lines;
-    commits.push({ id: id!, tree: tree!, parents: parents ? parents.split(' ') : [], author: author ?? '', time: Number(time),
-      message: lines.slice(5).join('\n') });
+    commits.push({
+      id: id!,
+      tree: tree!,
+      parents: parents ? parents.split(' ') : [],
+      author: author ?? '',
+      time: Number(time),
+      message: lines.slice(5).join('\n'),
+    });
   }
   return commits;
 }
@@ -52,7 +65,7 @@ export class History {
     const ids = new Set(listed.map(({ id }) => id));
     const missing = heads.filter((head) => !ids.has(head));
     const found = readObjects(repo, missing);
-    const commits = [...listed, ...missing.flatMap((id) => found.has(id) ? [parseCommit(id, found.get(id)!)] : [])];
+    const commits = [...listed, ...missing.flatMap((id) => (found.has(id) ? [parseCommit(id, found.get(id)!)] : []))];
     const revisions = commits.map(revisionMeta).reverse();
     this.logs.set(repo, { key, revisions });
     return revisions;
@@ -76,25 +89,34 @@ export class History {
   /** A commit's content, as it was read before or read now. */
   content(repo: string, commit: string): Content {
     const kept = this.contents.get(commit);
-    if (kept) { this.contents.delete(commit); this.contents.set(commit, kept); return kept; }
+    if (kept) {
+      this.contents.delete(commit);
+      this.contents.set(commit, kept);
+      return kept;
+    }
     const { content } = this.read(repo, commit);
     this.remember(commit, content);
     return content;
   }
 
   /** The SHA-256 of a blob the host has read or written, if it knows it. */
-  sha256(repo: string, oid: string) { return this.cache(repo).get(oid); }
+  sha256(repo: string, oid: string) {
+    return this.cache(repo).get(oid);
+  }
 
   /** Notes the SHA-256 of blobs the host wrote. */
   learn(repo: string, pairs: [string, string][]) {
     const cache = this.cache(repo);
     const fresh = pairs.filter(([oid]) => !cache.has(oid));
     for (const [oid, hash] of fresh) cache.set(oid, hash);
-    if (fresh.length) appendFileSync(join(repo, 'zirbel-sha256'), fresh.map(([oid, hash]) => oid + ' ' + hash + '\n').join(''));
+    if (fresh.length)
+      appendFileSync(join(repo, 'zirbel-sha256'), fresh.map(([oid, hash]) => oid + ' ' + hash + '\n').join(''));
   }
 
   /** Forgets a repository's history, after its refs moved outside the host's own writes. */
-  forget(repo: string) { this.logs.delete(repo); }
+  forget(repo: string) {
+    this.logs.delete(repo);
+  }
 
   private remember(commit: string, content: Content) {
     this.contents.set(commit, content);
@@ -110,7 +132,9 @@ export class History {
         const match = /^([0-9a-f]{40}) ([0-9a-f]{64})$/.exec(line);
         if (match) cache.set(match[1]!, match[2]!);
       }
-    } catch { /* none yet: hashed as read */ }
+    } catch {
+      /* none yet: hashed as read */
+    }
     this.hashes.set(repo, cache);
     return cache;
   }
@@ -127,7 +151,10 @@ export class History {
           if (hash && this.store.hasAsset(hash)) hashes.set(entry.oid, hash);
           else unread.push(entry);
         }
-        const bytes = readObjects(repo, unread.map(({ oid }) => oid));
+        const bytes = readObjects(
+          repo,
+          unread.map(({ oid }) => oid),
+        );
         const learnt: [string, string][] = [];
         for (const { oid } of unread) {
           const found = bytes.get(oid);
@@ -145,7 +172,11 @@ export class History {
 }
 
 /** Each asset's bytes, as its tree holds them, matching its hash and media type; kept in the store when there is one. */
-export function checkAssets(found: { asset: Asset; entry: Entry }[], bytes: (oids: string[]) => Map<string, Buffer>, store?: AssetStore) {
+export function checkAssets(
+  found: { asset: Asset; entry: Entry }[],
+  bytes: (oids: string[]) => Map<string, Buffer>,
+  store?: AssetStore,
+) {
   const unread = found.filter(({ asset }) => !store?.hasAsset(asset.hash));
   const read = bytes(unread.map(({ entry }) => entry.oid));
   const wrong: string[] = [];

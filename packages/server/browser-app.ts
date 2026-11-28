@@ -9,10 +9,15 @@ import type { Renderer } from './view-game.ts';
 /** The message type both ends use. */
 const VIEW_GAME = 'zirbel:view-game';
 const answer = z.object({
-  type: z.literal(VIEW_GAME), id: z.string().max(100),
+  type: z.literal(VIEW_GAME),
+  id: z.string().max(100),
   images: z.array(z.string().max(32_000_000)).max(8).optional(),
-  console: z.array(z.object({ level: z.string().max(40), text: z.string().max(10_000) })).max(1000).optional(),
-  unavailable: z.string().max(1000).optional(), error: z.string().max(1000).optional(),
+  console: z
+    .array(z.object({ level: z.string().max(40), text: z.string().max(10_000) }))
+    .max(1000)
+    .optional(),
+  unavailable: z.string().max(1000).optional(),
+  error: z.string().max(1000).optional(),
 });
 
 type Channel = { send(message: unknown): void; on(listener: (message: unknown) => void): () => void };
@@ -22,7 +27,10 @@ function parentChannel(): Channel | undefined {
   if (!process.send || !process.channel) return undefined;
   return {
     send: (message) => process.send?.(message),
-    on: (listener) => { process.on('message', listener); return () => process.off('message', listener); },
+    on: (listener) => {
+      process.on('message', listener);
+      return () => process.off('message', listener);
+    },
   };
 }
 
@@ -31,8 +39,14 @@ export function appRenderer(channel: Channel): Renderer {
     render(request, signal) {
       const id = randomUUID();
       return new Promise((resolve, reject) => {
-        const done = () => { stop(); signal.removeEventListener('abort', abort); };
-        const abort = () => { done(); reject(new Error('Rendering the game took too long.')); };
+        const done = () => {
+          stop();
+          signal.removeEventListener('abort', abort);
+        };
+        const abort = () => {
+          done();
+          reject(new Error('Rendering the game took too long.'));
+        };
         const stop = channel.on((message) => {
           const reply = answer.safeParse(message);
           if (!reply.success || reply.data.id !== id) return;

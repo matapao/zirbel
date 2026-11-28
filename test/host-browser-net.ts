@@ -30,28 +30,55 @@ for (const host of hosts) {
   test(host.name + ' host: two browsers play a game with its own netcode in a space', realKernel, async (t) => {
     const root = tempDir(t, 'zirbel-host-net-');
     const projects = new Projects(join(root, 'source'));
-    const project = importGameFolder(projects, { title: 'Net', files: encoded({ 'index.html': netGame, 'zirbel.json': '{"players":{"max":2}}' }) });
+    const project = importGameFolder(projects, {
+      title: 'Net',
+      files: encoded({ 'index.html': netGame, 'zirbel.json': '{"players":{"max":2}}' }),
+    });
     const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
     const file = join(root, 'release.json');
     writeFileSync(file, JSON.stringify(release));
-    const link = await launch(t, host.command, ['--host-only', '--player-port', '0',
-      '--data', join(root, 'data'), '--import', file, '--release', release.manifest.releaseId],
-    (line) => typeof line.link === 'string' ? line.link : undefined, { ZIRBEL_SPACES_BINARY: REAL_SPACES }).ready;
+    const link = await launch(
+      t,
+      host.command,
+      [
+        '--host-only',
+        '--player-port',
+        '0',
+        '--data',
+        join(root, 'data'),
+        '--import',
+        file,
+        '--release',
+        release.manifest.releaseId,
+      ],
+      (line) => (typeof line.link === 'string' ? line.link : undefined),
+      { ZIRBEL_SPACES_BINARY: REAL_SPACES },
+    ).ready;
     const browser = await chromium.launch();
     t.after(() => browser.close());
     const failures: string[] = [];
     const pages = await Promise.all([1, 2].map(async () => (await browser.newContext()).newPage()));
     for (const [index, page] of pages.entries()) {
       page.on('pageerror', (error) => failures.push(error.message));
-      page.on('console', (message) => { if (/Content Security Policy|Refused to/.test(message.text())) failures.push(message.text()); });
+      page.on('console', (message) => {
+        if (/Content Security Policy|Refused to/.test(message.text())) failures.push(message.text());
+      });
       await page.goto(link);
       await page.locator('#join-form input[name="name"]').fill('Player ' + (index + 1));
       await page.locator('#join-form button.primary').click();
-      await page.frameLocator('iframe').locator('#out').filter({ hasText: '1 players' }).or(page.frameLocator('iframe')
-        .locator('#out').filter({ hasText: '2 players' })).waitFor({ timeout: 15_000 });
+      await page
+        .frameLocator('iframe')
+        .locator('#out')
+        .filter({ hasText: '1 players' })
+        .or(page.frameLocator('iframe').locator('#out').filter({ hasText: '2 players' }))
+        .waitFor({ timeout: 15_000 });
     }
     for (const [index, page] of pages.entries())
-      await page.frameLocator('iframe').locator('#out').filter({ hasText: '2 players, heard hi from ' + (2 - index) }).waitFor({ timeout: 15_000 });
+      await page
+        .frameLocator('iframe')
+        .locator('#out')
+        .filter({ hasText: '2 players, heard hi from ' + (2 - index) })
+        .waitFor({ timeout: 15_000 });
     assert.deepEqual(failures, []);
   });
 }
@@ -65,33 +92,57 @@ const leavingGame = `<!doctype html><p id="out">waiting</p><script type="module"
 </script>`;
 
 for (const host of hosts) {
-  test(host.name + ' host: a game\'s leaving ends its frame\'s view alone, and the page gives the place up only if it doesn\'t come back',
-    { ...realKernel, timeout: 90_000 }, async (t) => {
-    const root = tempDir(t, 'zirbel-host-leave-');
-    const projects = new Projects(join(root, 'source'));
-    const project = importGameFolder(projects, { title: 'Leave', files: encoded({ 'index.html': leavingGame, 'zirbel.json': '{"players":{"max":2}}' }) });
-    const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
-    writeFileSync(join(root, 'release.json'), JSON.stringify(release));
-    const link = await launch(t, host.command, ['--host-only', '--player-port', '0', '--data', join(root, 'data'),
-      '--import', join(root, 'release.json'), '--release', release.manifest.releaseId],
-    (line) => typeof line.link === 'string' ? line.link : undefined, { ZIRBEL_SPACES_BINARY: REAL_SPACES }).ready;
-    const browser = await chromium.launch();
-    t.after(() => browser.close());
-    const page = await (await browser.newContext()).newPage();
-    await page.goto(link);
-    await page.locator('#join-form input[name="name"]').fill('Ada');
-    await page.locator('#join-form button.primary').click();
-    const out = page.frameLocator('iframe').locator('#out');
-    await out.filter({ hasText: /^member 1$/ }).waitFor({ timeout: 15_000 });
-    const leave = (again: boolean) => page.frame({ url: /\/game\// })!.evaluate((back) => (globalThis as { leave?: (again: boolean) => void }).leave?.(back), again);
-    // The game leaves and loads again: the page kept its place, and the game's next page is the same member.
-    await leave(true);
-    await out.filter({ hasText: /^member 1#again$/ }).waitFor({ timeout: 15_000 });
-    // It leaves for good: once its frame hasn't asked for the space again in 15 s, the page leaves too.
-    await leave(false);
-    await page.getByText('The game left the session.').waitFor({ timeout: 25_000 });
-    assert.equal(await page.locator('iframe').count(), 0);
-  });
+  test(
+    host.name +
+      " host: a game's leaving ends its frame's view alone, and the page gives the place up only if it doesn't come back",
+    { ...realKernel, timeout: 90_000 },
+    async (t) => {
+      const root = tempDir(t, 'zirbel-host-leave-');
+      const projects = new Projects(join(root, 'source'));
+      const project = importGameFolder(projects, {
+        title: 'Leave',
+        files: encoded({ 'index.html': leavingGame, 'zirbel.json': '{"players":{"max":2}}' }),
+      });
+      const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
+      writeFileSync(join(root, 'release.json'), JSON.stringify(release));
+      const link = await launch(
+        t,
+        host.command,
+        [
+          '--host-only',
+          '--player-port',
+          '0',
+          '--data',
+          join(root, 'data'),
+          '--import',
+          join(root, 'release.json'),
+          '--release',
+          release.manifest.releaseId,
+        ],
+        (line) => (typeof line.link === 'string' ? line.link : undefined),
+        { ZIRBEL_SPACES_BINARY: REAL_SPACES },
+      ).ready;
+      const browser = await chromium.launch();
+      t.after(() => browser.close());
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(link);
+      await page.locator('#join-form input[name="name"]').fill('Ada');
+      await page.locator('#join-form button.primary').click();
+      const out = page.frameLocator('iframe').locator('#out');
+      await out.filter({ hasText: /^member 1$/ }).waitFor({ timeout: 15_000 });
+      const leave = (again: boolean) =>
+        page
+          .frame({ url: /\/game\// })!
+          .evaluate((back) => (globalThis as { leave?: (again: boolean) => void }).leave?.(back), again);
+      // The game leaves and loads again: the page kept its place, and the game's next page is the same member.
+      await leave(true);
+      await out.filter({ hasText: /^member 1#again$/ }).waitFor({ timeout: 15_000 });
+      // It leaves for good: once its frame hasn't asked for the space again in 15 s, the page leaves too.
+      await leave(false);
+      await page.getByText('The game left the session.').waitFor({ timeout: 25_000 });
+      assert.equal(await page.locator('iframe').count(), 0);
+    },
+  );
 }
 
 // A game that knows nothing of any host: hooks for who this screen is, who else plays and what they say. Its
@@ -121,39 +172,67 @@ const tinyAdapter = `const game = globalThis.gameHooks;
   net.on('message', (from, type, r) => game.control(from, r.text()));`;
 
 for (const host of hosts) {
-  test(host.name + ' host: two browsers play a game with no line about Zirbel, through the adapter its zirbel.json names', realKernel,
+  test(
+    host.name + ' host: two browsers play a game with no line about Zirbel, through the adapter its zirbel.json names',
+    realKernel,
     async (t) => {
-    assert.doesNotMatch(Object.values(hookedGame).join('\n'), /zirbel|location|import/i);
-    const root = tempDir(t, 'zirbel-host-adapter-');
-    const projects = new Projects(join(root, 'source'));
-    const project = importGameFolder(projects, { title: 'Hooks', files: encoded({ ...hookedGame, 'net/adapter.js': tinyAdapter,
-      'zirbel.json': JSON.stringify({ players: { max: 2 }, multiplayer: { adapter: 'net/adapter.js' } }) }) });
-    const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
-    const file = join(root, 'release.json');
-    writeFileSync(file, JSON.stringify(release));
-    const link = await launch(t, host.command, ['--host-only', '--player-port', '0',
-      '--data', join(root, 'data'), '--import', file, '--release', release.manifest.releaseId],
-    (line) => typeof line.link === 'string' ? line.link : undefined, { ZIRBEL_SPACES_BINARY: REAL_SPACES }).ready;
-    const browser = await chromium.launch();
-    t.after(() => browser.close());
-    const failures: string[] = [];
-    const pages = await Promise.all([1, 2].map(async () => (await browser.newContext()).newPage()));
-    for (const [index, page] of pages.entries()) {
-      page.on('pageerror', (error) => failures.push(error.message));
-      page.on('console', (message) => { if (/Content Security Policy|Refused to/.test(message.text())) failures.push(message.text()); });
-      await page.goto(link);
-      await page.locator('#join-form input[name="name"]').fill('Player ' + (index + 1));
-      await page.locator('#join-form button.primary').click();
-    }
-    // Two members, each screen its own, and each heard the other.
-    const seen: string[] = [];
-    for (const page of pages) {
-      const out = page.frameLocator('iframe').locator('#out').filter({ hasText: /^2 players, me \d, heard hello from \d$/ });
-      await out.waitFor({ timeout: 15_000 });
-      const [, me, from] = /me (\d), heard hello from (\d)/.exec(await out.textContent() ?? '')!;
-      seen.push(me + '<' + from);
-    }
-    assert.deepEqual(seen.sort(), ['1<2', '2<1']);
-    assert.deepEqual(failures, []);
-  });
+      assert.doesNotMatch(Object.values(hookedGame).join('\n'), /zirbel|location|import/i);
+      const root = tempDir(t, 'zirbel-host-adapter-');
+      const projects = new Projects(join(root, 'source'));
+      const project = importGameFolder(projects, {
+        title: 'Hooks',
+        files: encoded({
+          ...hookedGame,
+          'net/adapter.js': tinyAdapter,
+          'zirbel.json': JSON.stringify({ players: { max: 2 }, multiplayer: { adapter: 'net/adapter.js' } }),
+        }),
+      });
+      const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
+      const file = join(root, 'release.json');
+      writeFileSync(file, JSON.stringify(release));
+      const link = await launch(
+        t,
+        host.command,
+        [
+          '--host-only',
+          '--player-port',
+          '0',
+          '--data',
+          join(root, 'data'),
+          '--import',
+          file,
+          '--release',
+          release.manifest.releaseId,
+        ],
+        (line) => (typeof line.link === 'string' ? line.link : undefined),
+        { ZIRBEL_SPACES_BINARY: REAL_SPACES },
+      ).ready;
+      const browser = await chromium.launch();
+      t.after(() => browser.close());
+      const failures: string[] = [];
+      const pages = await Promise.all([1, 2].map(async () => (await browser.newContext()).newPage()));
+      for (const [index, page] of pages.entries()) {
+        page.on('pageerror', (error) => failures.push(error.message));
+        page.on('console', (message) => {
+          if (/Content Security Policy|Refused to/.test(message.text())) failures.push(message.text());
+        });
+        await page.goto(link);
+        await page.locator('#join-form input[name="name"]').fill('Player ' + (index + 1));
+        await page.locator('#join-form button.primary').click();
+      }
+      // Two members, each screen its own, and each heard the other.
+      const seen: string[] = [];
+      for (const page of pages) {
+        const out = page
+          .frameLocator('iframe')
+          .locator('#out')
+          .filter({ hasText: /^2 players, me \d, heard hello from \d$/ });
+        await out.waitFor({ timeout: 15_000 });
+        const [, me, from] = /me (\d), heard hello from (\d)/.exec((await out.textContent()) ?? '')!;
+        seen.push(me + '<' + from);
+      }
+      assert.deepEqual(seen.sort(), ['1<2', '2<1']);
+      assert.deepEqual(failures, []);
+    },
+  );
 }

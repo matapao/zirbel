@@ -10,5 +10,5 @@ export type ModelSetting = {
 export type ModelSettings = Partial<Record<keyof ModelSelection, ModelSetting>>;
 
 export function modelChoices(setting: ModelSetting | undefined) {
-  return setting?.options.flatMap((option) => 'group' in option ? option.options : [option]) ?? [];
+  return setting?.options.flatMap((option) => ('group' in option ? option.options : [option])) ?? [];
 }

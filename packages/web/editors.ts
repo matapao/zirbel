@@ -14,25 +14,56 @@ export async function inviteEditorsDialog(projectId: string, title: string) {
   const { code, editors } = await api<{ code: EditCode | null; editors: Editor[] }>(path + '/editors');
   const body = openDialog('Invite editors · ' + title);
   const again = () => inviteEditorsDialog(projectId, title);
-  const fresh = action('New code', async () => { await api(path + '/edit-code', {}); await again(); }, 'primary');
-  body.append(el('p', 'Someone with this game’s edit code works on it, and only on it, from their own device on the box’s network. ' +
-    'They don’t see your other games or Box settings, and don’t use the box’s AI.'));
+  const fresh = action(
+    'New code',
+    async () => {
+      await api(path + '/edit-code', {});
+      await again();
+    },
+    'primary',
+  );
+  body.append(
+    el(
+      'p',
+      'Someone with this game’s edit code works on it, and only on it, from their own device on the box’s network. ' +
+        'They don’t see your other games or Box settings, and don’t use the box’s AI.',
+    ),
+  );
   if (code) {
     const item = el('section', undefined, 'item');
-    item.append(el('small', 'Edit code'), el('strong', code.code, 'sign-in-code edit-code'),
+    item.append(
+      el('small', 'Edit code'),
+      el('strong', code.code, 'sign-in-code edit-code'),
       el('p', 'On their device, they open this link or scan the code with a camera, and give their name:'),
-      link(code.link, code.link, true), await qrPicture(code.link, 'QR code that opens ' + code.link),
+      link(code.link, code.link, true),
+      await qrPicture(code.link, 'QR code that opens ' + code.link),
       el('small', 'Anyone with it can start editing until ' + new Date(code.expiresAt).toLocaleString() + '.'),
-      action('Stop the code', async () => { await api(path + '/edit-code/stop', {}); await again(); }), fresh);
+      action('Stop the code', async () => {
+        await api(path + '/edit-code/stop', {});
+        await again();
+      }),
+      fresh,
+    );
     body.append(item);
   } else body.append(el('p', 'No edit code is open. A new one lets people start editing for a week.'), fresh);
   body.append(el('h3', 'Editing now'));
   if (!editors.length) body.append(el('p', 'Nobody is editing this game with a code.'));
   for (const editor of editors) {
     const item = el('section', undefined, 'item');
-    item.append(el('strong', editor.name),
-      el('small', 'Since ' + new Date(editor.since).toLocaleDateString() + ' · last seen ' + new Date(editor.lastSeen).toLocaleString()),
-      action('Remove', async () => { await apiWith('DELETE', path + '/editors/' + editor.id); await again(); }));
+    item.append(
+      el('strong', editor.name),
+      el(
+        'small',
+        'Since ' +
+          new Date(editor.since).toLocaleDateString() +
+          ' · last seen ' +
+          new Date(editor.lastSeen).toLocaleString(),
+      ),
+      action('Remove', async () => {
+        await apiWith('DELETE', path + '/editors/' + editor.id);
+        await again();
+      }),
+    );
     body.append(item);
   }
 }
@@ -42,10 +73,22 @@ export function ownAgentDialog(projectId: string, title: string) {
   const body = openDialog('Your own Claude Code or Codex');
   const endpoint = location.origin + '/mcp';
   const result = el('div');
-  body.append(el('p', 'Claude Code or Codex on your own computer can work on ' + title + ' through this box’s MCP server, ' +
-    'for up to a week. Its changes go straight into the game.'),
-  action('Give my agent access', async () => {
-    const grant = await api<Grant>('projects/' + projectId + '/grants', { write: true, hours: 168 });
-    result.replaceChildren(...grantSetup(endpoint, grant));
-  }, 'primary'), result);
+  body.append(
+    el(
+      'p',
+      'Claude Code or Codex on your own computer can work on ' +
+        title +
+        ' through this box’s MCP server, ' +
+        'for up to a week. Its changes go straight into the game.',
+    ),
+    action(
+      'Give my agent access',
+      async () => {
+        const grant = await api<Grant>('projects/' + projectId + '/grants', { write: true, hours: 168 });
+        result.replaceChildren(...grantSetup(endpoint, grant));
+      },
+      'primary',
+    ),
+    result,
+  );
 }

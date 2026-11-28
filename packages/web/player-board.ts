@@ -6,7 +6,10 @@ import type { SeatInfo } from '../sdk/contracts.ts';
 type Tiles = ReturnType<typeof tileState.parse>;
 
 /** The first and the second player's marks on a tile; any other tile shows a dot. */
-const MARKS = new Map([[1, '✧'], [2, '●']]);
+const MARKS = new Map([
+  [1, '✧'],
+  [2, '●'],
+]);
 
 /** The line under the board: who won, a draw, or whose turn it is. */
 function scoreLine(state: Tiles, seat: SeatInfo | undefined, name: (id: string) => string) {
@@ -29,9 +32,13 @@ export function buildBoard(board: HTMLElement, place: (cell: number) => void) {
 }
 
 /** The tiles as the room's state has them, for this seat among the room's seats, with the score line and New round. */
-export function renderBoard(view: { board: HTMLElement; score: HTMLElement; reset: HTMLButtonElement },
-  tile: Tiles, seats: SeatInfo[], seat: SeatInfo | undefined) {
-  const name = (id: string) => id === 'bot' ? 'Computer' : seats.find((seat) => seat.id === id)?.name ?? 'Player';
+export function renderBoard(
+  view: { board: HTMLElement; score: HTMLElement; reset: HTMLButtonElement },
+  tile: Tiles,
+  seats: SeatInfo[],
+  seat: SeatInfo | undefined,
+) {
+  const name = (id: string) => (id === 'bot' ? 'Computer' : (seats.find((seat) => seat.id === id)?.name ?? 'Player'));
   for (const button of view.board.querySelectorAll<HTMLButtonElement>('button')) {
     const index = Number(button.dataset.cell);
     const value = tile.board[index];
@@ -43,5 +50,5 @@ export function renderBoard(view: { board: HTMLElement; score: HTMLElement; rese
     button.setAttribute('aria-label', value ? name(value) + ', tile ' + (index + 1) : 'Place on tile ' + (index + 1));
   }
   view.score.textContent = scoreLine(tile, seat, name);
-  view.reset.hidden = !tile.winner && !tile.draw || seat?.role !== 'player';
+  view.reset.hidden = (!tile.winner && !tile.draw) || seat?.role !== 'player';
 }

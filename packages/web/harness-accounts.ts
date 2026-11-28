@@ -6,7 +6,7 @@ type AccountChoices = { providers: Processor[]; notice: string };
 /** A harness's state in the list: ready, signed out, or why it is unavailable. */
 function harnessState(processor: Processor) {
   if (processor.ready !== false) return 'Ready';
-  return processor.signIn ? 'Signed out' : processor.detail ?? 'Unavailable';
+  return processor.signIn ? 'Signed out' : (processor.detail ?? 'Unavailable');
 }
 
 export function showHarnessAccounts(refresh: () => Promise<AccountChoices>) {
@@ -21,7 +21,8 @@ export function showHarnessAccounts(refresh: () => Promise<AccountChoices>) {
       const item = el('section', undefined, 'item');
       const detail = harnessState(processor);
       item.append(el('strong', processor.name), el('small', detail));
-      if (processor.signIn) item.append(action('Sign in to ' + processor.name, () => signInHarness(item, processor, reload), 'primary'));
+      if (processor.signIn)
+        item.append(action('Sign in to ' + processor.name, () => signInHarness(item, processor, reload), 'primary'));
       body.append(item);
     }
     if (!providers.length) body.append(el('p', notice));
@@ -49,7 +50,10 @@ async function signInHarness(item: HTMLElement, processor: Processor, reload: ()
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     if (!code.value.trim()) return;
-    attempt(async () => { await api(path, { code: code.value.trim() }); code.value = ''; }, submit);
+    attempt(async () => {
+      await api(path, { code: code.value.trim() });
+      code.value = '';
+    }, submit);
   });
   controls.append(form);
   let signInLink: HTMLAnchorElement | undefined;
@@ -73,6 +77,9 @@ async function signInHarness(item: HTMLElement, processor: Processor, reload: ()
   }
   if (!dialog.open || !item.isConnected) return;
   if (state.status === 'complete') await reload();
-  else controls.replaceChildren(el('p', state.error ? 'Sign-in did not complete: ' + state.error : 'Sign-in did not complete.'),
-    action('Try again', () => signInHarness(item, processor, reload)));
+  else
+    controls.replaceChildren(
+      el('p', state.error ? 'Sign-in did not complete: ' + state.error : 'Sign-in did not complete.'),
+      action('Try again', () => signInHarness(item, processor, reload)),
+    );
 }

@@ -16,16 +16,24 @@ import { processorId } from './processors.ts';
 /** A thread's name: a project and branch, or `new` and the chat's own id before a project exists. */
 const threadName = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,79}\.[a-z0-9][a-z0-9_-]{0,79}$/);
 const runningTurn = z.strictObject({
-  id, state: z.enum(['running', 'interrupted']), harness: processorId, text: z.string().min(1).max(3000),
-  noteId: id.optional(), startedAt: z.iso.datetime(),
+  id,
+  state: z.enum(['running', 'interrupted']),
+  harness: processorId,
+  text: z.string().min(1).max(3000),
+  noteId: id.optional(),
+  startedAt: z.iso.datetime(),
   /** The editor that runs it: its process, and the data folder it owns. */
-  pid: z.number().int().positive(), data: z.string().min(1).max(4096),
+  pid: z.number().int().positive(),
+  data: z.string().min(1).max(4096),
 });
 const threadState = z.strictObject({
   version: z.literal(1),
   folder: threadName,
   harness: processorId.optional(),
-  sessionId: z.string().regex(/^[A-Za-z0-9_-]{1,200}$/).optional(),
+  sessionId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,200}$/)
+    .optional(),
   lastRun: z.iso.datetime().optional(),
   turn: runningTurn.optional(),
   /** A chat before a project: its messages so far, and once its first game exists, that project. */
@@ -39,7 +47,12 @@ export const projectThread = (projectId: string, branch: string) => threadName.p
 export const workspaceThread = (chat: string) => threadName.parse('new.' + chat);
 
 function alive(pid: number) {
-  try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM'; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
 }
 
 export class Threads {
@@ -53,17 +66,23 @@ export class Threads {
     privateDirectory(root);
   }
 
-  private file(key: string) { return join(this.root, threadName.parse(key) + '.json'); }
+  private file(key: string) {
+    return join(this.root, threadName.parse(key) + '.json');
+  }
 
   read(key: string): ThreadState | undefined {
     let text: string;
-    try { text = readFileSync(this.file(key), 'utf8'); }
-    catch (error) {
+    try {
+      text = readFileSync(this.file(key), 'utf8');
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
       throw error;
     }
-    try { return threadState.parse(JSON.parse(text)); }
-    catch { throw new ZirbelError(422, 'The thread’s saved state is not valid.'); }
+    try {
+      return threadState.parse(JSON.parse(text));
+    } catch {
+      throw new ZirbelError(422, 'The thread’s saved state is not valid.');
+    }
   }
 
   private write(key: string, state: ThreadState) {
@@ -86,21 +105,28 @@ export class Threads {
   update(key: string, change: Partial<Omit<ThreadState, 'version' | 'folder'>>) {
     const state = this.open(key);
     const next: ThreadState = { ...state, ...change };
-    for (const [name, value] of Object.entries(change)) if (value === undefined) delete next[name as keyof typeof change];
+    for (const [name, value] of Object.entries(change))
+      if (value === undefined) delete next[name as keyof typeof change];
     return this.write(key, next);
   }
 
   /** Marks a turn as running in the thread, by this editor. */
   begin(key: string, turn: Omit<ThreadTurn, 'state' | 'pid' | 'data' | 'startedAt'>) {
-    return this.update(key, { turn: { ...turn, state: 'running', startedAt: new Date().toISOString(), pid: process.pid, data: this.data } });
+    return this.update(key, {
+      turn: { ...turn, state: 'running', startedAt: new Date().toISOString(), pid: process.pid, data: this.data },
+    });
   }
 
   /** The turn's end: gone from the state, or interrupted when its editor stopped while it ran. */
   end(key: string, turnId: string, interrupted = false) {
     const state = this.read(key);
     if (state?.turn?.id !== turnId) return;
-    this.update(key, interrupted ? { turn: { ...state.turn, state: 'interrupted' }, lastRun: new Date().toISOString() }
-      : { turn: undefined, lastRun: new Date().toISOString() });
+    this.update(
+      key,
+      interrupted
+        ? { turn: { ...state.turn, state: 'interrupted' }, lastRun: new Date().toISOString() }
+        : { turn: undefined, lastRun: new Date().toISOString() },
+    );
   }
 
   /** As the editor starts: a turn its editor was running when it ended is interrupted. One that another editor, with
@@ -108,9 +134,14 @@ export class Threads {
   interruptStale() {
     for (const key of this.keys()) {
       let state: ThreadState | undefined;
-      try { state = this.read(key); } catch { continue; }
+      try {
+        state = this.read(key);
+      } catch {
+        continue;
+      }
       const turn = state?.turn;
-      if (turn?.state !== 'running' || (turn.data !== this.data && turn.pid !== process.pid && alive(turn.pid))) continue;
+      if (turn?.state !== 'running' || (turn.data !== this.data && turn.pid !== process.pid && alive(turn.pid)))
+        continue;
       this.update(key, { turn: { ...turn, state: 'interrupted' } });
     }
   }
@@ -125,21 +156,34 @@ export class Threads {
   }
 
   /** Removes every thread of a project: its folder and, through remove, all its harness kept of each session. */
-  async removeProject(projectId: string, remove: (harness: string, session: { cwd: string; sessionId: string }) => Promise<void>) {
+  async removeProject(
+    projectId: string,
+    remove: (harness: string, session: { cwd: string; sessionId: string }) => Promise<void>,
+  ) {
     for (const key of this.keys()) {
       let state: ThreadState | undefined;
-      try { state = this.read(key); } catch { continue; }
+      try {
+        state = this.read(key);
+      } catch {
+        continue;
+      }
       if (!state || (!key.startsWith(projectId + '.') && state.project !== projectId)) continue;
       const cwd = join(this.root, state.folder);
       if (state.harness && state.sessionId)
-        await remove(state.harness, { cwd, sessionId: state.sessionId }).catch(() => console.warn('Could not remove a thread’s session.'));
-      await rm(cwd, { recursive: true, force: true, maxRetries: 2 }).catch(() => console.warn('Could not remove a thread’s folder.'));
+        await remove(state.harness, { cwd, sessionId: state.sessionId }).catch(() =>
+          console.warn('Could not remove a thread’s session.'),
+        );
+      await rm(cwd, { recursive: true, force: true, maxRetries: 2 }).catch(() =>
+        console.warn('Could not remove a thread’s folder.'),
+      );
       rmSync(this.file(key), { force: true });
     }
   }
 
   private keys() {
-    return readdirSync(this.root).filter((file) => file.endsWith('.json')).map((file) => file.slice(0, -5))
+    return readdirSync(this.root)
+      .filter((file) => file.endsWith('.json'))
+      .map((file) => file.slice(0, -5))
       .filter((key) => threadName.safeParse(key).success);
   }
 }

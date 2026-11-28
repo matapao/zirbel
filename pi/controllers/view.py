@@ -19,8 +19,9 @@ def controllers(pads: list[dict], bluetooth: dict | None, error: str | None = No
     unplugged = []
     for item in bt["paired"]:
         if item["address"] not in by_address:
-            unplugged.append({"name": item["name"], "kind": "bluetooth", "connected": item["connected"],
-                              "address": item["address"]})
+            unplugged.append(
+                {"name": item["name"], "kind": "bluetooth", "connected": item["connected"], "address": item["address"]}
+            )
     devices = []
     for pad in sorted(pads, key=lambda item: item["device"]):
         entry = {"name": pad["name"], "kind": pad["kind"], "connected": True, "device": pad["device"]}
@@ -30,10 +31,15 @@ def controllers(pads: list[dict], bluetooth: dict | None, error: str | None = No
     devices += sorted(unplugged, key=lambda item: item["name"].lower())
     listed = {entry.get("address") for entry in devices}
     reason = error or bt["error"]
-    message = {"type": "controllers", "devices": devices[:MAX_DEVICES],
-               "found": [item for item in bt["found"] if item["address"] not in listed],
-               "scanning": bool(bt["scanning"]), "bluetooth": bool(bt["bluetooth"]), "pairing": bt["pairing"],
-               "error": reason[:ERROR_CHARS] if reason else None}
+    message = {
+        "type": "controllers",
+        "devices": devices[:MAX_DEVICES],
+        "found": [item for item in bt["found"] if item["address"] not in listed],
+        "scanning": bool(bt["scanning"]),
+        "bluetooth": bool(bt["bluetooth"]),
+        "pairing": bt["pairing"],
+        "error": reason[:ERROR_CHARS] if reason else None,
+    }
     while not wire.fits(message) and message["found"]:
         message["found"].pop()
     while not wire.fits(message) and message["devices"]:

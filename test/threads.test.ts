@@ -21,16 +21,27 @@ function recording(answer: (call: Call, index: number) => Promise<void> | void =
   const calls: Call[] = [];
   const removed: { id: string; cwd: string; sessionId: string }[] = [];
   const harnesses: Processors = {
-    list: async () => [{ id: 'codex', name: 'Codex', ready: true }, { id: 'claude', name: 'Claude Code', ready: true }],
+    list: async () => [
+      { id: 'codex', name: 'Codex', ready: true },
+      { id: 'claude', name: 'Claude Code', ready: true },
+    ],
     async start(id, _prompt, run = {}) {
       const call = { id, run };
       calls.push(call);
       await answer(call, calls.length - 1);
       const sessionId = run.place?.resume ? run.place.sessionId : 'session-' + calls.length;
       if (sessionId) run.session?.(sessionId);
-      return { name: id, task: sessionId ?? '', stopReason: 'end_turn', text: '{"action":"reply","message":"ok"}', sessionId };
+      return {
+        name: id,
+        task: sessionId ?? '',
+        stopReason: 'end_turn',
+        text: '{"action":"reply","message":"ok"}',
+        sessionId,
+      };
     },
-    async removeSession(id, session) { removed.push({ id, ...session }); },
+    async removeSession(id, session) {
+      removed.push({ id, ...session });
+    },
   };
   return { harnesses, calls, removed };
 }
@@ -42,13 +53,21 @@ test('a thread keeps one private folder and one session, which its later turns r
   const threads = new Threads(root, '/data/one');
   const key = projectThread('game-1', 'main');
   const { harnesses, calls, removed } = recording();
-  const run = (id: string, harness = 'codex') => inThread(threads, harnesses, key, turn(id, harness), {}, undefined,
-    (harness_, folder) => harness_.start(harness, 'Make it', {}).then((reply) => ({ reply, folder })));
+  const run = (id: string, harness = 'codex') =>
+    inThread(threads, harnesses, key, turn(id, harness), {}, undefined, (harness_, folder) =>
+      harness_.start(harness, 'Make it', {}).then((reply) => ({ reply, folder })),
+    );
 
   const first = await run('turn-1');
   assert.equal(first.folder, join(root, 'game-1.main'));
   assert.equal(statSync(first.folder).mode & 0o777, 0o700);
-  assert.deepEqual(calls[0]?.run.place, { cwd: first.folder, sessionId: undefined, resume: false, mcpServers: [], readable: [] });
+  assert.deepEqual(calls[0]?.run.place, {
+    cwd: first.folder,
+    sessionId: undefined,
+    resume: false,
+    mcpServers: [],
+    readable: [],
+  });
   const state = threads.read(key);
   assert.equal(state?.sessionId, 'session-1');
   assert.equal(state?.harness, 'codex');
@@ -58,7 +77,13 @@ test('a thread keeps one private folder and one session, which its later turns r
   assert.ok(existsSync(join(root, 'game-1.main.json')));
 
   await run('turn-2');
-  assert.deepEqual(calls[1]?.run.place, { cwd: first.folder, sessionId: 'session-1', resume: true, mcpServers: [], readable: [] });
+  assert.deepEqual(calls[1]?.run.place, {
+    cwd: first.folder,
+    sessionId: 'session-1',
+    resume: true,
+    mcpServers: [],
+    readable: [],
+  });
   assert.equal(threads.read(key)?.sessionId, 'session-1');
 
   // Another harness: a new session in the same folder, and the old session's transcript goes.
@@ -82,17 +107,33 @@ test('a session the harness no longer has starts a new one in the same folder, a
   const { harnesses, calls } = recording(({ run }) => {
     if (run.place?.resume) throw new TurnEndedError('Codex', 'session-not-found');
   });
-  await inThread(threads, harnesses, key, turn('turn-1'), {}, undefined,
-    (harness) => harness.start('codex', 'Go on', { update: (event) => events.push(event) }));
-  assert.deepEqual(calls.map(({ run }) => [run.place?.resume, run.place?.sessionId]), [[true, 'gone'], [false, undefined]]);
+  await inThread(threads, harnesses, key, turn('turn-1'), {}, undefined, (harness) =>
+    harness.start('codex', 'Go on', { update: (event) => events.push(event) }),
+  );
+  assert.deepEqual(
+    calls.map(({ run }) => [run.place?.resume, run.place?.sessionId]),
+    [
+      [true, 'gone'],
+      [false, undefined],
+    ],
+  );
   assert.equal(threads.read(key)?.sessionId, 'session-2');
   const notice = events.find((event) => event.type === 'activity' && event.entry.id === 'new-session');
   assert.ok(notice?.type === 'activity');
-  assert.match(notice.entry.title, /Codex no longer has this thread’s session\. It starts a new session in the thread’s folder\./);
+  assert.match(
+    notice.entry.title,
+    /Codex no longer has this thread’s session\. It starts a new session in the thread’s folder\./,
+  );
   // Any other end is the turn's error, as it was.
-  const failing = recording(() => { throw new TurnEndedError('Codex', 'usage-limit'); });
-  await assert.rejects(inThread(threads, failing.harnesses, key, turn('turn-2'), {}, undefined,
-    (harness) => harness.start('codex', 'Go on', {})), /usage limit/);
+  const failing = recording(() => {
+    throw new TurnEndedError('Codex', 'usage-limit');
+  });
+  await assert.rejects(
+    inThread(threads, failing.harnesses, key, turn('turn-2'), {}, undefined, (harness) =>
+      harness.start('codex', 'Go on', {}),
+    ),
+    /usage limit/,
+  );
 });
 
 test('a turn is marked running; the editor stopping, or ending mid-turn, leaves it interrupted until continued', async (t) => {
@@ -105,10 +146,19 @@ test('a turn is marked running; the editor stopping, or ending mid-turn, leaves 
     // The harness names its session as it starts, long before the turn ends.
     run.session?.('live');
     started.resolve();
-    await new Promise((_resolve, reject) => run.signal?.addEventListener('abort', () => reject(abortError(run.signal)), { once: true }));
+    await new Promise((_resolve, reject) =>
+      run.signal?.addEventListener('abort', () => reject(abortError(run.signal)), { once: true }),
+    );
   });
-  const running = inThread(threads, harnesses, key, { ...turn('turn-1'), noteId: 'note-1' }, {}, controller.signal,
-    (harness) => harness.start('codex', 'Make it', { signal: controller.signal }));
+  const running = inThread(
+    threads,
+    harnesses,
+    key,
+    { ...turn('turn-1'), noteId: 'note-1' },
+    {},
+    controller.signal,
+    (harness) => harness.start('codex', 'Make it', { signal: controller.signal }),
+  );
   await started.promise;
   assert.deepEqual([threads.read(key)?.turn?.state, threads.read(key)?.turn?.pid], ['running', process.pid]);
   controller.abort(new EditorStopping());
@@ -119,10 +169,25 @@ test('a turn is marked running; the editor stopping, or ending mid-turn, leaves 
   // with a data folder of its own, is still running stays as it is; one whose editor is gone is interrupted too.
   const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)']);
   t.after(() => other.kill());
-  const write = (name: string, pid: number, data: string) => writeFileSync(join(root, name + '.json'), JSON.stringify({
-    version: 1, folder: name, harness: 'codex', sessionId: 's',
-    turn: { id: 'turn-x', state: 'running', harness: 'codex', text: 'Make it', startedAt: new Date().toISOString(), pid, data },
-  }));
+  const write = (name: string, pid: number, data: string) =>
+    writeFileSync(
+      join(root, name + '.json'),
+      JSON.stringify({
+        version: 1,
+        folder: name,
+        harness: 'codex',
+        sessionId: 's',
+        turn: {
+          id: 'turn-x',
+          state: 'running',
+          harness: 'codex',
+          text: 'Make it',
+          startedAt: new Date().toISOString(),
+          pid,
+          data,
+        },
+      }),
+    );
   write('game-2.main', other.pid!, '/data/one');
   write('game-3.main', other.pid!, '/data/two');
   write('game-4.main', 999_999, '/data/two');
@@ -133,10 +198,15 @@ test('a turn is marked running; the editor stopping, or ending mid-turn, leaves 
 
   // A new turn in the thread replaces the interrupted one.
   const next = recording();
-  await inThread(threads, next.harnesses, key, turn('turn-2'), {}, undefined, (harness) => harness.start('codex', CONTINUE_TEXT, {}));
+  await inThread(threads, next.harnesses, key, turn('turn-2'), {}, undefined, (harness) =>
+    harness.start('codex', CONTINUE_TEXT, {}),
+  );
   assert.equal(threads.read(key)?.turn, undefined);
-  assert.deepEqual([next.calls[0]?.run.place?.resume, next.calls[0]?.run.place?.sessionId], [true, 'live'],
-    'Continue resumes the same session');
+  assert.deepEqual(
+    [next.calls[0]?.run.place?.resume, next.calls[0]?.run.place?.sessionId],
+    [true, 'live'],
+    'Continue resumes the same session',
+  );
 });
 
 test('the chat before a project moves to the project it creates, and a removed project takes its threads along', async (t) => {
@@ -158,7 +228,9 @@ test('the chat before a project moves to the project it creates, and a removed p
   const side = threads.folder(projectThread('game-1', 'side'));
   const keep = threads.folder(projectThread('game-2', 'main'));
   const removed: string[] = [];
-  await threads.removeProject('game-1', async (harness, { cwd, sessionId }) => { removed.push(harness + ':' + sessionId + ':' + cwd); });
+  await threads.removeProject('game-1', async (harness, { cwd, sessionId }) => {
+    removed.push(harness + ':' + sessionId + ':' + cwd);
+  });
   assert.deepEqual(removed.sort(), ['claude:second:' + side, 'codex:first:' + folder]);
   assert.deepEqual([existsSync(folder), existsSync(side), existsSync(keep)], [false, false, true]);
   assert.deepEqual([threads.read(chat), threads.read(projectThread('game-1', 'main'))], [undefined, undefined]);

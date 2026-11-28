@@ -12,30 +12,43 @@ export function modelPicker(onChange: () => void) {
   let processor: string | undefined;
   let loading: { controller: AbortController; changedModel: boolean } | undefined;
   let fault = '';
-  const current = () => processor ? harnesses.get(processor) : undefined;
+  const current = () => (processor ? harnesses.get(processor) : undefined);
 
   function render() {
     const settings = current();
-    label.textContent = modelChoices(settings?.available?.model)
-      .find(({ value }) => value === settings?.selection.model)?.name ?? 'Model';
+    label.textContent =
+      modelChoices(settings?.available?.model).find(({ value }) => value === settings?.selection.model)?.name ??
+      'Model';
     fields.replaceChildren();
     if (loading) {
       fields.append(el('span', 'Checking harness options…', 'model-picker-status'));
       return;
     }
-    if (fault) fields.append(el('span', fault, 'model-picker-status'), action('Refresh choices', () => load()));
+    if (fault)
+      fields.append(
+        el('span', fault, 'model-picker-status'),
+        action('Refresh choices', () => load()),
+      );
     if (!settings?.available) return;
     const { model, effort } = settings.available;
-    if (model && modelChoices(model).length) fields.append(selectSetting(model, settings.selection.model, (model) => void load(model, true)));
-    if (effort && modelChoices(effort).length) fields.append(selectSetting(effort, settings.selection.effort, (effort) => {
-      settings.selection = { model: settings.selection.model ?? model?.currentValue, effort };
-      render();
-    }));
-    if (!fields.childElementCount) fields.append(el('span', 'This harness reported no model or reasoning choices.', 'model-picker-status'));
-    if (settings.selection.model || settings.selection.effort) fields.append(action('Use harness defaults', () => {
-      settings.selection = {};
-      return load();
-    }));
+    if (model && modelChoices(model).length)
+      fields.append(selectSetting(model, settings.selection.model, (model) => void load(model, true)));
+    if (effort && modelChoices(effort).length)
+      fields.append(
+        selectSetting(effort, settings.selection.effort, (effort) => {
+          settings.selection = { model: settings.selection.model ?? model?.currentValue, effort };
+          render();
+        }),
+      );
+    if (!fields.childElementCount)
+      fields.append(el('span', 'This harness reported no model or reasoning choices.', 'model-picker-status'));
+    if (settings.selection.model || settings.selection.effort)
+      fields.append(
+        action('Use harness defaults', () => {
+          settings.selection = {};
+          return load();
+        }),
+      );
   }
 
   async function load(model = current()?.selection.model, changedModel = false) {
@@ -48,11 +61,16 @@ export function modelPicker(onChange: () => void) {
     render();
     onChange();
     try {
-      const available = await api<ModelSettings>('processors/' + processor + '/model-settings', { model }, request.controller.signal);
+      const available = await api<ModelSettings>(
+        'processors/' + processor + '/model-settings',
+        { model },
+        request.controller.signal,
+      );
       if (loading !== request) return;
       if (changedModel) settings.selection = { model };
       const effort = settings.selection.effort;
-      if (effort && !modelChoices(available.effort).some(({ value }) => value === effort)) settings.selection.effort = undefined;
+      if (effort && !modelChoices(available.effort).some(({ value }) => value === effort))
+        settings.selection.effort = undefined;
       settings.available = available;
     } catch (error) {
       if (loading === request) fault = (error as Error).message;
@@ -104,7 +122,9 @@ export function modelPicker(onChange: () => void) {
       if (locked) close();
       render();
     },
-    get loading() { return Boolean(loading); },
+    get loading() {
+      return Boolean(loading);
+    },
     selection: () => {
       const selection = current()?.selection;
       return selection?.model || selection?.effort ? { ...selection } : undefined;

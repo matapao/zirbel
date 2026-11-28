@@ -36,13 +36,16 @@ const sdk = {
   assets: Object.freeze(JSON.parse(gameData.textContent) as Record<string, string>),
   register(id: string, properties: Record<string, unknown> = {}) {
     if (gameData.dataset.registration === 'off') return;
-    if (typeof id !== 'string' || id.length < 1 || id.length > 120) throw new Error('Register an ID of 1 to 120 characters.');
+    if (typeof id !== 'string' || id.length < 1 || id.length > 120)
+      throw new Error('Register an ID of 1 to 120 characters.');
     if (!compactProperties(properties)) throw new Error('Provide compact JSON properties.');
     if (!objects.has(id) && objects.size >= MAX_REGISTERED_OBJECTS) throw new Error('The inspector is full.');
     objects.set(id, jsonCopy({ id, properties }));
     publishObjects();
   },
-  unregister(id: string) { if (objects.delete(id)) publishObjects(); },
+  unregister(id: string) {
+    if (objects.delete(id)) publishObjects();
+  },
   send(state: unknown) {
     if (boundedJson(state) && JSON.stringify(state).length <= 4096) notify('zirbel.state', state);
   },
@@ -59,11 +62,16 @@ Object.defineProperty(window, 'zirbel', { value: Object.freeze(sdk) });
 // from its zirbel.json, and the screen the names and colours it gives its places.
 const pads = screenPads((effect) => notify('zirbel.rumble', effect), !channel);
 let controls: Controls | undefined;
-try { controls = checkedControls(JSON.parse(document.getElementById('zirbel-controls')?.textContent ?? 'null')); }
-catch { controls = undefined; }
+try {
+  controls = checkedControls(JSON.parse(document.getElementById('zirbel-controls')?.textContent ?? 'null'));
+} catch {
+  controls = undefined;
+}
 if (controls) {
   pressKeys(controls);
-  controls.players?.forEach(({ name, color }, index) => { if (name || color) place(index, { name, color }); });
+  controls.players?.forEach(({ name, color }, index) => {
+    if (name || color) place(index, { name, color });
+  });
 }
 if (channel) {
   channel.port1.onmessage = (event) => {

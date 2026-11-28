@@ -12,7 +12,11 @@ import { ZirbelError } from '../core/projects.ts';
 
 /** As a network takes them: a name of 1 to 32 bytes, and a WPA2 passphrase of 8 to 63 printable ASCII characters. */
 const stored = z.strictObject({
-  version: z.literal(1), name: z.string().min(1).refine((name) => Buffer.byteLength(name) <= 32),
+  version: z.literal(1),
+  name: z
+    .string()
+    .min(1)
+    .refine((name) => Buffer.byteLength(name) <= 32),
   password: z.string().regex(/^[\x20-\x7e]{8,63}$/),
 });
 type OwnNetwork = { name: string; password: string };
@@ -23,7 +27,9 @@ const UNREADABLE = 'The box’s own Wi-Fi could not be read.';
 /** The network's name and password, or nothing where the setup service made none. */
 export function readOwnNetwork(file: string): OwnNetwork | undefined {
   let text: string;
-  try { text = readFileSync(file, 'utf8'); } catch (error) {
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw new ZirbelError(500, UNREADABLE);
   }
@@ -31,7 +37,9 @@ export function readOwnNetwork(file: string): OwnNetwork | undefined {
     if (Buffer.byteLength(text) > FILE_BYTES) throw new Error('too long');
     const { name, password } = stored.parse(JSON.parse(text));
     return { name, password };
-  } catch { throw new ZirbelError(500, UNREADABLE); }
+  } catch {
+    throw new ZirbelError(500, UNREADABLE);
+  }
 }
 
 /** The text of a QR code that joins the network, as phones' cameras read it: WIFI:T:WPA;S:name;P:password;; with a
@@ -51,8 +59,11 @@ export async function ownNetworkView(file: string, on: boolean, qr: (text: strin
 /** Wakes the setup service through a file it removes: a systemd path unit starts the service when one appears. A box
  *  without the service has no folder for it, and the change stays in the settings only. */
 export function wake(file: string) {
-  try { writeFileSync(file, '', { mode: 0o660 }); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  try {
+    writeFileSync(file, '', { mode: 0o660 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
 }
 
 /** The file that wakes the setup service for the box's own Wi-Fi, beside its setup request. */

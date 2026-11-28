@@ -10,7 +10,19 @@ import { ZirbelError } from '../core/projects.ts';
 import { ClientMessage } from '../sdk/contracts.ts';
 import { gamePage, THREE_ADDONS } from './game-page.ts';
 import { GAME_FILE_TYPES } from '../sdk/game.ts';
-import { body, bytes, checkOrigin, contentType, fail, lanAddresses, listen, reply, requestUrl, secure, typeFor } from './http.ts';
+import {
+  body,
+  bytes,
+  checkOrigin,
+  contentType,
+  fail,
+  lanAddresses,
+  listen,
+  reply,
+  requestUrl,
+  secure,
+  typeFor,
+} from './http.ts';
 import { lobbyRequest, type LobbyContext } from './lobby-routes.ts';
 import { padsSockets } from './pads-socket.ts';
 import { acceptsGzip, prepareRuntime, sendImmutable, type Addons } from './runtime-files.ts';
@@ -53,7 +65,8 @@ function cachedGamePage(room: Room, origin: string, ancestors: string) {
 }
 
 const reserveSchema = z.strictObject({
-  invite: z.string().regex(/^[a-zA-Z0-9_-]{32}$/), name: z.string().trim().min(1).max(24),
+  invite: z.string().regex(/^[a-zA-Z0-9_-]{32}$/),
+  name: z.string().trim().min(1).max(24),
   role: z.enum(['player', 'spectator']),
 });
 
@@ -62,21 +75,37 @@ const reserveSchema = z.strictObject({
 export type PlayerReach = { hosts: () => string[]; network: (address: string) => boolean };
 
 /** spaces: where /.skalet/* goes, the spaces kernel's address while Zirbel runs one (spaces-proxy.ts). */
-export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, Buffer>, addons: Addons, config: {
-  port: number; bind: string; lan: boolean; editorOrigins?: string[] | ((host: string) => string[]); extraHosts?: string[];
-  reach?: PlayerReach | undefined; lobby: LobbyContext; pads: Pads; spaces: SpacesTarget;
-}) {
+export async function playerListener(
+  rooms: Rooms,
+  runtime: ReadonlyMap<string, Buffer>,
+  addons: Addons,
+  config: {
+    port: number;
+    bind: string;
+    lan: boolean;
+    editorOrigins?: string[] | ((host: string) => string[]);
+    extraHosts?: string[];
+    reach?: PlayerReach | undefined;
+    lobby: LobbyContext;
+    pads: Pads;
+    spaces: SpacesTarget;
+  },
+) {
   let port: number;
-  const hosts = () => [...config.reach?.hosts() ?? ['localhost', '127.0.0.1', ...(config.lan ? lanAddresses() : [])],
-    ...(config.extraHosts ?? [])];
+  const hosts = () => [
+    ...(config.reach?.hosts() ?? ['localhost', '127.0.0.1', ...(config.lan ? lanAddresses() : [])]),
+    ...(config.extraHosts ?? []),
+  ];
   const editorOrigins = (host: string) =>
-    typeof config.editorOrigins === 'function' ? config.editorOrigins(host) : config.editorOrigins ?? [];
+    typeof config.editorOrigins === 'function' ? config.editorOrigins(host) : (config.editorOrigins ?? []);
   const allows = (room: { access: 'local' | 'lan' }) => {
     if (room.access !== (config.lan ? 'lan' : 'local'))
       throw new ZirbelError(404, 'This room is unavailable on this listener.');
   };
-  const isLocalNetwork = (request: IncomingMessage) => config.reach ? config.reach.network(request.socket.remoteAddress ?? '')
-    : !config.lan || privateAddress.test(request.socket.remoteAddress?.replace(/^::ffff:/, '') ?? '');
+  const isLocalNetwork = (request: IncomingMessage) =>
+    config.reach
+      ? config.reach.network(request.socket.remoteAddress ?? '')
+      : !config.lan || privateAddress.test(request.socket.remoteAddress?.replace(/^::ffff:/, '') ?? '');
   const runtimeFile = (name: string) => {
     const file = runtime.get(name);
     if (!file) throw new ZirbelError(404, 'Runtime file does not exist.');
@@ -90,18 +119,28 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
       if (!isLocalNetwork(request)) throw new ZirbelError(403, 'LAN access requires a local network address.');
       const url = requestUrl(request, port, hosts());
       const [, route, roomId, ...parts] = url.pathname.split('/');
-      if (request.method === 'GET' && url.pathname === '/health') { reply(response, { status: 'ok', role: 'player' }); return; }
+      if (request.method === 'GET' && url.pathname === '/health') {
+        reply(response, { status: 'ok', role: 'player' });
+        return;
+      }
       // The spaces kernel's: the modules pages and games import, and its routes.
-      if (isSpacesPath(url.pathname)) { proxySpaces(config.spaces, 'player', request, response); return; }
+      if (isSpacesPath(url.pathname)) {
+        proxySpaces(config.spaces, 'player', request, response);
+        return;
+      }
       if (await lobbyRequest(config.lobby, config.lan ? 'lan' : 'local', request, response, url)) return;
       if (!roomId) throw new ZirbelError(404, 'Open the invitation link from the host.');
       const room = rooms.get(roomId);
       allows(room);
       const frame = config.lan ? "'none'" : ["'self'", ...editorOrigins(url.hostname)].join(' ');
-      const playerPolicy = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" +
+      const playerPolicy =
+        "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" +
         // The LAN player is plain HTTP by design, so its room socket is ws: on this same host.
         // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- plain HTTP by design
-        " connect-src 'self' ws://" + url.host + "; frame-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors " + frame;
+        " connect-src 'self' ws://" +
+        url.host +
+        "; frame-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors " +
+        frame;
       response.setHeader('content-security-policy', playerPolicy);
       if (route === 'game' && request.method === 'GET' && room.release.game && parts[0] === room.documentKey) {
         const ancestors = ["'self'", ...editorOrigins(url.hostname)].join(' ');
@@ -112,11 +151,18 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
         const path = parts.slice(1).join('/');
         if (path) {
           // The game's origin is opaque, so its module scripts, fonts and fetches are CORS requests.
-          bytes(response, gameFile(room, path), GAME_FILE_TYPES[path.split('.').at(-1) ?? ''] ?? 'application/octet-stream',
-            { 'access-control-allow-origin': '*' });
+          bytes(
+            response,
+            gameFile(room, path),
+            GAME_FILE_TYPES[path.split('.').at(-1) ?? ''] ?? 'application/octet-stream',
+            { 'access-control-allow-origin': '*' },
+          );
           return;
         }
-        if (!acceptsGzip(request)) { bytes(response, page.html, contentType.html!); return; }
+        if (!acceptsGzip(request)) {
+          bytes(response, page.html, contentType.html!);
+          return;
+        }
         bytes(response, await page.gzip, contentType.html!, { 'content-encoding': 'gzip', vary: 'accept-encoding' });
         return;
       }
@@ -128,11 +174,14 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
       if (route === 'rooms' && parts[0] === 'info' && parts.length === 1 && request.method === 'GET') {
         // A net game's room is for its space's members, by the proof a page made on its own connection.
         const credential = (request.headers.authorization ?? '').replace(/^Bearer /, '');
-        if (room.space ? !await rooms.proven(room, credential) : !room.mayView(credential))
+        if (room.space ? !(await rooms.proven(room, credential)) : !room.mayView(credential))
           throw new ZirbelError(403, 'An invitation or current seat is required.');
-        reply(response, { ...room.summary(), scene: room.release.scene,
+        reply(response, {
+          ...room.summary(),
+          scene: room.release.scene,
           registerObjects: room.release.game?.registerObjects,
-          gameUrl: room.release.game ? gamePath(room) : undefined });
+          gameUrl: room.release.game ? gamePath(room) : undefined,
+        });
         return;
       }
       if (route === 'rooms' && parts[0] === 'reserve' && parts.length === 1 && request.method === 'POST') {
@@ -148,12 +197,15 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
         const entry = addon ?? runtimeEntries.get(name);
         if (!entry) throw new ZirbelError(404, 'Runtime file does not exist.');
         // The game's origin is opaque, so the modules and decoders it loads are CORS requests.
-        if (addon || name === 'three.module.js' || name === 'game-sdk.js') response.setHeader('access-control-allow-origin', '*');
+        if (addon || name === 'three.module.js' || name === 'game-sdk.js')
+          response.setHeader('access-control-allow-origin', '*');
         sendImmutable(request, response, typeFor(name), entry);
         return;
       }
       throw new ZirbelError(404, 'Player route does not exist.');
-    } catch (error) { fail(response, error); }
+    } catch (error) {
+      fail(response, error);
+    }
   }
   const player = createServer((request, response) => {
     handle(request, response).catch((error: unknown) => response.destroy(error instanceof Error ? error : undefined));
@@ -162,7 +214,12 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
   player.headersTimeout = 10_000;
   // 24 rooms with up to eight seats each, plus room for page loads and handshakes.
   player.maxConnections = 256;
-  const sockets = new WebSocketServer({ noServer: true, maxPayload: 16_384, perMessageDeflate: false, autoPong: false });
+  const sockets = new WebSocketServer({
+    noServer: true,
+    maxPayload: 16_384,
+    perMessageDeflate: false,
+    autoPong: false,
+  });
   const pads = padsSockets(config.pads, config.lan ? 'lan' : 'local');
   const handshakes = new Set<WebSocket>();
   const waitingForPong = new WeakSet<WebSocket>();
@@ -170,14 +227,23 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
     try {
       if (!isLocalNetwork(request)) throw new ZirbelError(403, 'LAN access requires a local network address.');
       const url = requestUrl(request, port, hosts());
-      if (url.pathname === '/.skalet/spaces') { proxySpacesUpgrade(config.spaces, 'player', request, stream, head); return; }
-      if (url.pathname === '/pads') { pads.upgrade(request, stream, head, url); return; }
+      if (url.pathname === '/.skalet/spaces') {
+        proxySpacesUpgrade(config.spaces, 'player', request, stream, head);
+        return;
+      }
+      if (url.pathname === '/pads') {
+        pads.upgrade(request, stream, head, url);
+        return;
+      }
       const match = /^\/rooms\/([a-z0-9]+)\/socket$/.exec(url.pathname);
       if (!match?.[1]) throw new ZirbelError(404, 'Room socket does not exist.');
       checkOrigin(request, true);
       const room = rooms.get(match[1]);
       allows(room);
-      if (handshakes.size >= 32) { stream.destroy(); return; }
+      if (handshakes.size >= 32) {
+        stream.destroy();
+        return;
+      }
       sockets.handleUpgrade(request, stream, head, (socket) => {
         handshakes.add(socket);
         socket.on('pong', () => waitingForPong.delete(socket));
@@ -197,18 +263,34 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
         const peer: Peer = {
           send(message) {
             if (socket.readyState !== WebSocket.OPEN) return;
-            if (socket.bufferedAmount > 256_000) { socket.close(1008, 'Slow connection'); return; }
+            if (socket.bufferedAmount > 256_000) {
+              socket.close(1008, 'Slow connection');
+              return;
+            }
             socket.send(JSON.stringify(message));
           },
-          close(code = 1000) { socket.close(code); },
+          close(code = 1000) {
+            socket.close(code);
+          },
         };
         socket.on('error', () => socket.terminate());
         socket.on('message', (data, binary) => {
           if (socket.readyState !== WebSocket.OPEN) return;
-          if (Date.now() - window > 1000) { window = Date.now(); received = 0; }
-          if (++received > 60 || binary || !Buffer.isBuffer(data)) { socket.close(1008, 'Unsupported traffic'); return; }
+          if (Date.now() - window > 1000) {
+            window = Date.now();
+            received = 0;
+          }
+          if (++received > 60 || binary || !Buffer.isBuffer(data)) {
+            socket.close(1008, 'Unsupported traffic');
+            return;
+          }
           let value: unknown;
-          try { value = JSON.parse(data.toString('utf8')); } catch { socket.close(1007, 'Invalid JSON'); return; }
+          try {
+            value = JSON.parse(data.toString('utf8'));
+          } catch {
+            socket.close(1007, 'Invalid JSON');
+            return;
+          }
           const message = ClientMessage.safeParse(value);
           if (!message.success) {
             peer.send({ type: 'error', code: 'protocol', message: 'Invalid message or protocol version.' });
@@ -216,10 +298,15 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
             return;
           }
           if (!seat) {
-            if (message.data.type !== 'hello') { socket.close(1008, 'Expected handshake'); return; }
+            if (message.data.type !== 'hello') {
+              socket.close(1008, 'Expected handshake');
+              return;
+            }
             seat = room.connect(message.data, peer);
-            if (seat) { clearTimeout(timeout); handshakes.delete(socket); }
-            else socket.close(1008, 'Join failed');
+            if (seat) {
+              clearTimeout(timeout);
+              handshakes.delete(socket);
+            } else socket.close(1008, 'Join failed');
           } else room.message(seat, peer, message.data);
         });
         socket.on('close', () => {
@@ -228,19 +315,25 @@ export async function playerListener(rooms: Rooms, runtime: ReadonlyMap<string, 
           if (seat) room.disconnected(seat, peer);
         });
       });
-    } catch { stream.destroy(); }
+    } catch {
+      stream.destroy();
+    }
   });
   port = await listen(player, config.port, config.bind);
   const heartbeat = setInterval(() => {
     for (const socket of sockets.clients) {
       if (socket.readyState !== WebSocket.OPEN) continue;
-      if (waitingForPong.has(socket)) { socket.terminate(); continue; }
+      if (waitingForPong.has(socket)) {
+        socket.terminate();
+        continue;
+      }
       waitingForPong.add(socket);
       socket.ping();
     }
   }, 30_000).unref();
   return {
-    port, server: player,
+    port,
+    server: player,
     close() {
       clearInterval(heartbeat);
       pads.close();

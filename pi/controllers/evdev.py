@@ -149,8 +149,12 @@ def is_controller(info: Info) -> bool:
     keys = set(info.keys)
     if info.accelerometer or keys & {BTN_TOUCH, BTN_TOOL_PEN, BTN_MOUSE}:
         return False
-    return any(BTN_JOYSTICK <= key <= 0x13F or BTN_DPAD_UP <= key <= BTN_DPAD_RIGHT
-               or BTN_TRIGGER_HAPPY <= key <= BTN_TRIGGER_HAPPY40 for key in keys)
+    return any(
+        BTN_JOYSTICK <= key <= 0x13F
+        or BTN_DPAD_UP <= key <= BTN_DPAD_RIGHT
+        or BTN_TRIGGER_HAPPY <= key <= BTN_TRIGGER_HAPPY40
+        for key in keys
+    )
 
 
 def is_standard(info: Info) -> bool:
@@ -180,8 +184,18 @@ def rumble_effect(effect: int, duration_ms: int, strong: float, weak: float) -> 
     def magnitude(value: float) -> int:
         return max(0, min(0xFFFF, round(value * 0xFFFF)))
 
-    head = struct.pack("=HhHHHHH2xHH", FF_RUMBLE, effect, 0, 0, 0, max(0, min(5000, int(duration_ms))), 0,
-                       magnitude(strong), magnitude(weak))
+    head = struct.pack(
+        "=HhHHHHH2xHH",
+        FF_RUMBLE,
+        effect,
+        0,
+        0,
+        0,
+        max(0, min(5000, int(duration_ms))),
+        0,
+        magnitude(strong),
+        magnitude(weak),
+    )
     return bytearray(head.ljust(FF_EFFECT_SIZE, b"\0"))
 
 

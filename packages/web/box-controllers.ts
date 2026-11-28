@@ -5,10 +5,20 @@
 import { action, api, el, inform } from './editor-ui.ts';
 
 type Screen = { code: string; tv: boolean; place: number } | null;
-type Controller = { name: string; kind: 'usb' | 'bluetooth' | 'other'; connected: boolean; address?: string; screen: Screen };
+type Controller = {
+  name: string;
+  kind: 'usb' | 'bluetooth' | 'other';
+  connected: boolean;
+  address?: string;
+  screen: Screen;
+};
 type Controllers = {
-  devices: Controller[]; found: { address: string; name: string }[];
-  scanning: boolean; bluetooth: boolean; pairing: string | null; error: string | null;
+  devices: Controller[];
+  found: { address: string; name: string }[];
+  scanning: boolean;
+  bluetooth: boolean;
+  pairing: string | null;
+  error: string | null;
 };
 
 const KINDS = { usb: 'USB', bluetooth: 'Bluetooth', other: 'On the box' };
@@ -28,8 +38,11 @@ export async function controllersSection() {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const ask = async (path: string, payload: object) => show(await api<Controllers>('box/controllers/' + path, payload));
   const refresh = async () => {
-    try { show(await api<Controllers>('box/controllers')); }
-    catch (error) { part.replaceChildren(el('p', (error as Error).message)); }
+    try {
+      show(await api<Controllers>('box/controllers'));
+    } catch (error) {
+      part.replaceChildren(el('p', (error as Error).message));
+    }
   };
   function show(view: Controllers) {
     clearTimeout(timer);
@@ -37,11 +50,14 @@ export async function controllersSection() {
       const row = el('section', undefined, 'item');
       row.append(el('strong', item.name), el('small', KINDS[item.kind] + ' · ' + where(item)));
       const address = item.address;
-      if (item.kind === 'bluetooth' && address && view.bluetooth) row.append(action('Forget', async () => {
-        if (!confirm('The box forgets ' + item.name + '. Pair it again to play with it.')) return;
-        await ask('forget', { address });
-        inform('The box forgot ' + item.name + '.');
-      }));
+      if (item.kind === 'bluetooth' && address && view.bluetooth)
+        row.append(
+          action('Forget', async () => {
+            if (!confirm('The box forgets ' + item.name + '. Pair it again to play with it.')) return;
+            await ask('forget', { address });
+            inform('The box forgot ' + item.name + '.');
+          }),
+        );
       return row;
     });
     if (!list.length) list.push(el('p', 'No controllers yet. Plug one into the box, or pair a Bluetooth one.'));
@@ -56,16 +72,43 @@ export async function controllersSection() {
       part.append(el('p', 'Pairing ' + name + '…'));
     } else if (view.scanning) {
       const found = el('div');
-      found.append(el('p', view.found.length ? 'Controllers the box found:' : 'Looking for controllers. Put yours in pairing mode.'));
+      found.append(
+        el(
+          'p',
+          view.found.length ? 'Controllers the box found:' : 'Looking for controllers. Put yours in pairing mode.',
+        ),
+      );
       for (const item of view.found) {
         const row = el('div', undefined, 'row');
-        row.append(el('span', item.name), action('Pair', async () => { await ask('pair', { address: item.address }); }, 'primary'));
+        row.append(
+          el('span', item.name),
+          action(
+            'Pair',
+            async () => {
+              await ask('pair', { address: item.address });
+            },
+            'primary',
+          ),
+        );
         found.append(row);
       }
-      part.append(found, action('Stop looking', async () => { await ask('scan', { on: false }); }));
-    } else part.append(action('Pair a Bluetooth controller', async () => { await ask('scan', { on: true }); }));
+      part.append(
+        found,
+        action('Stop looking', async () => {
+          await ask('scan', { on: false });
+        }),
+      );
+    } else
+      part.append(
+        action('Pair a Bluetooth controller', async () => {
+          await ask('scan', { on: true });
+        }),
+      );
     // The section follows the box while it looks or pairs, and stops once the dialog has closed.
-    if (view.scanning || view.pairing) timer = setTimeout(() => { if (part.isConnected) void refresh(); }, FOLLOW_MS);
+    if (view.scanning || view.pairing)
+      timer = setTimeout(() => {
+        if (part.isConnected) void refresh();
+      }, FOLLOW_MS);
   }
   await refresh();
   return part;

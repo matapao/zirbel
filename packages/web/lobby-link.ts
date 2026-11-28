@@ -4,8 +4,10 @@
 
 /** A player link from the lobby at here, and none from anywhere else, with here's ?net= on it. */
 export function playerLink(link: string, here: string) {
-  const url = new URL(link, here), lobby = new URL(here);
-  if (url.origin !== lobby.origin || !url.pathname.startsWith('/join/')) throw new Error('The lobby answered with an unexpected link.');
+  const url = new URL(link, here),
+    lobby = new URL(here);
+  if (url.origin !== lobby.origin || !url.pathname.startsWith('/join/'))
+    throw new Error('The lobby answered with an unexpected link.');
   const net = lobby.searchParams.get('net');
   if (net) url.searchParams.set('net', net);
   return url.href;

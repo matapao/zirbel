@@ -57,8 +57,14 @@ def _dbus_name(error: Exception) -> str:
 class Bluetooth:
     """The box's Bluetooth controller and what it knows of devices, kept from BlueZ's objects and their signals."""
 
-    def __init__(self, bus, changed: Callable[[], None], later: Callable[[float, Callable[[], None]], object],
-                 cancel: Callable[[object], None], log: Callable[[str], None] = lambda text: print(text, flush=True)):
+    def __init__(
+        self,
+        bus,
+        changed: Callable[[], None],
+        later: Callable[[float, Callable[[], None]], object],
+        cancel: Callable[[object], None],
+        log: Callable[[str], None] = lambda text: print(text, flush=True),
+    ):
         self.bus, self.changed, self.later, self.cancel, self.log = bus, changed, later, cancel, log
         self.objects: dict[str, dict[str, dict]] = {}
         self.adapter: str | None = None
@@ -71,8 +77,9 @@ class Bluetooth:
         receive = self.bus.add_signal_receiver
         receive(self._added, signal_name="InterfacesAdded", dbus_interface=OBJECT_MANAGER, bus_name=BLUEZ)
         receive(self._removed, signal_name="InterfacesRemoved", dbus_interface=OBJECT_MANAGER, bus_name=BLUEZ)
-        receive(self._properties, signal_name="PropertiesChanged", dbus_interface=PROPS, bus_name=BLUEZ,
-                path_keyword="path")
+        receive(
+            self._properties, signal_name="PropertiesChanged", dbus_interface=PROPS, bus_name=BLUEZ, path_keyword="path"
+        )
         self.bus.watch_name_owner(BLUEZ, self._owner)
 
     def _owner(self, owner: str) -> None:
@@ -82,8 +89,10 @@ class Bluetooth:
             try:
                 manager = self.bus.get_object(BLUEZ, "/")
                 objects = manager.GetManagedObjects(dbus_interface=OBJECT_MANAGER)
-                self.objects = {str(path): {str(name): dict(props) for name, props in interfaces.items()}
-                                for path, interfaces in objects.items()}
+                self.objects = {
+                    str(path): {str(name): dict(props) for name, props in interfaces.items()}
+                    for path, interfaces in objects.items()
+                }
             except dbus.DBusException as error:
                 self.log(f"BlueZ didn't list its objects: {error}")
             self._choose_adapter()
@@ -154,8 +163,11 @@ class Bluetooth:
     def devices(self) -> list[tuple[str, dict]]:
         """The adapter's devices, by object path."""
         prefix = (self.adapter or "\0") + "/"
-        return [(path, interfaces[DEVICE]) for path, interfaces in sorted(self.objects.items())
-                if path.startswith(prefix) and DEVICE in interfaces]
+        return [
+            (path, interfaces[DEVICE])
+            for path, interfaces in sorted(self.objects.items())
+            if path.startswith(prefix) and DEVICE in interfaces
+        ]
 
     def _device(self, address: str) -> tuple[str, dict] | None:
         return next(((path, props) for path, props in self.devices() if str(props.get("Address", "")) == address), None)
@@ -178,8 +190,14 @@ class Bluetooth:
             elif "Name" in props:
                 found.append((int(props.get("RSSI", -127)), {"address": address, "name": _name(props)}))
         found.sort(key=lambda item: -item[0])
-        return {"bluetooth": self.adapter is not None, "scanning": self.scanning, "pairing": self.pairing,
-                "error": self.error, "paired": paired[:MAX_LISTED], "found": [item for _, item in found][:MAX_LISTED]}
+        return {
+            "bluetooth": self.adapter is not None,
+            "scanning": self.scanning,
+            "pairing": self.pairing,
+            "error": self.error,
+            "paired": paired[:MAX_LISTED],
+            "found": [item for _, item in found][:MAX_LISTED],
+        }
 
     # The owner's requests, from Box settings through the host.
 
@@ -242,8 +260,12 @@ class Bluetooth:
         if bool(props.get("Paired", False)):
             self._trust(path, props)
             return
-        device.Pair(dbus_interface=DEVICE, timeout=PAIR_SECONDS, reply_handler=lambda: self._trust(path, props),
-                    error_handler=lambda error: self._pair_failed(path, props, error))
+        device.Pair(
+            dbus_interface=DEVICE,
+            timeout=PAIR_SECONDS,
+            reply_handler=lambda: self._trust(path, props),
+            error_handler=lambda error: self._pair_failed(path, props, error),
+        )
 
     def _pair_failed(self, path: str, props: dict, error: Exception) -> None:
         if _dbus_name(error).endswith(".AlreadyExists"):
@@ -257,8 +279,12 @@ class Bluetooth:
             device.Set(DEVICE, "Trusted", dbus.Boolean(True), dbus_interface=PROPS)
         except dbus.DBusException as error:
             self.log(f"BlueZ didn't trust {props.get('Address')}: {error}")
-        device.Connect(dbus_interface=DEVICE, timeout=CONNECT_SECONDS, reply_handler=lambda: self._done(None),
-                       error_handler=lambda error: self._connect_failed(props, error))
+        device.Connect(
+            dbus_interface=DEVICE,
+            timeout=CONNECT_SECONDS,
+            reply_handler=lambda: self._done(None),
+            error_handler=lambda error: self._connect_failed(props, error),
+        )
 
     def _connect_failed(self, props: dict, error: Exception) -> None:
         if _dbus_name(error).endswith(".AlreadyConnected"):

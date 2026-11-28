@@ -14,9 +14,18 @@ export const OWNS = 'This device owns the box and edits every game already. Use 
 
 /** The edit page: a code and a name. A device that owns the box, the box itself or a paired device, has no need of
  *  one, and a device holds one kind of session only. */
-export async function editRoute(box: BoxContext, request: IncomingMessage, response: ServerResponse, url: URL, address: string,
-  local: boolean) {
-  if (request.method === 'GET') { page(response, 200, editCode(url.searchParams.get('code') ?? '') ?? '', ''); return; }
+export async function editRoute(
+  box: BoxContext,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  address: string,
+  local: boolean,
+) {
+  if (request.method === 'GET') {
+    page(response, 200, editCode(url.searchParams.get('code') ?? '') ?? '', '');
+    return;
+  }
   if (request.method !== 'POST') throw new ZirbelError(405, 'Open the edit page.');
   checkOrigin(request, true);
   // As typed, for the page again.
@@ -29,7 +38,10 @@ export async function editRoute(box: BoxContext, request: IncomingMessage, respo
     if (local || box.pairing.session(cookie)) throw new ZirbelError(409, OWNS);
     // The session this device held as an editor, of this game or another, ends.
     const { token } = box.editors.redeem(form.code, form.name, address, cookie);
-    response.setHeader('set-cookie', EDITOR_COOKIE + '=' + token + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000');
+    response.setHeader(
+      'set-cookie',
+      EDITOR_COOKIE + '=' + token + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000',
+    );
     redirect(response, '/');
   } catch (error) {
     const { status, message } = failure(error);
@@ -61,12 +73,21 @@ function editLink(box: BoxContext, host: string, plain: string) {
 
 /** A game's code and the people editing it, for its owners: /api/projects/<id>/edit-code[/stop] and
  *  /api/projects/<id>/editors[/<editor>]. Says whether it answered the request. */
-export async function editorsRequest(box: BoxContext, projects: Projects, request: IncomingMessage, response: ServerResponse,
-  access: Access, url: URL, route: { pathID?: string | undefined; action?: string | undefined; tail?: string | undefined }) {
+export async function editorsRequest(
+  box: BoxContext,
+  projects: Projects,
+  request: IncomingMessage,
+  response: ServerResponse,
+  access: Access,
+  url: URL,
+  route: { pathID?: string | undefined; action?: string | undefined; tail?: string | undefined },
+) {
   const { pathID, action, tail } = route;
   const method = request.method;
-  const known = action === 'edit-code' ? method === 'POST' && (!tail || tail === 'stop')
-    : action === 'editors' && method === (tail ? 'DELETE' : 'GET');
+  const known =
+    action === 'edit-code'
+      ? method === 'POST' && (!tail || tail === 'stop')
+      : action === 'editors' && method === (tail ? 'DELETE' : 'GET');
   if (!pathID || !known) return false;
   if (access.editor) throw new ZirbelError(403, ONE_GAME);
   if (method !== 'GET') checkOrigin(request, !access.local);
@@ -83,8 +104,10 @@ export async function editorsRequest(box: BoxContext, projects: Projects, reques
     reply(response, {});
   } else {
     const code = box.editors.code(game);
-    reply(response, { code: code ? { code: code.code, link: editLink(box, url.hostname, code.plain), expiresAt: code.expiresAt } : null,
-      editors: box.editors.list(game) });
+    reply(response, {
+      code: code ? { code: code.code, link: editLink(box, url.hostname, code.plain), expiresAt: code.expiresAt } : null,
+      editors: box.editors.list(game),
+    });
   }
   return true;
 }

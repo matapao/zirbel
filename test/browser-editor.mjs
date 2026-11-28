@@ -35,7 +35,9 @@ export function answer(res, result, extra = {}) {
   const { game, ...reply } = result;
   const files = game ? { ...extra.files, 'index.html': game.html } : extra.files;
   const text = JSON.stringify({ ...reply, ...(game?.maxPlayers ? { maxPlayers: game.maxPlayers } : {}) });
-  res.end(JSON.stringify({ task: 'fixture-turn', stopReason: 'end_turn', ...extra, text, ...(files ? { files } : {}) }));
+  res.end(
+    JSON.stringify({ task: 'fixture-turn', stopReason: 'end_turn', ...extra, text, ...(files ? { files } : {}) }),
+  );
 }
 
 /** extra: arguments the editor starts with besides its port and data folder, such as ['--box']. */
@@ -43,19 +45,22 @@ export async function openEditor(t, run, extra = []) {
   const data = await mkdtemp(join(tmpdir(), 'zirbel-browser-'));
   // The threads' working folders, apart from the projects as the account folder is.
   const account = await mkdtemp(join(tmpdir(), 'zirbel-browser-account-'));
-  const harnessHost = createServer((req, res) => void (async () => {
-    res.setHeader('content-type', 'application/json');
-    if (req.url === '/access') {
-      res.end(JSON.stringify({ app: 'zirbel', processors: [{ id: 'codex', name: 'Test harness' }] }));
-      return;
-    }
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    const body = JSON.parse(Buffer.concat(chunks));
-    const context = JSON.parse(body.prompt.slice(body.prompt.lastIndexOf('\n') + 1));
-    // The run as the harness gets it: its thread folder (cwd), and the session it resumes, if it does.
-    await run(context, res, body);
-  })());
+  const harnessHost = createServer(
+    (req, res) =>
+      void (async () => {
+        res.setHeader('content-type', 'application/json');
+        if (req.url === '/access') {
+          res.end(JSON.stringify({ app: 'zirbel', processors: [{ id: 'codex', name: 'Test harness' }] }));
+          return;
+        }
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        const body = JSON.parse(Buffer.concat(chunks));
+        const context = JSON.parse(body.prompt.slice(body.prompt.lastIndexOf('\n') + 1));
+        // The run as the harness gets it: its thread folder (cwd), and the session it resumes, if it does.
+        await run(context, res, body);
+      })(),
+  );
   let host, browser;
   async function stopHost(signal = 'SIGTERM') {
     if (!host || host.exitCode !== null || host.signalCode !== null) return;
@@ -66,18 +71,13 @@ export async function openEditor(t, run, extra = []) {
   async function startHost(port) {
     host = spawn(
       process.execPath,
-      [
-        '--import',
-        './test/setup.ts',
-        'test/fixture-editor.ts',
-        '--port',
-        port,
-        '--data',
-        data,
-        ...extra,
-      ],
+      ['--import', './test/setup.ts', 'test/fixture-editor.ts', '--port', port, '--data', data, ...extra],
       {
-        env: { ...process.env, FIXTURE_HARNESS_URL: 'http://127.0.0.1:' + harnessHost.address().port, ZIRBEL_ACCOUNT_DIR: account },
+        env: {
+          ...process.env,
+          FIXTURE_HARNESS_URL: 'http://127.0.0.1:' + harnessHost.address().port,
+          ZIRBEL_ACCOUNT_DIR: account,
+        },
         stdio: ['ignore', 'pipe', 'inherit'],
       },
     );

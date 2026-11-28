@@ -17,11 +17,7 @@ const ask = (tool: string, input: unknown, extra: Partial<AgentAsk> = {}): Agent
 test('a shell request reads as the agent described it, with the command only in the details', () => {
   const command = 'cd ' + folder + ' && sed -n 1,40p src/draw.c && cc -o draw src/draw.c | node check.js; cp draw out/';
   const described = describeAsk(
-    ask(
-      'Bash',
-      { command, description: 'Render only the ship draws to find the black polygon' },
-      { title: command },
-    ),
+    ask('Bash', { command, description: 'Render only the ship draws to find the black polygon' }, { title: command }),
     { folder },
   );
   assert.equal(described.summary, 'Render only the ship draws to find the black polygon');
@@ -93,10 +89,7 @@ test('the reason the harness gives comes along as it is, under its own label on 
 });
 
 test('any other request is a short sentence from its tool', () => {
-  assert.equal(
-    describeAsk(ask('Read', { file_path: folder + '/a.txt' }), { folder }).summary,
-    'Read a.txt',
-  );
+  assert.equal(describeAsk(ask('Read', { file_path: folder + '/a.txt' }), { folder }).summary, 'Read a.txt');
   assert.equal(describeAsk(ask('Read', {})).summary, 'Read a file');
   assert.equal(describeAsk(ask('Grep', {})).summary, 'Search with Grep');
   assert.equal(describeAsk(ask('WebFetch', {})).summary, 'Fetch a page with WebFetch');

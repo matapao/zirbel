@@ -75,8 +75,13 @@ class Service:
         if kind == "rumble":
             device, duration = message.get("device"), message.get("duration")
             strong, weak = _unit(message.get("strong", 0)), _unit(message.get("weak", 0))
-            if isinstance(device, int) and isinstance(duration, (int, float)) and 0 <= duration <= 5000 and \
-                    strong is not None and weak is not None:
+            if (
+                isinstance(device, int)
+                and isinstance(duration, (int, float))
+                and 0 <= duration <= 5000
+                and strong is not None
+                and weak is not None
+            ):
                 self.pads.rumble(device, duration, strong, weak)
             return
         if kind not in ("scan", "pair", "forget"):
@@ -135,8 +140,14 @@ def main() -> None:
 
     def connect() -> bool:
         if not link.connected and link.open() and link.sock:
-            watching.append(GLib.io_add_watch(link.sock.fileno(), GLib.PRIORITY_DEFAULT,
-                                              GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, lambda *_: link.readable()))
+            watching.append(
+                GLib.io_add_watch(
+                    link.sock.fileno(),
+                    GLib.PRIORITY_DEFAULT,
+                    GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR,
+                    lambda *_: link.readable(),
+                )
+            )
         return True
 
     def rescan() -> bool:

@@ -14,7 +14,14 @@ export type SocketTables = { v4: string; v6: string };
 /** An address as 16 bytes in hex, an IPv4 one mapped into IPv6 (::ffff:a.b.c.d), or nothing for one that isn't. */
 export function addressKey(address: string) {
   const plain = address.replace(/^\[(.*)\]$/, '$1').replace(/%.*$/, '');
-  if (isIPv4(plain)) return '00000000000000000000ffff' + plain.split('.').map((part) => Number(part).toString(16).padStart(2, '0')).join('');
+  if (isIPv4(plain))
+    return (
+      '00000000000000000000ffff' +
+      plain
+        .split('.')
+        .map((part) => Number(part).toString(16).padStart(2, '0'))
+        .join('')
+    );
   const embedded = /^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(plain);
   let text = plain;
   if (embedded) {
@@ -24,8 +31,9 @@ export function addressKey(address: string) {
   }
   const halves = text.split('::');
   if (halves.length > 2) return undefined;
-  const groups = (half: string | undefined) => half ? half.split(':') : [];
-  const head = groups(halves[0]), tail = groups(halves[1]);
+  const groups = (half: string | undefined) => (half ? half.split(':') : []);
+  const head = groups(halves[0]),
+    tail = groups(halves[1]);
   const missing = 8 - head.length - tail.length;
   if (halves.length === 1 ? missing !== 0 : missing < 1) return undefined;
   const all = [...head, ...Array<string>(halves.length === 2 ? missing : 0).fill('0'), ...tail];
@@ -36,34 +44,58 @@ export function addressKey(address: string) {
 /** A table's address field (hex, each 32-bit word in the host's byte order) as addressKey gives it. */
 function tableAddress(hex: string, littleEndian: boolean) {
   if (!/^(?:[0-9A-F]{8}|[0-9A-F]{32})$/i.test(hex)) return undefined;
-  const words = hex.match(/.{8}/g)!.map((word) => littleEndian ? word.match(/../g)!.reverse().join('') : word);
+  const words = hex.match(/.{8}/g)!.map((word) => (littleEndian ? word.match(/../g)!.reverse().join('') : word));
   return (words.length === 1 ? '00000000000000000000ffff' : '') + words.join('').toLowerCase();
 }
 
 /** The uid that owns the socket whose local address and port are the peer's and whose remote port is ours, in the
  *  tables, or nothing when neither has one. An IPv4 peer may be either an IPv4 socket or an IPv6 one mapped. */
-export function socketOwner(tables: SocketTables, peer: string, peerPort: number, ourPort: number,
-  littleEndian = endianness() === 'LE') {
+export function socketOwner(
+  tables: SocketTables,
+  peer: string,
+  peerPort: number,
+  ourPort: number,
+  littleEndian = endianness() === 'LE',
+) {
   const want = addressKey(peer);
   if (!want) return undefined;
-  for (const text of [tables.v4, tables.v6]) for (const line of text.split('\n')) {
-    const [slot, local, remote, , , , , uid] = line.trim().split(/\s+/);
-    if (!slot || !/^\d+:$/.test(slot) || !local || !remote || !uid || !/^\d+$/.test(uid)) continue;
-    const [address, port] = local.split(':'), remotePort = remote.split(':')[1];
-    if (port && remotePort && parseInt(port, 16) === peerPort && parseInt(remotePort, 16) === ourPort &&
-      tableAddress(address ?? '', littleEndian) === want) return Number(uid);
-  }
+  for (const text of [tables.v4, tables.v6])
+    for (const line of text.split('\n')) {
+      const [slot, local, remote, , , , , uid] = line.trim().split(/\s+/);
+      if (!slot || !/^\d+:$/.test(slot) || !local || !remote || !uid || !/^\d+$/.test(uid)) continue;
+      const [address, port] = local.split(':'),
+        remotePort = remote.split(':')[1];
+      if (
+        port &&
+        remotePort &&
+        parseInt(port, 16) === peerPort &&
+        parseInt(remotePort, 16) === ourPort &&
+        tableAddress(address ?? '', littleEndian) === want
+      )
+        return Number(uid);
+    }
   return undefined;
 }
 
 /** The tables as this host reads them, or nothing where neither can be read (not Linux). */
 export function readSocketTables(): SocketTables | undefined {
-  const read = (file: string) => { try { return readFileSync(file, 'utf8'); } catch { return undefined; } };
-  const v4 = read('/proc/net/tcp'), v6 = read('/proc/net/tcp6');
+  const read = (file: string) => {
+    try {
+      return readFileSync(file, 'utf8');
+    } catch {
+      return undefined;
+    }
+  };
+  const v4 = read('/proc/net/tcp'),
+    v6 = read('/proc/net/tcp6');
   return v4 === undefined && v6 === undefined ? undefined : { v4: v4 ?? '', v6: v6 ?? '' };
 }
 
-type Connection = { remoteAddress?: string | undefined; remotePort?: number | undefined; localPort?: number | undefined };
+type Connection = {
+  remoteAddress?: string | undefined;
+  remotePort?: number | undefined;
+  localPort?: number | undefined;
+};
 
 // Asked once per connection: a kept-alive one stays whose it was.
 const owned = new WeakMap<object, boolean>();
@@ -75,7 +107,12 @@ export function ownLoopback(connection: Connection, read = readSocketTables, me 
   const tables = read();
   let mine = true;
   if (tables) {
-    const uid = socketOwner(tables, connection.remoteAddress ?? '', connection.remotePort ?? -1, connection.localPort ?? -1);
+    const uid = socketOwner(
+      tables,
+      connection.remoteAddress ?? '',
+      connection.remotePort ?? -1,
+      connection.localPort ?? -1,
+    );
     mine = uid !== undefined && (uid === 0 || uid === me);
   }
   owned.set(connection, mine);

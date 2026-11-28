@@ -29,7 +29,9 @@ const binaryName = 'skalet' + (process.platform === 'win32' ? '.exe' : '');
  *  desktop app's, the box image's), else the one `pnpm run deps` built in the repository. */
 export function spacesBinary(named: string | undefined, dist: string) {
   if (named) return named;
-  return [join(dist, binaryName), join(dist, '..', 'deps', 'skalet', 'bin', binaryName)].find((path) => existsSync(path));
+  return [join(dist, binaryName), join(dist, '..', 'deps', 'skalet', 'bin', binaryName)].find((path) =>
+    existsSync(path),
+  );
 }
 
 export type SpacesOptions = {
@@ -58,7 +60,9 @@ export class Spaces implements SpaceKernel {
   }
 
   /** Whether spaces can be opened now. */
-  get available() { return Boolean(this.socket); }
+  get available() {
+    return Boolean(this.socket);
+  }
 
   /** Starts the kernel, or connects to the host's: resolves once the first try has succeeded or failed. */
   async start() {
@@ -78,16 +82,24 @@ export class Spaces implements SpaceKernel {
 
   /** Calls the kernel; a SpacesError when none runs or it refuses. */
   call(method: string, params: Record<string, unknown>) {
-    return this.socket ? this.socket.call(method, params)
-      : Promise.reject(new SpacesError('unavailable', 'Multiplayer isn\'t available on this host now.'));
+    return this.socket
+      ? this.socket.call(method, params)
+      : Promise.reject(new SpacesError('unavailable', "Multiplayer isn't available on this host now."));
   }
 
   /** A space for a net game's room, for the player listener, with the binary lane and the code Zirbel chose for it, if
    *  any (a SpacesError taken when another space has it): its id, and the invitation its link holds. */
   async open({ participants, code }: { participants: number; code?: string }) {
-    const opened = spacesOpened.parse(await this.call('space.open',
-      { rules: null, listener: PLAYER, members: { participants, observers: OBSERVERS }, ...(code ? { code } : {}), binary: true,
-        graceSeconds: GRACE_SECONDS }));
+    const opened = spacesOpened.parse(
+      await this.call('space.open', {
+        rules: null,
+        listener: PLAYER,
+        members: { participants, observers: OBSERVERS },
+        ...(code ? { code } : {}),
+        binary: true,
+        graceSeconds: GRACE_SECONDS,
+      }),
+    );
     const invite = new URLSearchParams(opened.link.split('#')[1] ?? '').get('skalet.invite') ?? '';
     if (!secretPattern.test(invite)) {
       this.close(opened.space);
@@ -107,20 +119,29 @@ export class Spaces implements SpaceKernel {
   }
 
   /** Ends a space; its members hear it closed. */
-  close(space: string) { this.call('space.close', { space }).catch(() => {}); }
+  close(space: string) {
+    this.call('space.close', { space }).catch(() => {});
+  }
 
   /** Every space of Zirbel's the kernel holds, by id: its participants (connected, or away within their grace), and
    *  whether any member is connected. */
   async list() {
     const listed = spacesList.parse(await this.call('space.list', {}));
-    return new Map(listed.map((item) => [item.space, {
-      participants: item.members.filter((member) => member.role === 'participant').length,
-      connected: item.members.some((member) => member.connected),
-    }]));
+    return new Map(
+      listed.map((item) => [
+        item.space,
+        {
+          participants: item.members.filter((member) => member.role === 'participant').length,
+          connected: item.members.some((member) => member.connected),
+        },
+      ]),
+    );
   }
 
   /** Hears that the kernel went, and every space it held with it. */
-  onReset(listener: () => void) { this.resets.add(listener); }
+  onReset(listener: () => void) {
+    this.resets.add(listener);
+  }
 
   async stop() {
     this.stopped = true;
@@ -130,7 +151,10 @@ export class Spaces implements SpaceKernel {
     if (!child || child.exitCode !== null || child.signalCode !== null) return;
     await new Promise<void>((done) => {
       const force = setTimeout(() => child.kill('SIGKILL'), 3000);
-      child.once('exit', () => { clearTimeout(force); done(); });
+      child.once('exit', () => {
+        clearTimeout(force);
+        done();
+      });
       // It ends when its stdin closes, and on SIGTERM.
       child.stdin?.end();
       child.kill('SIGTERM');
@@ -138,10 +162,13 @@ export class Spaces implements SpaceKernel {
   }
 
   private async spawn(binary: string) {
-    const env: NodeJS.ProcessEnv = { ...this.options.env ?? process.env, SKALET_EXIT_WITH_STDIN: '1' };
+    const env: NodeJS.ProcessEnv = { ...(this.options.env ?? process.env), SKALET_EXIT_WITH_STDIN: '1' };
     delete env.SKALET_SPACES;
     delete env.SKALET_SPACES_TOKEN;
-    const child = spawn(binary, ['spaces', '--manifest', this.options.manifest], { env, stdio: ['pipe', 'pipe', 'inherit'] });
+    const child = spawn(binary, ['spaces', '--manifest', this.options.manifest], {
+      env,
+      stdio: ['pipe', 'pipe', 'inherit'],
+    });
     this.child = child;
     child.on('error', () => {});
     const born = Date.now();
@@ -179,7 +206,12 @@ export class Spaces implements SpaceKernel {
       });
     } catch (error) {
       if (!http) {
-        console.error('Zirbel can\'t reach the spaces kernel at ' + address + ': ' + (error instanceof Error ? error.message : String(error)));
+        console.error(
+          "Zirbel can't reach the spaces kernel at " +
+            address +
+            ': ' +
+            (error instanceof Error ? error.message : String(error)),
+        );
         this.retry(() => this.connect(address, token, null));
       } else throw error;
     }
@@ -189,7 +221,9 @@ export class Spaces implements SpaceKernel {
     if (this.stopped) return;
     const wait = BACKOFF[Math.min(this.attempt++, BACKOFF.length - 1)]!;
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => { if (!this.stopped) void again(); }, wait);
+    this.timer = setTimeout(() => {
+      if (!this.stopped) void again();
+    }, wait);
     this.timer.unref();
   }
 }
@@ -197,11 +231,23 @@ export class Spaces implements SpaceKernel {
 /** The child's first line on stdout, its start line; what follows is read and let go. */
 function firstLine(child: ChildProcess) {
   return new Promise<string>((resolve, reject) => {
-    if (!child.stdout) { reject(new Error('it has no stdout')); return; }
+    if (!child.stdout) {
+      reject(new Error('it has no stdout'));
+      return;
+    }
     const lines = createInterface({ input: child.stdout });
     const timer = setTimeout(() => reject(new Error('it printed no start line')), START_TIME);
-    lines.once('line', (line) => { clearTimeout(timer); resolve(line); });
-    child.once('exit', (code) => { clearTimeout(timer); reject(new Error('it ended with ' + code)); });
-    child.once('error', (error) => { clearTimeout(timer); reject(error); });
+    lines.once('line', (line) => {
+      clearTimeout(timer);
+      resolve(line);
+    });
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error('it ended with ' + code));
+    });
+    child.once('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
   });
 }

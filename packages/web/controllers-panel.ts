@@ -26,7 +26,11 @@ async function picture(link: string, alt: string, className: string) {
 }
 
 /** Draws the panel into its aside each time the controllers change. */
-export function controllersPanel(panel: HTMLElement, controllers: Controllers, actions: { showOnTv?(): void; close(): void }) {
+export function controllersPanel(
+  panel: HTMLElement,
+  controllers: Controllers,
+  actions: { showOnTv?(): void; close(): void },
+) {
   let ticking: number | undefined;
   let drawing = 0;
   const padLink = (place?: number) =>
@@ -36,8 +40,13 @@ export function controllersPanel(panel: HTMLElement, controllers: Controllers, a
     const claim = controllers.claiming;
     if (!claim) return '';
     const left = Math.max(0, Math.ceil((claim.until - Date.now()) / 1000));
-    return 'Press A on the controller that takes ' + (claim.place === undefined ? 'the next free place' : 'P' + (claim.place + 1)) +
-      ' (' + left + ' s).';
+    return (
+      'Press A on the controller that takes ' +
+      (claim.place === undefined ? 'the next free place' : 'P' + (claim.place + 1)) +
+      ' (' +
+      left +
+      ' s).'
+    );
   }
 
   async function draw() {
@@ -54,9 +63,14 @@ export function controllersPanel(panel: HTMLElement, controllers: Controllers, a
 
     if (info) {
       const join = element('section', '', 'join-phones');
-      join.append(element('p', 'Phones open ' + location.host + '/pad and enter', ''), element('p', info.code, 'pad-code'));
+      join.append(
+        element('p', 'Phones open ' + location.host + '/pad and enter', ''),
+        element('p', info.code, 'pad-code'),
+      );
       const frame = element('span', '', 'qr-frame');
-      frame.append(await picture(padLink(), 'QR code that makes a phone a controller at the next free place', 'qr-next'));
+      frame.append(
+        await picture(padLink(), 'QR code that makes a phone a controller at the next free place', 'qr-next'),
+      );
       join.append(frame, element('p', 'or scan this with the phone’s camera.', 'quiet'));
       parts.push(join);
     }
@@ -76,15 +90,22 @@ export function controllersPanel(panel: HTMLElement, controllers: Controllers, a
         const swap = element('select');
         swap.setAttribute('aria-label', 'Swap P' + (place + 1) + ' with');
         swap.append(new Option('Swap with…', ''));
-        for (let other = 0; other < MAX_PLACES; other++) if (other !== place) swap.append(new Option('P' + (other + 1), String(other)));
-        swap.addEventListener('change', () => { if (swap.value) controllers.swap(place, Number(swap.value)); });
+        for (let other = 0; other < MAX_PLACES; other++)
+          if (other !== place) swap.append(new Option('P' + (other + 1), String(other)));
+        swap.addEventListener('change', () => {
+          if (swap.value) controllers.swap(place, Number(swap.value));
+        });
         const release = element('button', 'Let go');
         release.type = 'button';
         release.setAttribute('aria-label', 'Let go of P' + (place + 1) + '’s controller');
         release.addEventListener('click', () => controllers.release(place));
         item.append(swap, release);
       } else {
-        const take = element('button', claim?.place === place ? 'Press A on a controller…' : 'Press A to take P' + (place + 1), 'take');
+        const take = element(
+          'button',
+          claim?.place === place ? 'Press A on a controller…' : 'Press A to take P' + (place + 1),
+          'take',
+        );
         take.type = 'button';
         take.addEventListener('click', () => controllers.claim(place));
         item.append(take);
@@ -119,11 +140,15 @@ export function controllersPanel(panel: HTMLElement, controllers: Controllers, a
     draw() {
       void draw();
       // The countdown alone, each second, so a choice being made in the panel stays.
-      if (controllers.claiming && ticking === undefined) ticking = window.setInterval(() => {
-        if (!controllers.claiming) { clearInterval(ticking); ticking = undefined; }
-        const status = panel.querySelector('.claim-status');
-        if (status) status.textContent = claimText();
-      }, 1000);
+      if (controllers.claiming && ticking === undefined)
+        ticking = window.setInterval(() => {
+          if (!controllers.claiming) {
+            clearInterval(ticking);
+            ticking = undefined;
+          }
+          const status = panel.querySelector('.claim-status');
+          if (status) status.textContent = claimText();
+        }, 1000);
     },
   };
 }

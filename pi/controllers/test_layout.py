@@ -28,8 +28,19 @@ class Standard(unittest.TestCase):
             self.assertTrue(all(abs(value) <= 129 for value in axes), axes)
 
     def test_buttons_go_to_their_places_in_the_standard_layout(self):
-        places = {ev.BTN_SOUTH: 0, ev.BTN_EAST: 1, ev.BTN_WEST: 2, ev.BTN_NORTH: 3, ev.BTN_TL: 4, ev.BTN_TR: 5,
-                  ev.BTN_SELECT: 8, ev.BTN_START: 9, ev.BTN_THUMBL: 10, ev.BTN_THUMBR: 11, ev.BTN_MODE: 16}
+        places = {
+            ev.BTN_SOUTH: 0,
+            ev.BTN_EAST: 1,
+            ev.BTN_WEST: 2,
+            ev.BTN_NORTH: 3,
+            ev.BTN_TL: 4,
+            ev.BTN_TR: 5,
+            ev.BTN_SELECT: 8,
+            ev.BTN_START: 9,
+            ev.BTN_THUMBL: 10,
+            ev.BTN_THUMBR: 11,
+            ev.BTN_MODE: 16,
+        }
         for code, place in places.items():
             _, values, pressed, _ = play(USB_PAD, (ev.EV_KEY, code, 1))
             self.assertEqual(pressed, 1 << place, hex(code))
@@ -38,8 +49,13 @@ class Standard(unittest.TestCase):
         self.assertEqual(pressed, 0)
 
     def test_sticks_are_normalized_by_their_range(self):
-        _, _, _, axes = play(USB_PAD, (ev.EV_ABS, ev.ABS_X, -32768), (ev.EV_ABS, ev.ABS_Y, 32767),
-                             (ev.EV_ABS, ev.ABS_RX, 16384), (ev.EV_ABS, ev.ABS_RY, 0))
+        _, _, _, axes = play(
+            USB_PAD,
+            (ev.EV_ABS, ev.ABS_X, -32768),
+            (ev.EV_ABS, ev.ABS_Y, 32767),
+            (ev.EV_ABS, ev.ABS_RX, 16384),
+            (ev.EV_ABS, ev.ABS_RY, 0),
+        )
         self.assertEqual(axes[:2], [-32767, 32767])
         self.assertAlmostEqual(axes[2] / 32767, 0.5, places=3)
         self.assertEqual(axes[3], 0)
@@ -57,12 +73,16 @@ class Standard(unittest.TestCase):
         self.assertEqual((values[7], pressed), (255, 1 << 7))
 
     def test_digital_triggers_and_hat_triggers(self):
-        digital = Recorded("Digital", keys=[ev.BTN_SOUTH, ev.BTN_EAST, ev.BTN_TL2, ev.BTN_TR2],
-                           axes={ev.ABS_X: STICK, ev.ABS_Y: STICK})
+        digital = Recorded(
+            "Digital", keys=[ev.BTN_SOUTH, ev.BTN_EAST, ev.BTN_TL2, ev.BTN_TR2], axes={ev.ABS_X: STICK, ev.ABS_Y: STICK}
+        )
         _, values, pressed, _ = play(digital, (ev.EV_KEY, ev.BTN_TL2, 1))
         self.assertEqual((values[6], pressed), (255, 1 << 6))
-        hats = Recorded("Hat triggers", keys=[ev.BTN_SOUTH, ev.BTN_EAST],
-                        axes={ev.ABS_X: STICK, ev.ABS_Y: STICK, ev.ABS_HAT2X: (0, 0, 100), ev.ABS_HAT2Y: (0, 0, 100)})
+        hats = Recorded(
+            "Hat triggers",
+            keys=[ev.BTN_SOUTH, ev.BTN_EAST],
+            axes={ev.ABS_X: STICK, ev.ABS_Y: STICK, ev.ABS_HAT2X: (0, 0, 100), ev.ABS_HAT2Y: (0, 0, 100)},
+        )
         _, values, pressed, _ = play(hats, (ev.EV_ABS, ev.ABS_HAT2Y, 50), (ev.EV_ABS, ev.ABS_HAT2X, 100))
         self.assertEqual((values[6], values[7], pressed), (128, 255, 1 << 6 | 1 << 7))
 
@@ -112,8 +132,11 @@ class Own(unittest.TestCase):
         self.assertEqual(axes[2], 32767, "its third axis, ABS_Z")
 
     def test_at_most_32_buttons_and_8_axes(self):
-        many = Recorded("Big", keys=list(range(0x120, 0x130)) + list(range(0x2C0, 0x2D8)),
-                        axes={code: (0, 0, 10) for code in range(0x10)})
+        many = Recorded(
+            "Big",
+            keys=list(range(0x120, 0x130)) + list(range(0x2C0, 0x2D8)),
+            axes={code: (0, 0, 10) for code in range(0x10)},
+        )
         _, values, _, axes = play(many)
         self.assertEqual((len(values), len(axes)), (32, 8))
 

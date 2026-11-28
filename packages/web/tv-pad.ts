@@ -4,7 +4,8 @@
 import { padLink, readPad } from './pad-link.ts';
 import { isPadKey, keyboardPad, slotColour } from './pad-state.ts';
 
-const KEYS = 'arrows or WASD to move, Space for A, Shift for B, E for X, Q for Y, Enter for Start and Escape for Select';
+const KEYS =
+  'arrows or WASD to move, Space for A, Shift for B, E for X, Q for Y, Enter for Start and Escape for Select';
 
 /** Controls the TV's game from this page until stop. */
 export function controlTv(code: string, view: { place: HTMLElement; status: HTMLElement }) {
@@ -12,9 +13,11 @@ export function controlTv(code: string, view: { place: HTMLElement; status: HTML
   const press = (event: KeyboardEvent, down: boolean) => {
     if (!isPadKey(event.code)) return;
     event.preventDefault();
-    if (down) held.add(event.code); else held.delete(event.code);
+    if (down) held.add(event.code);
+    else held.delete(event.code);
   };
-  const keydown = (event: KeyboardEvent) => press(event, true), keyup = (event: KeyboardEvent) => press(event, false);
+  const keydown = (event: KeyboardEvent) => press(event, true),
+    keyup = (event: KeyboardEvent) => press(event, false);
   const blur = () => held.clear();
   window.addEventListener('keydown', keydown);
   window.addEventListener('keyup', keyup);
@@ -22,7 +25,8 @@ export function controlTv(code: string, view: { place: HTMLElement; status: HTML
   let gamepad: string | undefined;
   let joined = false;
   const say = () => {
-    if (joined) view.status.textContent = gamepad ? 'Your gamepad plays: ' + gamepad + '.' : 'Your keyboard plays: ' + KEYS + '.';
+    if (joined)
+      view.status.textContent = gamepad ? 'Your gamepad plays: ' + gamepad + '.' : 'Your keyboard plays: ' + KEYS + '.';
   };
   const link = padLink(code, (state) => {
     joined = state.state === 'joined';
@@ -30,10 +34,19 @@ export function controlTv(code: string, view: { place: HTMLElement; status: HTML
       view.place.textContent = 'P' + (state.place + 1) + (state.label?.name ? ' · ' + state.label.name : '');
       view.place.style.setProperty('--place', state.label?.color ?? slotColour(state.place));
       say();
-    } else if (state.state === 'ended') { view.status.textContent = state.message; stop(); }
-    else view.status.textContent = 'Joining the TV…';
+    } else if (state.state === 'ended') {
+      view.status.textContent = state.message;
+      stop();
+    } else view.status.textContent = 'Joining the TV…';
   });
-  const stopReading = readPad(() => keyboardPad(held), (state) => link.update(state), (id) => { gamepad = id; say(); });
+  const stopReading = readPad(
+    () => keyboardPad(held),
+    (state) => link.update(state),
+    (id) => {
+      gamepad = id;
+      say();
+    },
+  );
   function stop() {
     stopReading();
     link.close();

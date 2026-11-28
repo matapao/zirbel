@@ -72,8 +72,8 @@ class FakeSystem:
             raise OSError(errno.ENODEV, "No such device")
         if not self.waiting[fd]:
             raise BlockingIOError(errno.EAGAIN, "Resource temporarily unavailable")
-        data = bytes(self.waiting[fd][:length - length % ev.EVENT.size])
-        del self.waiting[fd][:len(data)]
+        data = bytes(self.waiting[fd][: length - length % ev.EVENT.size])
+        del self.waiting[fd][: len(data)]
         return data
 
     def write(self, fd, data):
@@ -132,14 +132,32 @@ class Devices(unittest.TestCase):
         system.plug("event5", BT_PAD)
         system.plug("event6", BT_PAD_MOTION)
         found.scan()
-        self.assertEqual([(device.number, device.info.name) for device in found.numbers()],
-                         [(0, "USB gamepad"), (1, "Wireless Controller")])
+        self.assertEqual(
+            [(device.number, device.info.name) for device in found.numbers()],
+            [(0, "USB gamepad"), (1, "Wireless Controller")],
+        )
         messages = frames(sent)
-        self.assertEqual(messages[0], {"type": "device", "device": 0, "name": "USB gamepad", "standard": True,
-                                       "uid": "usb-0000:01:00.0-1.2/input0"})
+        self.assertEqual(
+            messages[0],
+            {
+                "type": "device",
+                "device": 0,
+                "name": "USB gamepad",
+                "standard": True,
+                "uid": "usb-0000:01:00.0-1.2/input0",
+            },
+        )
         # A Bluetooth gamepad is who its address says, wherever it connects.
-        self.assertEqual(messages[2], {"type": "device", "device": 1, "name": "Wireless Controller", "standard": True,
-                                       "uid": "A0:B1:C2:D3:E4:F5"})
+        self.assertEqual(
+            messages[2],
+            {
+                "type": "device",
+                "device": 1,
+                "name": "Wireless Controller",
+                "standard": True,
+                "uid": "A0:B1:C2:D3:E4:F5",
+            },
+        )
         # Each one's state as it is, right after it.
         self.assertEqual(messages[1][0], 0)
         self.assertEqual(layout.decode(messages[1][1])[2], 0)
@@ -273,6 +291,7 @@ class Input(unittest.TestCase):
             fd = original(path_, flags)
             system.kernel.held[fd] = {ev.BTN_START}
             return fd
+
         system.open = opened
         found.scan()
         self.assertEqual(inputs(sent)[0][1][2], 1 << 9)

@@ -7,36 +7,15 @@
         "packages/web/{workspace,player,game-sdk,garden-3d,lobby,tv,pad}.ts",
         "test/*.{ts,mjs}"
       ],
-      "ignore": [
-        "deps/**"
-      ],
-      "project": [
-        "packages/**/*.ts",
-        "scripts/**/*.mjs",
-        "test/**/*.{ts,mjs}"
-      ],
-      "ignoreDependencies": [
-        "@openai/codex-sdk"
-      ],
-      "ignoreBinaries": [
-        "go",
-        "ruff",
-        "rundll32.exe",
-        "xdg-open"
-      ]
+      "ignore": ["deps/**"],
+      "project": ["packages/**/*.ts", "scripts/**/*.mjs", "test/**/*.{ts,mjs}"],
+      "ignoreDependencies": ["@openai/codex-sdk"],
+      "ignoreBinaries": ["go", "ruff", "rundll32.exe", "xdg-open"]
     },
     "desktop": {
-      "entry": [
-        "test/*.ts"
-      ],
-      "project": [
-        "src/**/*.ts",
-        "test/**/*.ts",
-        "scripts/**/*.mjs"
-      ],
-      "ignoreBinaries": [
-        "sips"
-      ]
+      "entry": ["test/*.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs"],
+      "ignoreBinaries": ["sips"]
     }
   }
 }

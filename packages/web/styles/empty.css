@@ -1,14 +1,67 @@
 /* Before a game exists: one large prompt, the folder import and recent games. */
-.empty-start{display:none}
-#desk[data-empty] .thread{background:var(--app);justify-content:center}
-#desk[data-empty] .thread-head,#desk[data-empty] .chat-suggestions{display:none}
-#desk[data-empty] .thread>*{width:min(46rem,calc(100% - 2rem));margin-left:auto;margin-right:auto}
-#desk[data-empty] .feed{flex:0 1 auto;max-height:50dvh;padding:0 .2rem .6rem}
-#desk[data-empty] .feed:not(:has(.note,.proposal)){display:none}
-#desk[data-empty] .composer{padding:.8rem;border-radius:1.1rem}
-#desk[data-empty] .composer textarea{min-height:7rem;font-size:1.15rem}
-#desk[data-empty] .empty-start{display:grid;gap:.8rem;justify-items:center;padding:1rem 0 2rem}
-.recent-games{display:grid;justify-items:center;gap:.4rem;width:100%}
-.recent-games h2{margin:.6rem 0 0;font-size:.8rem;font-weight:600;color:var(--quiet);letter-spacing:.05em;text-transform:uppercase}
-.recent-games ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;gap:.4rem}
-.recent{border-radius:1rem;padding:.35rem .8rem;background:transparent}
+.empty-start {
+  display: none;
+}
+#desk[data-empty] .thread {
+  background: var(--app);
+  justify-content: center;
+}
+#desk[data-empty] .thread-head,
+#desk[data-empty] .chat-suggestions {
+  display: none;
+}
+#desk[data-empty] .thread > * {
+  width: min(46rem, calc(100% - 2rem));
+  margin-left: auto;
+  margin-right: auto;
+}
+#desk[data-empty] .feed {
+  flex: 0 1 auto;
+  max-height: 50dvh;
+  padding: 0 0.2rem 0.6rem;
+}
+#desk[data-empty] .feed:not(:has(.note, .proposal)) {
+  display: none;
+}
+#desk[data-empty] .composer {
+  padding: 0.8rem;
+  border-radius: 1.1rem;
+}
+#desk[data-empty] .composer textarea {
+  min-height: 7rem;
+  font-size: 1.15rem;
+}
+#desk[data-empty] .empty-start {
+  display: grid;
+  gap: 0.8rem;
+  justify-items: center;
+  padding: 1rem 0 2rem;
+}
+.recent-games {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  width: 100%;
+}
+.recent-games h2 {
+  margin: 0.6rem 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--quiet);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.recent-games ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+}
+.recent {
+  border-radius: 1rem;
+  padding: 0.35rem 0.8rem;
+  background: transparent;
+}

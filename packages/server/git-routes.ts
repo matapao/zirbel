@@ -25,13 +25,22 @@ function clone({ tokens, port }: GitRoutes, access: Access, url: URL, projectId:
   const address = 'http://' + at + '/git/' + projectId + '.git';
   const holder = tokenHolder(access);
   const token = holder && tokens?.token(holder);
-  return { url: address, command: 'git clone ' + (token ? 'http://zirbel:' + token + '@' + at + '/git/' + projectId + '.git' : address),
-    ...(token ? { token } : {}) };
+  return {
+    url: address,
+    command: 'git clone ' + (token ? 'http://zirbel:' + token + '@' + at + '/git/' + projectId + '.git' : address),
+    ...(token ? { token } : {}),
+  };
 }
 
 /** Answers the git routes of /api/projects: says whether it did. */
-export async function gitRoutes(ctx: GitRoutes, request: IncomingMessage, response: ServerResponse, access: Access, url: URL,
-  route: { pathID?: string | undefined; action?: string | undefined; tail?: string | undefined }) {
+export async function gitRoutes(
+  ctx: GitRoutes,
+  request: IncomingMessage,
+  response: ServerResponse,
+  access: Access,
+  url: URL,
+  route: { pathID?: string | undefined; action?: string | undefined; tail?: string | undefined },
+) {
   const { pathID, action, tail } = route;
   const { projects } = ctx;
   const method = request.method;
@@ -41,7 +50,10 @@ export async function gitRoutes(ctx: GitRoutes, request: IncomingMessage, respon
     return true;
   }
   if (!pathID) return false;
-  if (action === 'revisions' && tail && method === 'GET') { reply(response, projects.revision(safeId(pathID), safeId(tail))); return true; }
+  if (action === 'revisions' && tail && method === 'GET') {
+    reply(response, projects.revision(safeId(pathID), safeId(tail)));
+    return true;
+  }
   if (action === 'clone' && !tail && method === 'GET') {
     projects.read(safeId(pathID));
     reply(response, clone(ctx, access, url, safeId(pathID)));

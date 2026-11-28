@@ -22,20 +22,38 @@ export function lanternQuest({ byId, canvas, score }: Page) {
     byId('attack').hidden = !state.fighting;
     byId('guard').hidden = !state.fighting;
     byId('restart-quest').hidden = Boolean(state.health) && !state.won;
-    score.textContent = 'HP ' + state.health + ' / ' + quest.maxHealth +
+    score.textContent =
+      'HP ' +
+      state.health +
+      ' / ' +
+      quest.maxHealth +
       (state.fighting ? ' · ' + state.enemyName + ' HP ' + state.enemyHealth : '') +
       (state.total > 1 ? ' · Relics ' + state.relics + '/' + state.total : '');
   }
 
   async function showQuest(scene: Scene) {
-    const active = quest = createQuest(scene);
+    const active = (quest = createQuest(scene));
     byId('quest-panel').hidden = false;
     byId('touch').hidden = false;
-    byId('instructions').textContent = matchMedia('(pointer: coarse)').matches ? 'Move with the arrows' : 'WASD or arrow keys · E to interact';
-    byId('interact').onclick = () => { active.interact(); refreshQuest(); };
-    byId('attack').onclick = () => { active.battle('attack'); refreshQuest(); };
-    byId('guard').onclick = () => { active.battle('guard'); refreshQuest(); };
-    byId('restart-quest').onclick = () => { active.restart(); refreshQuest(); };
+    byId('instructions').textContent = matchMedia('(pointer: coarse)').matches
+      ? 'Move with the arrows'
+      : 'WASD or arrow keys · E to interact';
+    byId('interact').onclick = () => {
+      active.interact();
+      refreshQuest();
+    };
+    byId('attack').onclick = () => {
+      active.battle('attack');
+      refreshQuest();
+    };
+    byId('guard').onclick = () => {
+      active.battle('guard');
+      refreshQuest();
+    };
+    byId('restart-quest').onclick = () => {
+      active.restart();
+      refreshQuest();
+    };
     refreshQuest();
     let fallback: CanvasRenderingContext2D | null = null;
     try {
@@ -53,8 +71,13 @@ export function lanternQuest({ byId, canvas, score }: Page) {
       const { x, y } = motion();
       active.move(x, y, (time - last) / 1000);
       last = time;
-      if (fallback) drawScene(fallback, scene, { time, collected: active.state.hidden,
-        explorers: [{ id: 'you', x: active.state.x, y: active.state.y, color: '#f3f6ad', score: 0 }], currentSeat: 'you' });
+      if (fallback)
+        drawScene(fallback, scene, {
+          time,
+          collected: active.state.hidden,
+          explorers: [{ id: 'you', x: active.state.x, y: active.state.y, color: '#f3f6ad', score: 0 }],
+          currentSeat: 'you',
+        });
       frame = requestAnimationFrame(animate);
     }
     frame = requestAnimationFrame(animate);

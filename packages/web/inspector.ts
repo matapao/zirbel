@@ -10,7 +10,11 @@ import { scheduleDraw } from './viewport.ts';
 function countObjects(count: number) {
   const toggle = $('toggle-objects');
   toggle.querySelector('.count')?.remove();
-  if (count) { const badge = el('span', String(count), 'count'); badge.setAttribute('aria-hidden', 'true'); toggle.append(badge); }
+  if (count) {
+    const badge = el('span', String(count), 'count');
+    badge.setAttribute('aria-hidden', 'true');
+    toggle.append(badge);
+  }
 }
 
 /** The object list in Edit: the game's registered objects to mark for chat, or a template scene's objects to edit. */
@@ -22,32 +26,52 @@ export function renderObjects() {
   if (authored()) {
     countObjects(ws.registered.length);
     objects.replaceChildren();
-    for (const item of ws.registered.filter(({ id, properties }) => (id + ' ' + (typeof properties.name === 'string' ? properties.name : '')).toLowerCase().includes(search))) {
-      const button = action(typeof item.properties.name === 'string' ? item.properties.name : item.id, () => {
-        if (markedObjects.has(item.id)) markedObjects.delete(item.id);
-        else if (markedObjects.size < 32) markedObjects.add(item.id);
-        renderObjects(); renderChips();
-      }, 'object');
+    for (const item of ws.registered.filter(({ id, properties }) =>
+      (id + ' ' + (typeof properties.name === 'string' ? properties.name : '')).toLowerCase().includes(search),
+    )) {
+      const button = action(
+        typeof item.properties.name === 'string' ? item.properties.name : item.id,
+        () => {
+          if (markedObjects.has(item.id)) markedObjects.delete(item.id);
+          else if (markedObjects.size < 32) markedObjects.add(item.id);
+          renderObjects();
+          renderChips();
+        },
+        'object',
+      );
       button.setAttribute('aria-pressed', String(markedObjects.has(item.id)));
       objects.append(button);
     }
-    if (!ws.registered.length) objects.append(el('p', displayedRevision().game?.registerObjects === false
-      ? 'Object registration is off for this revision.' : 'Objects registered by the running game appear here.'));
+    if (!ws.registered.length)
+      objects.append(
+        el(
+          'p',
+          displayedRevision().game?.registerObjects === false
+            ? 'Object registration is off for this revision.'
+            : 'Objects registered by the running game appear here.',
+        ),
+      );
     renderRegisteredInspector();
     return;
   }
   const scene = displayedScene();
   countObjects(scene.objects.length);
-  const matches = scene.objects.filter((item) => item.name.toLowerCase().includes(search) || item.kind.includes(search));
+  const matches = scene.objects.filter(
+    (item) => item.name.toLowerCase().includes(search) || item.kind.includes(search),
+  );
   const groups = new Map<string, SceneObject[]>();
   const pinned = ['rangers-cabin', 'mirror-pond', 'footbridge', 'campfire', 'player-spawn'];
-  const organize = (item: SceneObject) => pinned.includes(item.id) || search ? '' :
-    ({ tree: 'Trees', rock: 'Stones', crystal: 'Valley lights' } as Record<string,string>)[item.kind] ?? '';
+  const organize = (item: SceneObject) =>
+    pinned.includes(item.id) || search
+      ? ''
+      : (({ tree: 'Trees', rock: 'Stones', crystal: 'Valley lights' } as Record<string, string>)[item.kind] ?? '');
   for (const item of matches) {
     const group = organize(item);
     groups.set(group, [...(groups.get(group) ?? []), item]);
   }
-  const openGroups = new Set([...objects.querySelectorAll<HTMLDetailsElement>('details[open]')].map((details) => details.dataset.group));
+  const openGroups = new Set(
+    [...objects.querySelectorAll<HTMLDetailsElement>('details[open]')].map((details) => details.dataset.group),
+  );
   objects.replaceChildren();
   const row = (item: SceneObject) => {
     const button = el('button', undefined, 'object');
@@ -60,7 +84,10 @@ export function renderObjects() {
     return button;
   };
   for (const [group, items] of groups) {
-    if (!group) { objects.append(...items.map(row)); continue; }
+    if (!group) {
+      objects.append(...items.map(row));
+      continue;
+    }
     const details = el('details');
     details.dataset.group = group;
     details.open = openGroups.has(group) || items.some((item) => ws.selected.has(item.id));
@@ -72,8 +99,10 @@ export function renderObjects() {
 }
 
 export function renderRegisteredInspector() {
-  $('inspector').replaceChildren(el('h3', 'Inspector'), ...ws.registered.filter(({ id }) => markedObjects.has(id))
-      .map((item) => el('pre', JSON.stringify(item, null, 2))));
+  $('inspector').replaceChildren(
+    el('h3', 'Inspector'),
+    ...ws.registered.filter(({ id }) => markedObjects.has(id)).map((item) => el('pre', JSON.stringify(item, null, 2))),
+  );
 }
 
 function renderInspector() {
@@ -83,35 +112,69 @@ function renderInspector() {
   const items = displayedScene().objects.filter((item) => ws.selected.has(item.id));
   const item = items[0];
   if (!item || items.length > 1) {
-    node.append(el('p', items.length ? items.length + ' objects selected' : 'Select an object to edit its properties.'));
+    node.append(
+      el('p', items.length ? items.length + ' objects selected' : 'Select an object to edit its properties.'),
+    );
     return;
   }
   const form = el('form');
   for (const [name, label, type, value, max] of [
     ['name', 'Name', 'text', item.name, 80],
-    ['x', 'X', 'number', item.x, WORLD.width], ['y', 'Y', 'number', item.y, WORLD.height],
-    ['size', 'Size', 'number', item.size, 340], ['color', 'Color', 'color', item.color, undefined],
+    ['x', 'X', 'number', item.x, WORLD.width],
+    ['y', 'Y', 'number', item.y, WORLD.height],
+    ['size', 'Size', 'number', item.size, 340],
+    ['color', 'Color', 'color', item.color, undefined],
   ] as const) {
     const input = el('input');
-    input.name = name; input.type = type; input.value = String(value); input.required = true;
+    input.name = name;
+    input.type = type;
+    input.value = String(value);
+    input.required = true;
     input.disabled = reviewing;
     if (type === 'text' && max) input.maxLength = max;
-    if (type === 'number' && max) { input.max = String(max); input.min = name === 'size' ? '8' : '0'; input.step = 'any'; }
-    const target = el('label', label); target.append(input); form.append(target);
+    if (type === 'number' && max) {
+      input.max = String(max);
+      input.min = name === 'size' ? '8' : '0';
+      input.step = 'any';
+    }
+    const target = el('label', label);
+    target.append(input);
+    form.append(target);
   }
   const buttons = el('div', undefined, 'row');
   const submit = el('button', 'Save');
   if (!reviewing) {
-    buttons.append(submit, action('Remove', async () => { await edit('Remove ' + item.name, [{ op: 'remove', id: item.id }]); }, 'danger'));
+    buttons.append(
+      submit,
+      action(
+        'Remove',
+        async () => {
+          await edit('Remove ' + item.name, [{ op: 'remove', id: item.id }]);
+        },
+        'danger',
+      ),
+    );
     form.append(buttons);
   }
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    attempt(() => edit('Edit ' + item.name, [{
-      op: 'update', id: item.id,
-      changes: { name: formValue(form,'name'), x: Number(formValue(form,'x')), y: Number(formValue(form,'y')),
-        size: Number(formValue(form,'size')), color: formValue(form,'color') },
-    }]), submit);
+    attempt(
+      () =>
+        edit('Edit ' + item.name, [
+          {
+            op: 'update',
+            id: item.id,
+            changes: {
+              name: formValue(form, 'name'),
+              x: Number(formValue(form, 'x')),
+              y: Number(formValue(form, 'y')),
+              size: Number(formValue(form, 'size')),
+              color: formValue(form, 'color'),
+            },
+          },
+        ]),
+      submit,
+    );
   });
   node.append(form);
 }
@@ -125,13 +188,19 @@ export function setupObjects() {
     if (!kind) return;
     add.value = '';
     const item = newObject(kind, uid(), 480, 300);
-    attempt(async () => { await edit('Add ' + item.name, [{ op: 'add', object: item }]); choose(item, false); });
+    attempt(async () => {
+      await edit('Add ' + item.name, [{ op: 'add', object: item }]);
+      choose(item, false);
+    });
   });
   if (ws.project) renderObjects();
 }
 
 export function choose(item: SceneObject, additive: boolean) {
-  if (!additive) { ws.selected.clear(); ws.region = undefined; }
+  if (!additive) {
+    ws.selected.clear();
+    ws.region = undefined;
+  }
   if (additive && ws.selected.has(item.id)) ws.selected.delete(item.id);
   else if (ws.selected.size < 32) ws.selected.add(item.id);
   renderObjects();
@@ -149,5 +218,5 @@ export function references(): Reference[] {
     return object ? [{ ...base, type: 'instance', object }] : [];
   });
   if (ws.region) refs.unshift({ ...base, type: 'region', bounds: ws.region, objects: [] });
-  return refs.slice(0,32);
+  return refs.slice(0, 32);
 }

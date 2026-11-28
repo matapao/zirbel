@@ -13,10 +13,18 @@ test('staged edits stay out of exports, stale siblings cannot apply, restore sur
   const { projects, root } = install(t);
   const project = legacyProject(projects, 'mosslight');
   const original = head(project, 'main');
-  const next = projects.submit(project.id, { branch: 'main', baseRevision: original.id, label: 'Move campfire',
-    operations: [{ op: 'update', id: 'campfire', changes: { x: 450 } }] });
-  const sibling = projects.submit(project.id, { branch: 'main', baseRevision: original.id, label: 'Enlarge campfire',
-    operations: [{ op: 'update', id: 'campfire', changes: { size: 45 } }] });
+  const next = projects.submit(project.id, {
+    branch: 'main',
+    baseRevision: original.id,
+    label: 'Move campfire',
+    operations: [{ op: 'update', id: 'campfire', changes: { x: 450 } }],
+  });
+  const sibling = projects.submit(project.id, {
+    branch: 'main',
+    baseRevision: original.id,
+    label: 'Enlarge campfire',
+    operations: [{ op: 'update', id: 'campfire', changes: { size: 45 } }],
+  });
   assert.equal(legacyScene(next.preview).objects.find((item) => item.id === 'campfire')?.x, 450);
   assert.equal(projects.export(project.id).project.revisions.length, 1);
   const accepted = projects.commit(project.id, next.proposal.id);
@@ -33,17 +41,36 @@ test('an asset without delivery rights can stay local and blocks a share or expo
   const { projects, releases } = install(t);
   const project = legacyProject(projects, 'mosslight');
   const current = head(project, 'main');
-  const file = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=', 'base64');
-  const asset = { id: 'draft', name: 'Draft texture', author: 'Example artist', source: 'https://example.org/texture',
-    license: 'local-only', credit: 'Example artist', media: 'image/png', hash: projects.storeAsset(file) };
-  const { proposal } = projects.submit(project.id, { branch: 'main', baseRevision: current.id, label: 'Use a local asset',
-    operations: [{ op: 'addAsset', asset }] });
+  const file = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=',
+    'base64',
+  );
+  const asset = {
+    id: 'draft',
+    name: 'Draft texture',
+    author: 'Example artist',
+    source: 'https://example.org/texture',
+    license: 'local-only',
+    credit: 'Example artist',
+    media: 'image/png',
+    hash: projects.storeAsset(file),
+  };
+  const { proposal } = projects.submit(project.id, {
+    branch: 'main',
+    baseRevision: current.id,
+    label: 'Use a local asset',
+    operations: [{ op: 'addAsset', asset }],
+  });
   projects.commit(project.id, proposal.id);
   assert.doesNotThrow(() => releases.package(project.id, 'main', rights, false, true));
   assert.throws(() => releases.package(project.id, 'main', rights, true), /delivery rights.*Draft texture/);
   assert.throws(() => projects.export(project.id), /delivery rights/);
-  const remove = projects.submit(project.id, { branch: 'main', baseRevision: head(projects.read(project.id), 'main').id,
-    label: 'Remove the draft', operations: [{ op: 'removeAsset', id: 'draft' }] });
+  const remove = projects.submit(project.id, {
+    branch: 'main',
+    baseRevision: head(projects.read(project.id), 'main').id,
+    label: 'Remove the draft',
+    operations: [{ op: 'removeAsset', id: 'draft' }],
+  });
   projects.commit(project.id, remove.proposal.id);
   assert.doesNotThrow(() => releases.package(project.id, 'main', rights, true));
 });
@@ -64,14 +91,18 @@ test('scene projects export and the complex 3D quest gates each encounter and co
       const destination = legacyScene(release).objects.find((object) => object.id === id);
       assert.ok(destination);
       for (let i = 0; i < 200 && Math.hypot(quest.state.x - destination.x, quest.state.y - destination.y) >= 8; i++) {
-        quest.move(destination.x - quest.state.x, destination.y - quest.state.y, .05);
+        quest.move(destination.x - quest.state.x, destination.y - quest.state.y, 0.05);
       }
       assert.ok(Math.hypot(quest.state.x - destination.x, quest.state.y - destination.y) < 8);
     };
     travel('crown-guard');
     quest.interact();
     assert.match(quest.state.message, /Resolve Basalt Ember/);
-    for (const [guardian, relic] of [['meadow-guard','seed'], ['ridge-guard','ember'], ['crown-guard','crown']] as const) {
+    for (const [guardian, relic] of [
+      ['meadow-guard', 'seed'],
+      ['ridge-guard', 'ember'],
+      ['crown-guard', 'crown'],
+    ] as const) {
       travel(guardian);
       quest.interact();
       assert.equal(quest.state.fighting, true);
@@ -99,28 +130,74 @@ test('legacy starter migration keeps projects with edits or staged work', (t) =>
   const renamed = legacyProject(projects, 'orbit-garden', 'Evening Garden');
   const note = { branch: 'main', references: [], attachments: [] };
   projects.addNote(orbit.id, { ...note, role: 'creator', text: 'simple 3D game using three.js' });
-  projects.addNote(orbit.id, { ...note, role: 'assistant', text: 'Created Orbit Garden. Explore a small, floating 3D garden. Starting a local playtest. You can describe changes here or say “stop playing”.' });
-  projects.addNote(renamed.id, { ...note, role: 'assistant', text: 'Created a draft of Evening Garden. Say “play it” when you want to try it.' });
-  const { proposal } = projects.submit(mosslight.id, { branch: 'main', baseRevision: mosslight.branches.main,
-    label: 'Move the cabin', operations: [{ op: 'update', id: 'rangers-cabin', changes: { x: 310 } }] });
+  projects.addNote(orbit.id, {
+    ...note,
+    role: 'assistant',
+    text: 'Created Orbit Garden. Explore a small, floating 3D garden. Starting a local playtest. You can describe changes here or say “stop playing”.',
+  });
+  projects.addNote(renamed.id, {
+    ...note,
+    role: 'assistant',
+    text: 'Created a draft of Evening Garden. Say “play it” when you want to try it.',
+  });
+  const { proposal } = projects.submit(mosslight.id, {
+    branch: 'main',
+    baseRevision: mosslight.branches.main,
+    label: 'Move the cabin',
+    operations: [{ op: 'update', id: 'rangers-cabin', changes: { x: 310 } }],
+  });
   projects.commit(mosslight.id, proposal.id);
-  projects.submit(staged.id, { branch: 'main', baseRevision: staged.branches.main,
-    label: 'Move the cabin', operations: [{ op: 'update', id: 'rangers-cabin', changes: { x: 310 } }] });
+  projects.submit(staged.id, {
+    branch: 'main',
+    baseRevision: staged.branches.main,
+    label: 'Move the cabin',
+    operations: [{ op: 'update', id: 'rangers-cabin', changes: { x: 310 } }],
+  });
 
-  const intentional = legacyProject(projects, 'blank', 'Untitled project', { scene: legacyScene(head(blank, 'main')), assets: [], label: 'Created project' });
-  const draft = legacyProject(projects, 'orbit-garden', 'Orbit Garden', { scene: legacyScene(head(orbit, 'main')), assets: [], label: 'Created with harness' });
+  const intentional = legacyProject(projects, 'blank', 'Untitled project', {
+    scene: legacyScene(head(blank, 'main')),
+    assets: [],
+    label: 'Created project',
+  });
+  const draft = legacyProject(projects, 'orbit-garden', 'Orbit Garden', {
+    scene: legacyScene(head(orbit, 'main')),
+    assets: [],
+    label: 'Created with harness',
+  });
   const imported = projects.import(projects.export(orbit.id));
   const olderHarnessDraft = legacyProject(projects, 'orbit-garden');
-  projects.addNote(olderHarnessDraft.id, { ...note, role: 'assistant', text: 'Your draft is ready.', usage: { source: 'Codex', total: 100 } });
+  projects.addNote(olderHarnessDraft.id, {
+    ...note,
+    role: 'assistant',
+    text: 'Your draft is ready.',
+    usage: { source: 'Codex', total: 100 },
+  });
   const kept = [intentional, draft, imported, olderHarnessDraft, mosslight, staged].map(({ id }) => id).sort();
   const previews = [orbit, unusedOrbit, blank, renamed].map(({ id }) => id + '.json').sort();
 
   projects.archiveLegacyPreviews();
   const reopened = new Projects(root);
   reopened.archiveLegacyPreviews();
-  assert.deepEqual(reopened.list().map(({ id }) => id).sort(), kept);
-  assert.deepEqual(reopened.summaries().map(({ id }) => id).sort(), kept);
-  assert.deepEqual(readdirSync(join(root, 'archived-preview-projects')).filter((file) => file.endsWith('.json')).sort(), previews);
+  assert.deepEqual(
+    reopened
+      .list()
+      .map(({ id }) => id)
+      .sort(),
+    kept,
+  );
+  assert.deepEqual(
+    reopened
+      .summaries()
+      .map(({ id }) => id)
+      .sort(),
+    kept,
+  );
+  assert.deepEqual(
+    readdirSync(join(root, 'archived-preview-projects'))
+      .filter((file) => file.endsWith('.json'))
+      .sort(),
+    previews,
+  );
 });
 
 test('an empty project has no engine, scene, objects, or source until the author writes it', (t) => {
@@ -134,7 +211,12 @@ test('an empty project has no engine, scene, objects, or source until the author
   assert.throws(() => releases.package(p.id, 'main', rights, false, true), /no game source/);
 
   const game = { html: '<button onclick="this.textContent=17">Count</button>', maxPlayers: 3 };
-  const staged = projects.submit(p.id, { branch: 'main', baseRevision: empty.id, label: 'Write counter', operations: [{ op: 'writeGame', game }] });
+  const staged = projects.submit(p.id, {
+    branch: 'main',
+    baseRevision: empty.id,
+    label: 'Write counter',
+    operations: [{ op: 'writeGame', game }],
+  });
   const candidate = releases.package(p.id, 'main', rights, false, true, staged.proposal.id);
   assert.deepEqual(candidate.game, game);
   assert.deepEqual(releases.import(candidate).game, game);
@@ -193,11 +275,21 @@ test('project and release packaging refuse files above the shared import limit',
   Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes);
   const assets = Array.from({ length: 8 }, (_, index) => {
     bytes[8] = index;
-    return { id: 'asset-' + index, hash: projects.storeAsset(bytes), media: 'image/png' as const,
-      name: 'Test image ' + index, license: 'CC0-1.0' as const, author: 'Test', credit: '', source: 'https://example.org/image' };
+    return {
+      id: 'asset-' + index,
+      hash: projects.storeAsset(bytes),
+      media: 'image/png' as const,
+      name: 'Test image ' + index,
+      license: 'CC0-1.0' as const,
+      author: 'Test',
+      credit: '',
+      source: 'https://example.org/image',
+    };
   });
   const project = projects.createRevision('Large game', {
-    game: { html: '<canvas></canvas>', maxPlayers: 1 }, label: 'Initial source', assets,
+    game: { html: '<canvas></canvas>', maxPlayers: 1 },
+    label: 'Initial source',
+    assets,
   });
   assert.throws(() => projects.export(project.id), /exceeds the 48 MB file limit/);
   assert.throws(() => releases.package(project.id, 'main', rights, true), /exceeds the 48 MB file limit/);

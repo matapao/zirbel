@@ -17,10 +17,24 @@ function proposalPath(projects: Projects, projectId: string, proposalId: string)
 }
 
 /** Writes content as a commit on a ref, its parent base, keeping what the host doesn't manage of base's tree. */
-function write(projects: Projects, repo: string, ref: string, base: string | undefined, next: Content, label: string, author: Ident) {
+function write(
+  projects: Projects,
+  repo: string,
+  ref: string,
+  base: string | undefined,
+  next: Content,
+  label: string,
+  author: Ident,
+) {
   const stream = new FastImport();
   const entries = base ? listTree(repo, base) : [];
-  const { changes, hashes } = treeChanges(entries, (oid) => projects.history.sha256(repo, oid), next, (hash) => projects.readAsset(hash), stream);
+  const { changes, hashes } = treeChanges(
+    entries,
+    (oid) => projects.history.sha256(repo, oid),
+    next,
+    (hash) => projects.readAsset(hash),
+    stream,
+  );
   const mark = stream.commit(ref, { author, time: seconds(), message: commitMessage(label), from: base }, changes);
   const commit = stream.run(repo).get(mark)!;
   projects.history.learn(repo, hashes);
@@ -28,7 +42,13 @@ function write(projects: Projects, repo: string, ref: string, base: string | und
 }
 
 /** Stages a proposal. Only the editor's own harness turns stage a game with its files (withFiles). */
-export function submitProposal(projects: Projects, projectId: string, input: unknown, withFiles: boolean, author: Ident) {
+export function submitProposal(
+  projects: Projects,
+  projectId: string,
+  input: unknown,
+  withFiles: boolean,
+  author: Ident,
+) {
   const request = (withFiles ? storedProposalInput : proposalInput).parse(input);
   const project = projects.read(projectId);
   const base = assertCurrent(project, request.branch, request.baseRevision);
@@ -61,9 +81,11 @@ export function readProposal(projects: Projects, projectId: string, proposalId: 
 /** A branch's pending proposals against its head, oldest first. */
 export function listProposals(projects: Projects, projectId: string, branch: string) {
   const base = head(projects.read(projectId), branch);
-  return readdirSync(join(projects.root, 'proposals')).filter((file) => file.startsWith(projectId + '.') && file.endsWith('.json')).map((file) =>
-    projects.getProposal(projectId, file.slice(projectId.length + 1, -5)),
-  ).filter((proposal) => proposal.branch === branch && proposal.baseRevision === base.id).sort((a, b) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label));
+  return readdirSync(join(projects.root, 'proposals'))
+    .filter((file) => file.startsWith(projectId + '.') && file.endsWith('.json'))
+    .map((file) => projects.getProposal(projectId, file.slice(projectId.length + 1, -5)))
+    .filter((proposal) => proposal.branch === branch && proposal.baseRevision === base.id)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label));
 }
 
 function proposalCommit(projects: Projects, projectId: string, proposalId: string) {
@@ -76,7 +98,10 @@ function proposalCommit(projects: Projects, projectId: string, proposalId: strin
 export function previewProposal(projects: Projects, projectId: string, proposalId: string) {
   const proposal = projects.getProposal(projectId, proposalId);
   assertCurrent(projects.read(projectId), proposal.branch, proposal.baseRevision);
-  return { proposal, preview: projects.history.content(projects.repository(projectId), proposalCommit(projects, projectId, proposalId)) };
+  return {
+    proposal,
+    preview: projects.history.content(projects.repository(projectId), proposalCommit(projects, projectId, proposalId)),
+  };
 }
 
 /** Removes a proposal's file and its ref. */
@@ -91,13 +116,18 @@ export function applyProposal(projects: Projects, projectId: string, proposalId:
   if (fork !== undefined) safeId(fork);
   const { proposal } = projects.preview(projectId, proposalId);
   const current = projects.read(projectId);
-  if (fork && Object.hasOwn(current.branches, fork)) throw new ZirbelError(409, 'A branch with that name already exists.');
+  if (fork && Object.hasOwn(current.branches, fork))
+    throw new ZirbelError(409, 'A branch with that name already exists.');
   const branch = fork ?? proposal.branch;
   const repo = projects.repository(projectId);
   const commit = proposalCommit(projects, projectId, proposalId);
   // The branch moves only from the proposal's base (or a fork from none), with the proposal's ref going in one step.
-  if (!updateRefs(repo, [{ ref: 'refs/heads/' + branch, to: commit, from: fork ? ZERO : proposal.baseRevision },
-    { ref: proposalRef(proposalId), from: commit }]))
+  if (
+    !updateRefs(repo, [
+      { ref: 'refs/heads/' + branch, to: commit, from: fork ? ZERO : proposal.baseRevision },
+      { ref: proposalRef(proposalId), from: commit },
+    ])
+  )
     throw new ZirbelError(409, 'The branch has changed. Request a new proposal against its current revision.');
   rmSync(proposalPath(projects, projectId, proposalId), { force: true });
   return { revision: projects.revision(projectId, commit), branch };

@@ -25,9 +25,11 @@ export function atomicWrite(path: string, contents: string | Buffer) {
 }
 
 export function readData(path: string): unknown {
-  try { return JSON.parse(readFileSync(path, 'utf8')); }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new ZirbelError(404, 'The requested item does not exist.');
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      throw new ZirbelError(404, 'The requested item does not exist.');
     throw error;
   }
 }
@@ -37,7 +39,14 @@ export const projectBundle = z.strictObject({ project, assets: z.record(z.string
 export const titleSchema = project.shape.title;
 /** projects/<id>.json: what of a project isn't its game's content. Its branches and revisions are its repository's. */
 export const storedProject = z.strictObject({
-  version: z.literal(2), id, title: titleSchema, template: project.shape.template, notes: z.array(note), attachments: z.array(attachment),
-  upstream: id.optional(), imported: z.literal(true).optional(), source: project.shape.source,
+  version: z.literal(2),
+  id,
+  title: titleSchema,
+  template: project.shape.template,
+  notes: z.array(note),
+  attachments: z.array(attachment),
+  upstream: id.optional(),
+  imported: z.literal(true).optional(),
+  source: project.shape.source,
 });
 export type Stored = z.infer<typeof storedProject>;

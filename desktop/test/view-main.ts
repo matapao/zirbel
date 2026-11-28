@@ -10,8 +10,10 @@ void app.whenReady().then(async () => {
   const messages: unknown[] = [];
   for (const message of JSON.parse(process.env.VIEW_MESSAGES ?? '[]') as unknown[])
     await answerView(message, (reply) => messages.push(reply));
-  await answerView({ type: VIEW_GAME, id: 'render', request: JSON.parse(process.env.VIEW_REQUEST ?? '{}') as unknown },
-    (reply) => messages.push(reply));
+  await answerView(
+    { type: VIEW_GAME, id: 'render', request: JSON.parse(process.env.VIEW_REQUEST ?? '{}') as unknown },
+    (reply) => messages.push(reply),
+  );
   process.stdout.write(JSON.stringify(messages) + '\n');
   app.quit();
 });

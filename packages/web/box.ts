@@ -8,7 +8,9 @@ import { controllersSection } from './box-controllers.ts';
 
 /** What the box's dialogs call in the rest of the workspace, set as it starts (chat.ts imports this module). */
 const hooks = { openHarnesses: () => Promise.resolve(), refreshProcessors: () => Promise.resolve() };
-export function setBoxHooks(given: typeof hooks) { Object.assign(hooks, given); }
+export function setBoxHooks(given: typeof hooks) {
+  Object.assign(hooks, given);
+}
 
 /** Under this much memory a harness turn may run the box out of it (a 2 GB board reports a little less). */
 const ROOMY_MB = 1536;
@@ -29,7 +31,10 @@ async function change(update: Partial<Settings>) {
 }
 
 const lowMemory = (box: BoxHealth) => box.memoryMB < ROOMY_MB;
-const memoryNote = (box: BoxHealth) => 'This box has ' + box.memoryMB + ' MB of memory: turns of Claude Code or Codex on it ' +
+const memoryNote = (box: BoxHealth) =>
+  'This box has ' +
+  box.memoryMB +
+  ' MB of memory: turns of Claude Code or Codex on it ' +
   'may run out of memory. Your own agent over MCP leaves the work to your computer.';
 
 /** The first-run choice, shown on a box until it is made or set aside. Both can be on. */
@@ -38,37 +43,64 @@ export function openOnboarding() {
   if (!box) return;
   const body = openDialog('How do you want to use Zirbel here?');
   const harnesses = el('section', undefined, 'item');
-  harnesses.append(el('strong', 'Run harnesses on this box'),
-    el('p', 'Claude Code or Codex runs on the box, signed in to your own account, and makes the games here.'));
+  harnesses.append(
+    el('strong', 'Run harnesses on this box'),
+    el('p', 'Claude Code or Codex runs on the box, signed in to your own account, and makes the games here.'),
+  );
   if (!box.canRunHarnesses) harnesses.append(el('p', box.harnessesUnavailable ?? 'Harnesses can’t run on this box.'));
   else {
     if (lowMemory(box)) harnesses.append(el('p', memoryNote(box)));
-    harnesses.append(action('Use harnesses here', async () => {
-      await change({ harnesses: true, onboarded: true });
-      await hooks.refreshProcessors();
-      await hooks.openHarnesses();
-    }, lowMemory(box) ? undefined : 'primary'));
+    harnesses.append(
+      action(
+        'Use harnesses here',
+        async () => {
+          await change({ harnesses: true, onboarded: true });
+          await hooks.refreshProcessors();
+          await hooks.openHarnesses();
+        },
+        lowMemory(box) ? undefined : 'primary',
+      ),
+    );
   }
   const agent = el('section', undefined, 'item');
-  agent.append(el('strong', 'Use your own agent over MCP'),
+  agent.append(
+    el('strong', 'Use your own agent over MCP'),
     el('p', 'Claude Code or Codex on your own computer works on the games on this box through Zirbel’s MCP server.'),
-    action('Turn on agent access', async () => {
-      await change({ externalMcp: true, onboarded: true });
-      agentAccess(openDialog('Agent access'));
-    }, lowMemory(box) || !box.canRunHarnesses ? 'primary' : undefined));
+    action(
+      'Turn on agent access',
+      async () => {
+        await change({ externalMcp: true, onboarded: true });
+        agentAccess(openDialog('Agent access'));
+      },
+      lowMemory(box) || !box.canRunHarnesses ? 'primary' : undefined,
+    ),
+  );
   // Where turns on the box may run out of memory, or can't run, your own agent comes first.
-  body.append(...(lowMemory(box) || !box.canRunHarnesses ? [agent, harnesses] : [harnesses, agent]),
+  body.append(
+    ...(lowMemory(box) || !box.canRunHarnesses ? [agent, harnesses] : [harnesses, agent]),
     el('p', 'You can turn either on or off later in Box settings.'),
-    action('Not now', async () => { await change({ onboarded: true }); dialog.close(); }));
+    action('Not now', async () => {
+      await change({ onboarded: true });
+      dialog.close();
+    }),
+  );
 }
 
 /** Agent access over MCP: the endpoint, and for a game, its grant with the lines that add it to an agent. */
 function agentAccess(body: HTMLElement) {
   const endpoint = location.origin + '/mcp';
-  body.append(el('p', 'Agents on your network reach this box at:'), copyable(endpoint, 'MCP endpoint'),
-    el('p', 'Each game gives an agent its own access, for up to a week, which you can revoke from the game’s More menu.'));
+  body.append(
+    el('p', 'Agents on your network reach this box at:'),
+    copyable(endpoint, 'MCP endpoint'),
+    el(
+      'p',
+      'Each game gives an agent its own access, for up to a week, which you can revoke from the game’s More menu.',
+    ),
+  );
   if (!ws.projectCards.length) {
-    body.append(el('p', 'Make or import a game first, then come back here or open the game and choose More → Agent access.'));
+    body.append(
+      el('p', 'Make or import a game first, then come back here or open the game and choose More → Agent access.'),
+    );
     return;
   }
   const form = el('form');
@@ -94,11 +126,17 @@ function agentAccess(body: HTMLElement) {
 
 /** The lines that add a game's grant to Claude Code and to Codex, and when it ends. */
 export function grantSetup(endpoint: string, grant: Grant) {
-  return [el('h3', 'Claude Code'),
-    copyable('claude mcp add --transport http zirbel ' + endpoint + ' --header "Authorization: Bearer ' + grant.token + '"', 'Claude Code setup'),
-    el('h3', 'Codex'), copyable('export ZIRBEL_MCP_TOKEN=' + grant.token, 'Codex token'),
+  return [
+    el('h3', 'Claude Code'),
+    copyable(
+      'claude mcp add --transport http zirbel ' + endpoint + ' --header "Authorization: Bearer ' + grant.token + '"',
+      'Claude Code setup',
+    ),
+    el('h3', 'Codex'),
+    copyable('export ZIRBEL_MCP_TOKEN=' + grant.token, 'Codex token'),
     copyable('codex mcp add zirbel --url ' + endpoint + ' --bearer-token-env-var ZIRBEL_MCP_TOKEN', 'Codex setup'),
-    el('p', 'This access ends ' + new Date(grant.expires).toLocaleString() + '.')];
+    el('p', 'This access ends ' + new Date(grant.expires).toLocaleString() + '.'),
+  ];
 }
 
 export function copyable(text: string, label: string) {
@@ -108,10 +146,18 @@ export function copyable(text: string, label: string) {
   field.readOnly = true;
   field.setAttribute('aria-label', label);
   // The clipboard is only there on a secure page; over the box's plain http the text is selected for copying instead.
-  row.append(field, action('Copy', async () => {
-    try { await navigator.clipboard.writeText(text); inform('Copied.'); }
-    catch { field.select(); inform('Select and copy it.'); }
-  }));
+  row.append(
+    field,
+    action('Copy', async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        inform('Copied.');
+      } catch {
+        field.select();
+        inform('Select and copy it.');
+      }
+    }),
+  );
   return row;
 }
 
@@ -123,17 +169,28 @@ function toggle(label: string, checked: boolean, disabled: boolean, onChange: (o
   input.disabled = disabled;
   const row = el('label', label);
   row.prepend(input);
-  input.addEventListener('change', () => attempt(async () => {
-    let kept: unknown;
-    try { kept = await onChange(input.checked); } catch (error) { input.checked = !input.checked; throw error; }
-    if (kept === false) input.checked = !input.checked;
-  }));
+  input.addEventListener('change', () =>
+    attempt(async () => {
+      let kept: unknown;
+      try {
+        kept = await onChange(input.checked);
+      } catch (error) {
+        input.checked = !input.checked;
+        throw error;
+      }
+      if (kept === false) input.checked = !input.checked;
+    }),
+  );
   return { row, input };
 }
 
 /** A network to join on this device: its name and its password. */
-const joinDetails = (network: { name: string; password: string }) =>
-  [el('small', 'Network'), el('strong', network.name, 'sign-in-code'), el('small', 'Password'), copyable(network.password, 'Wi-Fi password')];
+const joinDetails = (network: { name: string; password: string }) => [
+  el('small', 'Network'),
+  el('strong', network.name, 'sign-in-code'),
+  el('small', 'Password'),
+  copyable(network.password, 'Wi-Fi password'),
+];
 
 /** The box's own Wi-Fi: its switch, and while it is on, its name, its password and (from the Node editor) a QR code
  *  that joins it. Switching it on shows the name and password first: this device loses the box until it joins too. */
@@ -144,33 +201,70 @@ function ownWifi(box: BoxHealth, { ownNetwork, network }: OwnWifi) {
   const { row, input } = toggle('Make the box’s own Wi-Fi', ownNetwork, !network && !ownNetwork, async (on) => {
     if (on && network) {
       panel.hidden = false;
-      panel.replaceChildren(el('p', 'The box leaves the network it is on and makes a Wi-Fi of its own, with no router ' +
-        'and no internet. This device loses the box until it joins it:'), ...joinDetails(network),
-      action('Make it now', async () => {
-        // A code for this device at the box's address there too, for a device that can't open .local names.
-        const code = await api<{ code: string; url: string }>('pairing', {});
-        await change({ ownNetwork: true });
-        const there = new URL(code.url);
-        there.hostname = OWN_ADDRESS;
-        panel.replaceChildren(el('p', 'The box is making its own Wi-Fi. Join it on this device:'), ...joinDetails(network),
-          el('p', 'Then open ' + new URL(code.url).origin + ', or this link, which pairs this device there for 10 minutes:'),
-          link(there.href, there.href));
-      }, 'primary'),
-      action('Cancel', () => { input.checked = false; panel.hidden = true; }));
+      panel.replaceChildren(
+        el(
+          'p',
+          'The box leaves the network it is on and makes a Wi-Fi of its own, with no router ' +
+            'and no internet. This device loses the box until it joins it:',
+        ),
+        ...joinDetails(network),
+        action(
+          'Make it now',
+          async () => {
+            // A code for this device at the box's address there too, for a device that can't open .local names.
+            const code = await api<{ code: string; url: string }>('pairing', {});
+            await change({ ownNetwork: true });
+            const there = new URL(code.url);
+            there.hostname = OWN_ADDRESS;
+            panel.replaceChildren(
+              el('p', 'The box is making its own Wi-Fi. Join it on this device:'),
+              ...joinDetails(network),
+              el(
+                'p',
+                'Then open ' +
+                  new URL(code.url).origin +
+                  ', or this link, which pairs this device there for 10 minutes:',
+              ),
+              link(there.href, there.href),
+            );
+          },
+          'primary',
+        ),
+        action('Cancel', () => {
+          input.checked = false;
+          panel.hidden = true;
+        }),
+      );
       return true;
     }
-    if (on || !confirm('The box ends its own Wi-Fi and goes back to the networks it joined before, or opens its Wi-Fi ' +
-      'setup when it has none. Every device on its Wi-Fi loses the box.')) return false;
+    if (
+      on ||
+      !confirm(
+        'The box ends its own Wi-Fi and goes back to the networks it joined before, or opens its Wi-Fi ' +
+          'setup when it has none. Every device on its Wi-Fi loses the box.',
+      )
+    )
+      return false;
     await change({ ownNetwork: false });
     inform('The box ends its own Wi-Fi.');
     return true;
   });
   part.append(row, panel);
-  if (!network) part.append(el('p', ownNetwork ? 'The box’s own Wi-Fi has no name and password here.'
-    : 'This box can’t make its own Wi-Fi: it has no Wi-Fi setup.'));
+  if (!network)
+    part.append(
+      el(
+        'p',
+        ownNetwork
+          ? 'The box’s own Wi-Fi has no name and password here.'
+          : 'This box can’t make its own Wi-Fi: it has no Wi-Fi setup.',
+      ),
+    );
   else if (ownNetwork) {
     const item = el('section', undefined, 'item');
-    item.append(el('p', 'Phones, tablets and computers join this Wi-Fi to play. There is no internet on it.'), ...joinDetails(network));
+    item.append(
+      el('p', 'Phones, tablets and computers join this Wi-Fi to play. There is no internet on it.'),
+      ...joinDetails(network),
+    );
     if (network.qr) {
       const picture = el('img');
       picture.src = network.qr;
@@ -192,58 +286,101 @@ export async function openBoxSettings() {
   const body = openDialog('Box settings');
   const settings = await api<Settings>('box/settings');
   Object.assign(box, settings);
-  body.append(el('h3', 'On this box'),
+  body.append(
+    el('h3', 'On this box'),
     toggle('Run harnesses on this box', settings.harnesses, !box.canRunHarnesses, async (on) => {
       await change({ harnesses: on });
       await hooks.refreshProcessors();
-    }).row);
+    }).row,
+  );
   if (!box.canRunHarnesses) body.append(el('p', box.harnessesUnavailable ?? ''));
   else if (lowMemory(box)) body.append(el('p', memoryNote(box)));
-  body.append(toggle('Let agents on your network use this box over MCP', settings.externalMcp, false, async (on) => {
-    await change({ externalMcp: on });
-    await openBoxSettings();
-  }).row);
+  body.append(
+    toggle('Let agents on your network use this box over MCP', settings.externalMcp, false, async (on) => {
+      await change({ externalMcp: on });
+      await openBoxSettings();
+    }).row,
+  );
   if (settings.externalMcp) {
     const access = el('section', undefined, 'item');
     agentAccess(access);
     body.append(access);
   }
   // The TV: the box's console shows the lobby on a TV or monitor plugged into it (AGENTS.md).
-  body.append(toggle('Show the lobby on a TV', settings.tv, !box.canShowTv && !settings.tv, (on) => change({ tv: on })).row,
-    el('p', box.canShowTv ? 'A TV plugged into the box shows its lobby, where games are chosen and played with gamepads and phones.'
-      : 'This box has no TV console.'));
+  body.append(
+    toggle('Show the lobby on a TV', settings.tv, !box.canShowTv && !settings.tv, (on) => change({ tv: on })).row,
+    el(
+      'p',
+      box.canShowTv
+        ? 'A TV plugged into the box shows its lobby, where games are chosen and played with gamepads and phones.'
+        : 'This box has no TV console.',
+    ),
+  );
   body.append(el('h3', 'Paired devices'));
   const { devices } = await api<{ devices: Device[] }>('pairing/devices');
   for (const device of devices) {
     const item = el('section', undefined, 'item');
-    item.append(el('strong', device.label + (device.current ? ' · this device' : '')),
-      el('small', 'Paired ' + new Date(device.createdAt).toLocaleDateString() + ' · last seen ' + new Date(device.lastSeen).toLocaleString()),
+    item.append(
+      el('strong', device.label + (device.current ? ' · this device' : '')),
+      el(
+        'small',
+        'Paired ' +
+          new Date(device.createdAt).toLocaleDateString() +
+          ' · last seen ' +
+          new Date(device.lastSeen).toLocaleString(),
+      ),
       action('Remove', async () => {
         const last = devices.length === 1;
-        if (last && !confirm('This is the last paired device. After it, only the box itself can pair one: through its Wi-Fi setup, or a terminal on it.')) return;
+        if (
+          last &&
+          !confirm(
+            'This is the last paired device. After it, only the box itself can pair one: through its Wi-Fi setup, or a terminal on it.',
+          )
+        )
+          return;
         await apiWith('DELETE', 'pairing/devices/' + device.id);
         if (device.current) location.assign('/pair');
         else await openBoxSettings();
-      }));
+      }),
+    );
     body.append(item);
   }
   const pairing = el('div');
   const [wifi, lobby] = await Promise.all([api<OwnWifi>('box/network'), lobbyLink()]);
-  body.append(action('Pair another device', async () => {
-    // The native host draws no QR code: its link and code are enough.
-    const code = await api<{ code: string; url: string; expiresAt: string; qr: string | null }>('pairing', {});
-    const picture = el('img');
-    if (code.qr) {
-      picture.src = code.qr;
-      picture.alt = 'QR code for ' + code.url;
-      picture.width = 180;
-    }
-    pairing.replaceChildren(el('p', 'On the other device, open the link' + (code.qr ? ' or scan the code' : '') + ', then enter this code if asked:'),
-      el('strong', code.code, 'sign-in-code'), link(code.url, code.url, true), ...(code.qr ? [picture] : []),
-      el('small', 'Valid until ' + new Date(code.expiresAt).toLocaleTimeString() + ', for one device.'));
-  }), pairing, el('h3', 'Players'), ...await lobbyAddress(lobby), el('h3', 'Network'), ownWifi(box, wifi), action('Change Wi-Fi', async () => {
-    await api('box/setup', { requested: true });
-    inform('The box opens its Wi-Fi setup: on this device, join the Wi-Fi “Zirbel setup …”, then choose a network or keep the box on its own Wi-Fi.');
-  }));
+  body.append(
+    action('Pair another device', async () => {
+      // The native host draws no QR code: its link and code are enough.
+      const code = await api<{ code: string; url: string; expiresAt: string; qr: string | null }>('pairing', {});
+      const picture = el('img');
+      if (code.qr) {
+        picture.src = code.qr;
+        picture.alt = 'QR code for ' + code.url;
+        picture.width = 180;
+      }
+      pairing.replaceChildren(
+        el(
+          'p',
+          'On the other device, open the link' +
+            (code.qr ? ' or scan the code' : '') +
+            ', then enter this code if asked:',
+        ),
+        el('strong', code.code, 'sign-in-code'),
+        link(code.url, code.url, true),
+        ...(code.qr ? [picture] : []),
+        el('small', 'Valid until ' + new Date(code.expiresAt).toLocaleTimeString() + ', for one device.'),
+      );
+    }),
+    pairing,
+    el('h3', 'Players'),
+    ...(await lobbyAddress(lobby)),
+    el('h3', 'Network'),
+    ownWifi(box, wifi),
+    action('Change Wi-Fi', async () => {
+      await api('box/setup', { requested: true });
+      inform(
+        'The box opens its Wi-Fi setup: on this device, join the Wi-Fi “Zirbel setup …”, then choose a network or keep the box on its own Wi-Fi.',
+      );
+    }),
+  );
   body.append(el('h3', 'Controllers'), await controllersSection());
 }

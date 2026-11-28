@@ -14,7 +14,12 @@ const PLACE_COLORS = ['#ef5b4f', '#3f8fe5', '#f2c33a', '#46c06a', '#a46be3', '#f
 /** How long a place waits for a controller's A, as the host waits. */
 const CLAIM_MS = 30_000;
 
-type Holder = { kind: 'phone' | 'box' | 'gamepad'; name: string; label: { name: string; color: string } | null; slot?: number };
+type Holder = {
+  kind: 'phone' | 'box' | 'gamepad';
+  name: string;
+  label: { name: string; color: string } | null;
+  slot?: number;
+};
 /** A place's controller as its tile names it. */
 function holderKind(holder: Holder) {
   if (holder.kind === 'phone') return 'Phone';
@@ -23,9 +28,12 @@ function holderKind(holder: Holder) {
 }
 type Context = {
   /** The screen, once open; the lobby's address for other devices; the screen's code. */
-  screen: () => Screen | undefined; base: () => string; code: () => string | undefined;
+  screen: () => Screen | undefined;
+  base: () => string;
+  code: () => string | undefined;
   /** Moves focus to a tile by its key, once the places are drawn. */
-  focus: (key: string) => void; say: (text: string) => void;
+  focus: (key: string) => void;
+  say: (text: string) => void;
 };
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string) => {
@@ -35,8 +43,10 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, classN
   return node;
 };
 const label = (place: number) => 'P' + (place + 1);
-const colour = (place: number, holder?: Holder) => holder?.label?.color && /^#[0-9a-f]{6}$/i.test(holder.label.color)
-  ? holder.label.color : PLACE_COLORS[place % PLACES]!;
+const colour = (place: number, holder?: Holder) =>
+  holder?.label?.color && /^#[0-9a-f]{6}$/i.test(holder.label.color)
+    ? holder.label.color
+    : PLACE_COLORS[place % PLACES]!;
 
 export class Places {
   private pads: PadInfo[] = [];
@@ -75,14 +85,16 @@ export class Places {
   /** What a place's tile says: its holder's label and kind, else a claim's countdown, else Free. */
   private holderText(place: number, holder: Holder | undefined) {
     if (holder) return [holder.label?.name, holderKind(holder)].filter(Boolean).join(' · ');
-    if (this.claim?.place === place) return 'Press A · ' + Math.max(0, Math.ceil((this.claim.until - Date.now()) / 1000)) + ' s';
+    if (this.claim?.place === place)
+      return 'Press A · ' + Math.max(0, Math.ceil((this.claim.until - Date.now()) / 1000)) + ' s';
     return 'Free';
   }
 
   holders() {
     const holders: (Holder | undefined)[] = Array.from({ length: PLACES }, () => undefined);
-    for (const pad of this.pads) if (pad.connected && pad.place >= 0 && pad.place < PLACES)
-      holders[pad.place] = { kind: pad.kind, name: pad.name, label: pad.label, slot: pad.slot };
+    for (const pad of this.pads)
+      if (pad.connected && pad.place >= 0 && pad.place < PLACES)
+        holders[pad.place] = { kind: pad.kind, name: pad.name, label: pad.label, slot: pad.slot };
     for (const { place, name } of this.native.values()) holders[place] ??= { kind: 'gamepad', name, label: null };
     return holders;
   }
@@ -122,12 +134,20 @@ export class Places {
 
   /** A device gamepad went away: its place is free. */
   gone(index: number) {
-    if (this.native.delete(index)) { this.tellLocal(); this.render(); }
+    if (this.native.delete(index)) {
+      this.tellLocal();
+      this.render();
+    }
   }
 
   /** Back, while the places have a step open: true when it closed one. */
   back() {
-    if (this.claim) { this.endClaim(); this.render(); this.context.focus('place:' + this.chosen); return true; }
+    if (this.claim) {
+      this.endClaim();
+      this.render();
+      this.context.focus('place:' + this.chosen);
+      return true;
+    }
     if (this.swapping !== undefined || this.chosen !== undefined) {
       const place = this.swapping ?? this.chosen;
       this.swapping = this.chosen = undefined;
@@ -138,7 +158,9 @@ export class Places {
     return false;
   }
 
-  private tellLocal() { this.context.screen()?.local([...this.native.values()].map(({ place }) => place)); }
+  private tellLocal() {
+    this.context.screen()?.local([...this.native.values()].map(({ place }) => place));
+  }
 
   private endClaim() {
     if (this.claim) clearInterval(this.claim.timer);
@@ -164,10 +186,11 @@ export class Places {
     this.swapping = this.chosen = undefined;
     if (from !== to) {
       let moved = false;
-      for (const own of this.native.values()) if (own.place === from || own.place === to) {
-        own.place = own.place === from ? to : from;
-        moved = true;
-      }
+      for (const own of this.native.values())
+        if (own.place === from || own.place === to) {
+          own.place = own.place === from ? to : from;
+          moved = true;
+        }
       this.context.screen()?.move(from, to);
       if (moved) this.tellLocal();
     }
@@ -176,7 +199,10 @@ export class Places {
   }
 
   private choose(place: number) {
-    if (this.swapping !== undefined) { this.swap(this.swapping, place); return; }
+    if (this.swapping !== undefined) {
+      this.swap(this.swapping, place);
+      return;
+    }
     this.chosen = this.chosen === place ? undefined : place;
     this.render();
     this.context.focus(this.chosen === undefined ? 'place:' + place : 'menu:0');
@@ -184,7 +210,7 @@ export class Places {
 
   private picture(link: string, alt: string) {
     let made = this.codes.get(link);
-    if (!made) this.codes.set(link, made = qrPicture(link, alt));
+    if (!made) this.codes.set(link, (made = qrPicture(link, alt)));
     const frame = el('span', undefined, 'qr-frame');
     void made.then((picture) => frame.append(picture.cloneNode()));
     return frame;
@@ -192,21 +218,30 @@ export class Places {
 
   render() {
     // The tile in focus stays in focus as the places are drawn again.
-    const focused = this.root.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.key : undefined;
+    const focused = this.root.contains(document.activeElement)
+      ? (document.activeElement as HTMLElement).dataset.key
+      : undefined;
     const holders = this.holders();
     const code = this.context.code();
     const next = this.padLink();
     const join = el('div', undefined, 'join');
     if (code && next) {
       const about = el('div');
-      about.append(el('p', 'Scan to play with a phone'), el('strong', code, 'code'),
-        el('small', new URL('pad', this.context.base()).href.replace(/^https?:\/\//, '') + ' · this code'));
+      about.append(
+        el('p', 'Scan to play with a phone'),
+        el('strong', code, 'code'),
+        el('small', new URL('pad', this.context.base()).href.replace(/^https?:\/\//, '') + ' · this code'),
+      );
       join.append(this.picture(next, 'QR code that adds a phone at the next free place'), about);
     } else join.append(el('p', 'Connecting the controllers…'));
     const list = el('ol', undefined, 'places');
     holders.forEach((holder, place) => {
       const item = el('li');
-      const tile = el('button', undefined, 'place' + (holder ? '' : ' empty') + (this.swapping === place ? ' moving' : ''));
+      const tile = el(
+        'button',
+        undefined,
+        'place' + (holder ? '' : ' empty') + (this.swapping === place ? ' moving' : ''),
+      );
       tile.type = 'button';
       tile.dataset.nav = '';
       tile.dataset.key = 'place:' + place;
@@ -222,18 +257,36 @@ export class Places {
     });
     const menu = el('div', undefined, 'menu');
     const chosen = this.chosen;
-    if (this.swapping !== undefined) menu.append(el('p', 'Choose the place to swap ' + label(this.swapping) + ' with.'));
+    if (this.swapping !== undefined)
+      menu.append(el('p', 'Choose the place to swap ' + label(this.swapping) + ' with.'));
     else if (chosen !== undefined) {
       const holder = holders[chosen];
       const actions: [string, () => void][] = [
-        ...(holder ? [] : [['Press A to take ' + label(chosen), () => this.startClaim(chosen)] as [string, () => void]]),
-        ['Swap ' + label(chosen) + ' with…', () => { this.swapping = chosen; this.chosen = undefined; this.render(); this.context.focus('place:' + chosen); }],
-        ...(holder?.slot !== undefined ? [['Let ' + label(chosen) + ' go', () => {
-          this.context.screen()?.release(holder.slot!);
-          this.chosen = undefined;
-          this.render();
-          this.context.focus('place:' + chosen);
-        }] as [string, () => void]] : []),
+        ...(holder
+          ? []
+          : [['Press A to take ' + label(chosen), () => this.startClaim(chosen)] as [string, () => void]]),
+        [
+          'Swap ' + label(chosen) + ' with…',
+          () => {
+            this.swapping = chosen;
+            this.chosen = undefined;
+            this.render();
+            this.context.focus('place:' + chosen);
+          },
+        ],
+        ...(holder?.slot !== undefined
+          ? [
+              [
+                'Let ' + label(chosen) + ' go',
+                () => {
+                  this.context.screen()?.release(holder.slot!);
+                  this.chosen = undefined;
+                  this.render();
+                  this.context.focus('place:' + chosen);
+                },
+              ] as [string, () => void],
+            ]
+          : []),
       ];
       actions.forEach(([text, act], index) => {
         const button = el('button', text);

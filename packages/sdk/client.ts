@@ -1,7 +1,14 @@
 import { PROTOCOL_VERSION, ServerMessage, type Manifest, type Scene, type SeatInfo } from './contracts.ts';
 
 export type RoomInfo = {
-  id: string; manifest: Manifest; solo: boolean; development: boolean; gameUrl?: string; registerObjects?: boolean; scene?: Scene; seats: SeatInfo[];
+  id: string;
+  manifest: Manifest;
+  solo: boolean;
+  development: boolean;
+  gameUrl?: string;
+  registerObjects?: boolean;
+  scene?: Scene;
+  seats: SeatInfo[];
   /** A session's code, which others join it by from the lobby. */
   code?: string;
 };
@@ -19,7 +26,10 @@ export class RoomClient {
   private readonly onStatus: (status: string) => void;
 
   constructor(
-    roomId: string, releaseId: string, credential: string, onMessage: (message: ServerMessage) => void,
+    roomId: string,
+    releaseId: string,
+    credential: string,
+    onMessage: (message: ServerMessage) => void,
     onStatus: (status: string) => void,
   ) {
     this.roomId = roomId;
@@ -34,24 +44,41 @@ export class RoomClient {
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url);
     this.socket = socket;
-    socket.addEventListener('open', () => socket.send(JSON.stringify({
-      type: 'hello', version: PROTOCOL_VERSION, credential: this.credential, releaseId: this.releaseId,
-    })));
+    socket.addEventListener('open', () =>
+      socket.send(
+        JSON.stringify({
+          type: 'hello',
+          version: PROTOCOL_VERSION,
+          credential: this.credential,
+          releaseId: this.releaseId,
+        }),
+      ),
+    );
     socket.addEventListener('message', (event) => {
       let decoded: unknown;
-      try { decoded = JSON.parse(String(event.data)); } catch { return; }
+      try {
+        decoded = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
       const parsed = ServerMessage.safeParse(decoded);
       if (!parsed.success) return;
       const message = parsed.data;
       if (message.type === 'welcome') {
-        if (message.releaseId !== this.releaseId) { this.stop(); return; }
+        if (message.releaseId !== this.releaseId) {
+          this.stop();
+          return;
+        }
         this.credential = message.resume;
         this.ack = message.ack;
         this.attempts = 0;
         this.onStatus('Connected');
       } else if (message.type === 'snapshot') {
         this.ack = Math.max(this.ack, message.ack);
-      } else if (message.type === 'closed' || (message.type === 'error' && ['expired','protocol','closed'].includes(message.code))) {
+      } else if (
+        message.type === 'closed' ||
+        (message.type === 'error' && ['expired', 'protocol', 'closed'].includes(message.code))
+      ) {
         this.stopped = true;
       }
       this.onMessage(message);
@@ -59,7 +86,10 @@ export class RoomClient {
     socket.addEventListener('close', (event) => {
       if (event.code === 4001 || this.stopped) return;
       this.onStatus('Reconnecting…');
-      if (++this.attempts > 8) { this.onStatus('Disconnected'); return; }
+      if (++this.attempts > 8) {
+        this.onStatus('Disconnected');
+        return;
+      }
       this.retry = window.setTimeout(() => this.open(), Math.min(5000, this.attempts * 450));
     });
   }
@@ -83,7 +113,9 @@ export async function fetchRoom<T>(room: string, route: string, value?: object, 
   if (value) headers['content-type'] = 'application/json';
   if (credential) headers.authorization = 'Bearer ' + credential;
   const response = await fetch('/rooms/' + room + '/' + route, {
-    method: value ? 'POST' : 'GET', headers, body: value ? JSON.stringify(value) : null,
+    method: value ? 'POST' : 'GET',
+    headers,
+    body: value ? JSON.stringify(value) : null,
   });
   const result = await response.json();
   if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Unable to open the game.');

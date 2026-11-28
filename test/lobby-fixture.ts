@@ -17,7 +17,8 @@ export function fixtures(t: TestContext) {
     writeFileSync(file, JSON.stringify(release));
     return { file, id: release.manifest.releaseId };
   };
-  const game = (title: string, maxPlayers: number) => projects.createGame(title, { html: '<!doctype html><canvas></canvas>', maxPlayers }).id;
+  const game = (title: string, maxPlayers: number) =>
+    projects.createGame(title, { html: '<!doctype html><canvas></canvas>', maxPlayers }).id;
   const shared = game('Shared', 2);
   const fixture = {
     data: join(root, 'data'),
@@ -27,11 +28,19 @@ export function fixtures(t: TestContext) {
     tiles: write('tiles', releases.package(legacyProject(projects, 'tessellate').id, 'main', rights, false)),
     closed: write('closed', releases.package(game('Closed', 2), 'main', { ...rights, play: false }, false)),
   };
-  return { ...fixture, imports: [fixture.shared, fixture.again, fixture.alone, fixture.tiles, fixture.closed]
-    .flatMap(({ file }) => ['--import', file]) };
+  return {
+    ...fixture,
+    imports: [fixture.shared, fixture.again, fixture.alone, fixture.tiles, fixture.closed].flatMap(({ file }) => [
+      '--import',
+      file,
+    ]),
+  };
 }
 
 export async function startEditor(t: TestContext, command: string[], data: string, imports: string[]) {
-  return launch(t, command, ['--data', data, '--port', '0', '--player-port', '0', ...imports],
-    (line) => typeof line.editor === 'string' && typeof line.player === 'string' ? { editor: line.editor, player: line.player } : undefined).ready;
+  return launch(t, command, ['--data', data, '--port', '0', '--player-port', '0', ...imports], (line) =>
+    typeof line.editor === 'string' && typeof line.player === 'string'
+      ? { editor: line.editor, player: line.player }
+      : undefined,
+  ).ready;
 }

@@ -1,7 +1,14 @@
 // A room of the player service: its seats and the invitation and tickets that hold them, the simulation of a game
 // the host runs, and a net game's space, mirroring host/room.go. Rooms (rooms.ts) opens, lists and ends them.
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { legacyScene, PROTOCOL_VERSION, type ClientMessage, type Release, type SeatInfo, type ServerMessage } from '../sdk/contracts.ts';
+import {
+  legacyScene,
+  PROTOCOL_VERSION,
+  type ClientMessage,
+  type Release,
+  type SeatInfo,
+  type ServerMessage,
+} from '../sdk/contracts.ts';
 import { mosslight, tessellate, type Simulation } from '../games/simulations.ts';
 import { boundedJson } from '../sdk/game.ts';
 import type { z } from 'zod';
@@ -28,23 +35,35 @@ type Seat = {
   expires: number;
 };
 
-const error = (code: Extract<ServerMessage, { type: 'error' }>['code'], message: string): ServerMessage =>
-  ({ type: 'error', code, message });
+const error = (code: Extract<ServerMessage, { type: 'error' }>['code'], message: string): ServerMessage => ({
+  type: 'error',
+  code,
+  message,
+});
 
 function sharedState(): Simulation {
   const states = new Map<string, z.core.util.JSONType>();
   let changed = false;
   return {
-    add() {}, suspend() {},
-    remove(seat) { states.delete(seat); },
+    add() {},
+    suspend() {},
+    remove(seat) {
+      states.delete(seat);
+    },
     apply(seat, value) {
       if (!boundedJson(value) || JSON.stringify(value).length > 4096) return 'Send a compact JSON state.';
       states.set(seat, value as z.core.util.JSONType);
       changed = true;
       return undefined;
     },
-    tick() { const update = changed; changed = false; return update; },
-    snapshot() { return Object.fromEntries(states); },
+    tick() {
+      const update = changed;
+      changed = false;
+      return update;
+    },
+    snapshot() {
+      return Object.fromEntries(states);
+    },
   };
 }
 
@@ -79,7 +98,11 @@ export class Room {
   readonly startedBy: string | undefined;
 
   constructor(
-    release: Release, solo: boolean, access: 'local' | 'lan', development = false, code: string | null = null,
+    release: Release,
+    solo: boolean,
+    access: 'local' | 'lan',
+    development = false,
+    code: string | null = null,
     startedBy?: string,
   ) {
     this.release = release;
@@ -98,14 +121,21 @@ export class Room {
   summary() {
     const seats = [...this.seats.values()].map((seat) => seat.info);
     return {
-      id: this.id, manifest: this.release.manifest, solo: this.solo, development: this.development, access: this.access, seats,
+      id: this.id,
+      manifest: this.release.manifest,
+      solo: this.solo,
+      development: this.development,
+      access: this.access,
+      seats,
       status: this.status(seats),
       ...(this.code ? { code: this.code } : {}),
     };
   }
 
   /** The player seats taken now, by players connected or still within their grace. */
-  get players() { return this.space ? this.members.participants : this.used('player'); }
+  get players() {
+    return this.space ? this.members.participants : this.used('player');
+  }
 
   /** The room's state in its summary: closed, active while a seat or the space's member is connected, else waiting. */
   private status(seats: SeatInfo[]) {
@@ -116,13 +146,19 @@ export class Room {
   /** An invitation, a held seat or a seat's own. A room with a space is for its members alone (Rooms.proven). */
   mayView(credential: string) {
     this.prune();
-    return !this.closed && this.space === null && ((same(credential, this.invite) && Date.now() < this.inviteExpires) ||
-      this.pending.has(credential) || [...this.seats.values()].some((seat) => same(seat.resume, credential)));
+    return (
+      !this.closed &&
+      this.space === null &&
+      ((same(credential, this.invite) && Date.now() < this.inviteExpires) ||
+        this.pending.has(credential) ||
+        [...this.seats.values()].some((seat) => same(seat.resume, credential)))
+    );
   }
 
   reserve(invite: string, name: string, role: SeatInfo['role']) {
     if (this.closed) throw new ZirbelError(404, 'This room has closed.');
-    if (!same(invite, this.invite) || Date.now() >= this.inviteExpires) throw new ZirbelError(403, 'This invitation is invalid or expired.');
+    if (!same(invite, this.invite) || Date.now() >= this.inviteExpires)
+      throw new ZirbelError(403, 'This invitation is invalid or expired.');
     if (this.solo && role !== 'player') throw new ZirbelError(403, 'This is a local playtest.');
     return this.hold(name, role, 30_000);
   }
@@ -138,14 +174,20 @@ export class Room {
   private hold(name: string, role: SeatInfo['role'], lasts: number) {
     const ticket = secret();
     this.prune();
-    if (!this.free(role)) throw new ZirbelError(409, role === 'player' ? 'All player seats are reserved.' : 'The spectator seats are full.');
+    if (!this.free(role))
+      throw new ZirbelError(
+        409,
+        role === 'player' ? 'All player seats are reserved.' : 'The spectator seats are full.',
+      );
     this.pending.set(ticket, { name, role, expires: Date.now() + lasts });
     this.activity = Date.now();
     return ticket;
   }
 
   private free(role: SeatInfo['role']) {
-    return this.used(role) + [...this.pending.values()].filter((item) => item.role === role).length < this.capacity(role);
+    return (
+      this.used(role) + [...this.pending.values()].filter((item) => item.role === role).length < this.capacity(role)
+    );
   }
 
   private capacity(role: SeatInfo['role']) {
@@ -168,7 +210,12 @@ export class Room {
     if (!seat && ticket && this.used(ticket.role) < this.capacity(ticket.role)) {
       this.pending.delete(hello.credential);
       const id = newId();
-      seat = { info: { id, name: ticket.name, role: ticket.role, connected: true }, resume: secret(), ack: 0, expires: Infinity };
+      seat = {
+        info: { id, name: ticket.name, role: ticket.role, connected: true },
+        resume: secret(),
+        ack: 0,
+        expires: Infinity,
+      };
       this.seats.set(id, seat);
       if (ticket.role === 'player') this.simulation?.add(id);
     }
@@ -182,8 +229,14 @@ export class Room {
     seat.info.connected = true;
     seat.expires = Infinity;
     this.activity = Date.now();
-    peer.send({ type: 'welcome', version: PROTOCOL_VERSION, releaseId: this.release.manifest.releaseId,
-      seat: seat.info, resume: seat.resume, ack: seat.ack });
+    peer.send({
+      type: 'welcome',
+      version: PROTOCOL_VERSION,
+      releaseId: this.release.manifest.releaseId,
+      seat: seat.info,
+      resume: seat.resume,
+      ack: seat.ack,
+    });
     this.broadcast();
     return seat.info.id;
   }
@@ -191,7 +244,10 @@ export class Room {
   message(id: string, peer: Peer, input: ClientMessage) {
     const seat = this.seats.get(id);
     if (!seat || seat.peer !== peer || this.closed) return;
-    if (input.type === 'resync') { this.snapshot(seat); return; }
+    if (input.type === 'resync') {
+      this.snapshot(seat);
+      return;
+    }
     if (input.type === 'leave') {
       this.remove(seat);
       peer.close(1000);
@@ -206,11 +262,18 @@ export class Room {
       peer.send(error('forbidden', 'This seat cannot send game actions.'));
       return;
     }
-    if (input.sequence <= seat.ack) { peer.send(error('stale-action', 'This action was already received.')); return; }
+    if (input.sequence <= seat.ack) {
+      peer.send(error('stale-action', 'This action was already received.'));
+      return;
+    }
     seat.ack = input.sequence;
     this.activity = Date.now();
     const rejection = this.simulation.apply(id, input.action);
-    if (rejection) { peer.send(error('invalid-action', rejection)); this.snapshot(seat); return; }
+    if (rejection) {
+      peer.send(error('invalid-action', rejection));
+      this.snapshot(seat);
+      return;
+    }
     if (this.release.manifest.simulation === 'tessellate-v1') this.broadcast();
   }
 
@@ -225,8 +288,13 @@ export class Room {
   }
 
   private snapshot(seat: Seat) {
-    seat.peer?.send({ type: 'snapshot', tick: this.tickNumber, ack: seat.ack,
-      seats: [...this.seats.values()].map((seat) => seat.info), state: this.simulation?.snapshot() ?? null });
+    seat.peer?.send({
+      type: 'snapshot',
+      tick: this.tickNumber,
+      ack: seat.ack,
+      seats: [...this.seats.values()].map((seat) => seat.info),
+      state: this.simulation?.snapshot() ?? null,
+    });
   }
 
   private broadcast() {
@@ -251,7 +319,9 @@ export class Room {
     if (removed) this.broadcast();
   }
 
-  get connected() { return [...this.seats.values()].some((seat) => seat.info.connected); }
+  get connected() {
+    return [...this.seats.values()].some((seat) => seat.info.connected);
+  }
 
   step() {
     this.prune();
@@ -260,7 +330,11 @@ export class Room {
     // A shared room stays open as long as its invitation is valid, so a link
     // printed by a headless host still works after a quiet spell. One from the lobby is joined by its code instead.
     const now = Date.now();
-    if (!this.connected && now - this.activity > IDLE && (this.solo || this.startedBy !== undefined || now >= this.inviteExpires))
+    if (
+      !this.connected &&
+      now - this.activity > IDLE &&
+      (this.solo || this.startedBy !== undefined || now >= this.inviteExpires)
+    )
       return false;
     if (this.simulation?.tick(0.05)) this.broadcast();
     return !this.closed;

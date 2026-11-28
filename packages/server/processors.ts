@@ -9,11 +9,22 @@ export const processorId = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
 export const modelId = z.string().min(1).max(240);
 export const modelSelection = z.strictObject({ model: modelId.optional(), effort: modelId.optional() });
 
-export type Processor = { id: string; name: string; ready?: boolean; signIn?: boolean; detail?: string; modelSettings?: boolean };
+export type Processor = {
+  id: string;
+  name: string;
+  ready?: boolean;
+  signIn?: boolean;
+  detail?: string;
+  modelSettings?: boolean;
+};
 /** Why a harness's turn ended without its reply, where that is known for certain. */
 export type TurnEnded = NonNullable<RunResult['ended']>;
 type ProcessorReply = {
-  name: string; task: string; stopReason: string; text?: string | undefined; usage?: { totalTokens: number } | undefined;
+  name: string;
+  task: string;
+  stopReason: string;
+  text?: string | undefined;
+  usage?: { totalTokens: number } | undefined;
   /** The session the turn ran in, which a later turn of the thread resumes. */
   sessionId?: string | undefined;
 };
@@ -21,10 +32,14 @@ type ProcessorReply = {
 /** A turn's end in plain words, for the thread. */
 function endedText(name: string, ended: TurnEnded) {
   switch (ended) {
-    case 'timed-out': return name + ' ran out of time for this turn.';
-    case 'usage-limit': return name + ' reached its account’s usage limit. Send the message again once the limit resets.';
-    case 'max-turns': return name + ' stopped at the most steps it takes in one turn. Send a message to continue.';
-    case 'session-not-found': return name + ' no longer has this thread’s session.';
+    case 'timed-out':
+      return name + ' ran out of time for this turn.';
+    case 'usage-limit':
+      return name + ' reached its account’s usage limit. Send the message again once the limit resets.';
+    case 'max-turns':
+      return name + ' stopped at the most steps it takes in one turn. Send a message to continue.';
+    case 'session-not-found':
+      return name + ' no longer has this thread’s session.';
   }
 }
 
@@ -40,9 +55,20 @@ export class TurnEndedError extends ZirbelError {
 
 /** A sign-in as it goes: the page to open, and for one finished on another device, the code to enter there. */
 /** A sign-in's state: its page and, from another device, the code to enter there; why it failed, when it says. */
-export type SignInStatus = { status: 'pending' | 'complete' | 'failed'; url?: string; userCode?: string; error?: string };
+export type SignInStatus = {
+  status: 'pending' | 'complete' | 'failed';
+  url?: string;
+  userCode?: string;
+  error?: string;
+};
 /** Where a turn works: its thread's folder, the session it continues, its MCP servers and what else it may read. */
-type TurnPlace = { cwd: string; sessionId?: string | undefined; resume: boolean; mcpServers?: McpServerSpec[]; readable?: string[] };
+type TurnPlace = {
+  cwd: string;
+  sessionId?: string | undefined;
+  resume: boolean;
+  mcpServers?: McpServerSpec[];
+  readable?: string[];
+};
 export type ProcessorRun = {
   signal?: AbortSignal | undefined;
   update?: ((event: ChatUpdate) => void) | undefined;

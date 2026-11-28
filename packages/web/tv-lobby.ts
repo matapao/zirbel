@@ -11,11 +11,13 @@ type Context = {
   call: <T>(path: string, value?: object) => Promise<T>;
   /** Goes into a game's player page by the link the lobby handed back. */
   go: (link: string) => void;
-  focus: (key: string) => void; say: (text: string) => void;
+  focus: (key: string) => void;
+  say: (text: string) => void;
   /** Reads the lobby again, as the page comes back to it. */
   refresh: () => void;
   /** Whether this browser can play games (tv.ts checks), and the lobby's address for other devices. */
-  canPlay: boolean; base: () => string;
+  canPlay: boolean;
+  base: () => string;
 };
 
 /** A session's code: four of these, which never read as one another (core/lobby.ts). */
@@ -42,7 +44,7 @@ function tile(key: string, title: string, lines: string[], action: string, act: 
   return item;
 }
 
-const seats = (game: Game) => game.players.max === 1 ? '1 player' : 'Up to ' + game.players.max + ' players';
+const seats = (game: Game) => (game.players.max === 1 ? '1 player' : 'Up to ' + game.players.max + ' players');
 /** What a game's tile says it does: here, where games can play, a session or a game alone; else a phone plays it. */
 function gameAction(canPlay: boolean, multiplayer: boolean) {
   if (!canPlay) return 'Play on a phone';
@@ -78,25 +80,50 @@ export class TvLobby {
       letters.append(button);
     }
     byId('delete').addEventListener('click', () => this.erase());
-    for (const id of ['code-back', 'started-back', 'elsewhere-back']) byId(id).addEventListener('click', () => this.show('home'));
+    for (const id of ['code-back', 'started-back', 'elsewhere-back'])
+      byId(id).addEventListener('click', () => this.show('home'));
   }
 
-  get current() { return this.view; }
+  get current() {
+    return this.view;
+  }
 
   render(state: LobbyState) {
     const { canPlay } = this.context;
-    byId('games').replaceChildren(...state.games.map((game) => tile('game:' + game.release, game.title, [seats(game)],
-      gameAction(canPlay, game.multiplayer), () => void this.start(game))));
+    byId('games').replaceChildren(
+      ...state.games.map((game) =>
+        tile(
+          'game:' + game.release,
+          game.title,
+          [seats(game)],
+          gameAction(canPlay, game.multiplayer),
+          () => void this.start(game),
+        ),
+      ),
+    );
     byId('no-games').hidden = state.games.length > 0;
     byId('sessions').replaceChildren(
-      tile('join', 'Join with a code', ['A session’s code, from whoever started it'], 'Enter a code', () => this.enter()),
-      ...state.sessions.map((session) => tile('session:' + session.id, session.title,
-        [session.players + ' of ' + session.max + ' players', ago(session.started)], 'Join', () => this.enter(session.title))));
+      tile('join', 'Join with a code', ['A session’s code, from whoever started it'], 'Enter a code', () =>
+        this.enter(),
+      ),
+      ...state.sessions.map((session) =>
+        tile(
+          'session:' + session.id,
+          session.title,
+          [session.players + ' of ' + session.max + ' players', ago(session.started)],
+          'Join',
+          () => this.enter(session.title),
+        ),
+      ),
+    );
   }
 
   /** Back: from a step to the lobby; true when it went somewhere. */
   back() {
-    if (this.view === 'code' && this.typed) { this.erase(); return true; }
+    if (this.view === 'code' && this.typed) {
+      this.erase();
+      return true;
+    }
     if (this.view === 'home') return false;
     this.show('home');
     return true;
@@ -118,7 +145,10 @@ export class TvLobby {
   }
 
   private enter(title?: string) {
-    if (!this.context.canPlay) { this.elsewhere(title ?? 'a session'); return; }
+    if (!this.context.canPlay) {
+      this.elsewhere(title ?? 'a session');
+      return;
+    }
     this.typed = '';
     this.paint();
     byId('code-title').textContent = title ? 'Join ' + title : 'Join a session';
@@ -147,7 +177,13 @@ export class TvLobby {
     if (this.busy) return;
     this.busy = true;
     this.context.say('');
-    try { await work(); } catch (reason) { this.context.say((reason as Error).message); } finally { this.busy = false; }
+    try {
+      await work();
+    } catch (reason) {
+      this.context.say((reason as Error).message);
+    } finally {
+      this.busy = false;
+    }
   }
 
   private join(code: string) {
@@ -163,10 +199,19 @@ export class TvLobby {
   }
 
   private start(game: Game) {
-    if (!this.context.canPlay) { this.elsewhere(game.title); return Promise.resolve(); }
+    if (!this.context.canPlay) {
+      this.elsewhere(game.title);
+      return Promise.resolve();
+    }
     return this.attempt(async () => {
-      const { code, link } = await this.context.call<{ code: string | null; link: string }>('sessions', { release: game.release, name: SEAT_NAME });
-      if (!code) { this.context.go(link); return; }
+      const { code, link } = await this.context.call<{ code: string | null; link: string }>('sessions', {
+        release: game.release,
+        name: SEAT_NAME,
+      });
+      if (!code) {
+        this.context.go(link);
+        return;
+      }
       byId('session-code').textContent = code;
       byId('session-code').setAttribute('aria-label', 'Code ' + code.split('').join(' '));
       byId('go-in').onclick = () => this.context.go(link);
@@ -180,7 +225,9 @@ export class TvLobby {
   /** A browser that can't play games here: the lobby on a phone or a laptop, by its QR code. */
   private elsewhere(title: string) {
     byId('elsewhere-title').textContent = 'Play ' + title + ' on a phone or a laptop';
-    void qrPicture(this.context.base(), 'QR code that opens the lobby').then((picture) => byId('elsewhere-qr').replaceChildren(picture));
+    void qrPicture(this.context.base(), 'QR code that opens the lobby').then((picture) =>
+      byId('elsewhere-qr').replaceChildren(picture),
+    );
     byId('elsewhere-link').textContent = this.context.base();
     this.show('elsewhere');
   }

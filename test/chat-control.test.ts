@@ -4,12 +4,21 @@ import { chatControl } from '../packages/sdk/chat-control.ts';
 import { MAX_SUGGESTIONS, SUGGESTIONS } from '../packages/web/state.ts';
 
 test('chat answers undo, apply and discard itself, and leaves playing to the game', () => {
-  for (const text of ['undo', 'Undo that.', 'revert my last change', 'please undo']) assert.equal(chatControl(text)?.action, 'undo', text);
+  for (const text of ['undo', 'Undo that.', 'revert my last change', 'please undo'])
+    assert.equal(chatControl(text)?.action, 'undo', text);
   assert.deepEqual(chatControl('Apply option 2'), { action: 'apply', index: 1 });
   assert.deepEqual(chatControl('accept it'), { action: 'apply', index: undefined });
   assert.deepEqual(chatControl('reject proposal b'), { action: 'discard', index: 1 });
   // There are no modes to switch: these go to the harness as ordinary messages.
-  for (const text of ['play', 'Play it!', 'stop', 'stop the game', 'go back to the editor', 'preview option 1', 'apply and play'])
+  for (const text of [
+    'play',
+    'Play it!',
+    'stop',
+    'stop the game',
+    'go back to the editor',
+    'preview option 1',
+    'apply and play',
+  ])
     assert.equal(chatControl(text), undefined, text);
 });
 

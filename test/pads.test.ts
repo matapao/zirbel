@@ -9,22 +9,62 @@ import { decodePad, encodePad, MAX_PAD_FRAME } from '../packages/sdk/pads.ts';
 import { link, listed, state } from './pads-fixtures.ts';
 
 test('a pad frame holds a slot, the layout, up to 32 buttons and 8 axes, and nothing else', () => {
-  const frame = encodePad({ slot: 3, standard: true, buttons: [{ pressed: true, value: 1 }, { pressed: false, value: 0.5 }, { pressed: true, value: 0.2 }],
-    axes: [-1, 0.5, 2, Number.NaN] });
+  const frame = encodePad({
+    slot: 3,
+    standard: true,
+    buttons: [
+      { pressed: true, value: 1 },
+      { pressed: false, value: 0.5 },
+      { pressed: true, value: 0.2 },
+    ],
+    axes: [-1, 0.5, 2, Number.NaN],
+  });
   assert.deepEqual([...frame], [3, 1, 3, 4, 0b101, 0, 0, 0, 255, 128, 51, 0x01, 0x80, 0x00, 0x40, 0xff, 0x7f, 0, 0]);
   const decoded = decodePad(frame);
-  assert.deepEqual(decoded && { ...decoded, buttons: decoded.buttons.map((button) => [button.pressed, Math.round(button.value * 255)]),
-    axes: decoded.axes.map((axis) => Math.round(axis * 32_767)) },
-  { slot: 3, standard: true, buttons: [[true, 255], [false, 128], [true, 51]], axes: [-32_767, 16_384, 32_767, 0] });
+  assert.deepEqual(
+    decoded && {
+      ...decoded,
+      buttons: decoded.buttons.map((button) => [button.pressed, Math.round(button.value * 255)]),
+      axes: decoded.axes.map((axis) => Math.round(axis * 32_767)),
+    },
+    {
+      slot: 3,
+      standard: true,
+      buttons: [
+        [true, 255],
+        [false, 128],
+        [true, 51],
+      ],
+      axes: [-32_767, 16_384, 32_767, 0],
+    },
+  );
   // At most 32 buttons and 8 axes are encoded; the largest frame is 56 bytes.
-  const largest = encodePad({ standard: false, buttons: Array.from({ length: 40 }, () => ({ pressed: true, value: 1 })), axes: Array(9).fill(1) });
+  const largest = encodePad({
+    standard: false,
+    buttons: Array.from({ length: 40 }, () => ({ pressed: true, value: 1 })),
+    axes: Array(9).fill(1),
+  });
   assert.equal(largest.length, MAX_PAD_FRAME);
-  assert.equal(decodePad(largest)?.buttons.every((button) => button.pressed), true);
-  assert.deepEqual(decodePad(new Uint8Array([7, 0, 0, 0, 0, 0, 0, 0])), { slot: 7, standard: false, buttons: [], axes: [] });
+  assert.equal(
+    decodePad(largest)?.buttons.every((button) => button.pressed),
+    true,
+  );
+  assert.deepEqual(decodePad(new Uint8Array([7, 0, 0, 0, 0, 0, 0, 0])), {
+    slot: 7,
+    standard: false,
+    buttons: [],
+    axes: [],
+  });
   const refused = {
-    short: [0, 1, 0, 0, 0, 0, 0], slot: [8, 0, 0, 0, 0, 0, 0, 0], flags: [0, 2, 0, 0, 0, 0, 0, 0], buttons: [0, 0, 33, 0, 0, 0, 0, 0],
-    axes: [0, 0, 0, 9, 0, 0, 0, 0], long: [0, 0, 1, 0, 0, 0, 0, 0, 255, 0], cut: [0, 0, 0, 1, 0, 0, 0, 0, 0],
-    pressedPastLast: [0, 0, 1, 0, 2, 0, 0, 0, 0], axisPastRange: [0, 0, 0, 1, 0, 0, 0, 0, 0x00, 0x80],
+    short: [0, 1, 0, 0, 0, 0, 0],
+    slot: [8, 0, 0, 0, 0, 0, 0, 0],
+    flags: [0, 2, 0, 0, 0, 0, 0, 0],
+    buttons: [0, 0, 33, 0, 0, 0, 0, 0],
+    axes: [0, 0, 0, 9, 0, 0, 0, 0],
+    long: [0, 0, 1, 0, 0, 0, 0, 0, 255, 0],
+    cut: [0, 0, 0, 1, 0, 0, 0, 0, 0],
+    pressedPastLast: [0, 0, 1, 0, 2, 0, 0, 0, 0],
+    axisPastRange: [0, 0, 0, 1, 0, 0, 0, 0, 0x00, 0x80],
   };
   for (const [name, bytes] of Object.entries(refused)) assert.equal(decodePad(Uint8Array.from(bytes)), undefined, name);
 });
@@ -33,7 +73,14 @@ test('a screen has a code phones join it by, its controllers in the lowest free 
   const pads = new Pads();
   const tv = link();
   const screen = pads.openScreen(tv, 'lan', false)!;
-  assert.deepEqual(tv.texts[0], { type: 'screen', id: screen.id, code: screen.code, resume: screen.resume, box: false, tv: false });
+  assert.deepEqual(tv.texts[0], {
+    type: 'screen',
+    id: screen.id,
+    code: screen.code,
+    resume: screen.resume,
+    box: false,
+    tv: false,
+  });
   assert.match(screen.code, new RegExp('^[' + CODE_LETTERS + ']{4}$'));
   assert.match(screen.id, /^[a-f0-9]{12}$/);
   assert.match(screen.resume, /^[\w-]{32}$/);
@@ -43,12 +90,31 @@ test('a screen has a code phones join it by, its controllers in the lowest free 
   const typed = screen.code.toLowerCase().split('').join(' ');
   assert.equal(pads.openPad(link(), 'local', '127.0.0.1', screen.code), undefined);
   const held = phones.map((phone) => pads.openPad(phone, 'lan', '192.168.1.20', typed)!);
-  assert.deepEqual(phones[2]!.texts, [{ type: 'pad', slot: 2, screen: screen.id, resume: held[2]!.resume, label: null }]);
+  assert.deepEqual(phones[2]!.texts, [
+    { type: 'pad', slot: 2, screen: screen.id, resume: held[2]!.resume, label: null },
+  ]);
   assert.match(held[2]!.resume, /^[\w-]{32}$/);
-  assert.deepEqual(listed(tv), ['0 phone Phone 1', '1 phone Phone 2', '2 phone Phone 3', '3 phone Phone 4', '4 phone Phone 5', '5 phone Phone 6',
-    '6 phone Phone 7', '7 phone Phone 8']);
-  assert.deepEqual(tv.last('pads')?.pads, listed(tv).map((_, slot) => ({ slot, place: slot, kind: 'phone', name: 'Phone ' + (slot + 1),
-    connected: true, label: null })));
+  assert.deepEqual(listed(tv), [
+    '0 phone Phone 1',
+    '1 phone Phone 2',
+    '2 phone Phone 3',
+    '3 phone Phone 4',
+    '4 phone Phone 5',
+    '5 phone Phone 6',
+    '6 phone Phone 7',
+    '7 phone Phone 8',
+  ]);
+  assert.deepEqual(
+    tv.last('pads')?.pads,
+    listed(tv).map((_, slot) => ({
+      slot,
+      place: slot,
+      kind: 'phone',
+      name: 'Phone ' + (slot + 1),
+      connected: true,
+      label: null,
+    })),
+  );
   const ninth = link();
   assert.equal(pads.openPad(ninth, 'lan', '192.168.1.20', screen.code), undefined);
   assert.equal(ninth.closed, 4409);
@@ -58,10 +124,16 @@ test('a screen has a code phones join it by, its controllers in the lowest free 
   // A phone that leaves frees its slot, the lowest free is taken next.
   pads.padGone(held[1]!);
   pads.padGone(held[1]!);
-  assert.deepEqual(listed(tv).map((line) => line.split(' ')[0]), ['0', '2', '3', '4', '5', '6', '7']);
+  assert.deepEqual(
+    listed(tv).map((line) => line.split(' ')[0]),
+    ['0', '2', '3', '4', '5', '6', '7'],
+  );
   const again = link();
   pads.openPad(again, 'lan', '192.168.1.20', screen.code);
-  assert.deepEqual(again.texts.map((message) => message.slot), [1]);
+  assert.deepEqual(
+    again.texts.map((message) => message.slot),
+    [1],
+  );
   // Anything else than a pad frame closes the phone.
   pads.padFrame(held[3]!, new Uint8Array([0, 0, 1, 0, 0, 0, 0, 0]));
   assert.equal(phones[3]!.closed, 1003);
@@ -83,7 +155,8 @@ test('frames past 120 a second are dropped, and so are control messages', () => 
   now += 1000;
   pads.padFrame(held, encodePad(state()));
   assert.equal(tv.frames.length, 121);
-  for (let i = 0; i < 130; i++) pads.screenMessage(screen, tv, { type: 'rumble', slot: 0, duration: 10, strong: 1, weak: 0 });
+  for (let i = 0; i < 130; i++)
+    pads.screenMessage(screen, tv, { type: 'rumble', slot: 0, duration: 10, strong: 1, weak: 0 });
   assert.equal(phone.texts.filter((message) => message.type === 'rumble').length, 120);
   assert.equal(phone.closed, undefined);
 });
@@ -137,8 +210,10 @@ test('a screen is kept 15 s for its resume, with its code and controllers, and t
   assert.notEqual(pads.openScreen(elsewhere, 'local', false, screen.resume), screen);
   const next = link();
   assert.equal(pads.openScreen(next, 'lan', false, screen.resume), screen);
-  assert.deepEqual(next.texts, [{ type: 'screen', id: screen.id, code: screen.code, resume: screen.resume, box: false, tv: false },
-    { type: 'pads', pads: [{ slot: 0, place: 0, kind: 'phone', name: 'Phone 1', connected: true, label: null }] }]);
+  assert.deepEqual(next.texts, [
+    { type: 'screen', id: screen.id, code: screen.code, resume: screen.resume, box: false, tv: false },
+    { type: 'pads', pads: [{ slot: 0, place: 0, kind: 'phone', name: 'Phone 1', connected: true, label: null }] },
+  ]);
   // A page that resumes it while its socket is still open takes it over.
   const taken = link();
   pads.openScreen(taken, 'lan', false, screen.resume);
@@ -182,7 +257,14 @@ test('Show on TV opens the link on the box’s own screen, which tells the other
   const tvLink = link();
   const tv = pads.openScreen(tvLink, 'lan', true)!;
   assert.deepEqual([tvLink.texts[0]?.box, tvLink.texts[0]?.tv], [true, true]);
-  assert.deepEqual(laptop.texts.at(-1), { type: 'screen', id: screen.id, code: screen.code, resume: screen.resume, box: false, tv: true });
+  assert.deepEqual(laptop.texts.at(-1), {
+    type: 'screen',
+    id: screen.id,
+    code: screen.code,
+    resume: screen.resume,
+    box: false,
+    tv: true,
+  });
   const local = link();
   pads.openScreen(local, 'local', false);
   assert.equal(local.texts[0]?.tv, false, 'the TV is another listener’s');
@@ -195,8 +277,18 @@ test('Show on TV opens the link on the box’s own screen, which tells the other
   assert.deepEqual(laptop.texts.at(-1), { type: 'shown', code: tv.code });
   const resumed = link();
   pads.openScreen(resumed, 'lan', true, tv.resume);
-  assert.deepEqual(resumed.texts.map((message) => message.type), ['screen', 'pads', 'open']);
+  assert.deepEqual(
+    resumed.texts.map((message) => message.type),
+    ['screen', 'pads', 'open'],
+  );
   assert.deepEqual(resumed.texts[2], { type: 'open', link: '/join/def' });
   pads.screenGone(tv, resumed, 1000);
-  assert.deepEqual(laptop.texts.at(-1), { type: 'screen', id: screen.id, code: screen.code, resume: screen.resume, box: false, tv: false });
+  assert.deepEqual(laptop.texts.at(-1), {
+    type: 'screen',
+    id: screen.id,
+    code: screen.code,
+    resume: screen.resume,
+    box: false,
+    tv: false,
+  });
 });

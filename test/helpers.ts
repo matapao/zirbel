@@ -17,8 +17,12 @@ import type { Template } from '../packages/sdk/contracts.ts';
 
 export const rights = { play: true, download: true, remix: true };
 
-export function legacyProject(projects: Projects, template: Template, title = templates[template].title,
-  initial = { scene: starterScene(template), assets: [], label: 'Initial scene' }) {
+export function legacyProject(
+  projects: Projects,
+  template: Template,
+  title = templates[template].title,
+  initial = { scene: starterScene(template), assets: [], label: 'Initial scene' },
+) {
   return projects.createRevision(title, { template, ...initial });
 }
 
@@ -39,15 +43,31 @@ export function install(t: TestContext) {
 export function joinRoom(room: Room, credential: string) {
   const messages: ServerMessage[] = [];
   let closed: number | undefined;
-  const peer: Peer = { send: (message) => messages.push(structuredClone(message)), close: (code) => { closed = code; } };
-  const id = room.connect({ type: 'hello', version: PROTOCOL_VERSION, releaseId: room.release.manifest.releaseId, credential }, peer);
+  const peer: Peer = {
+    send: (message) => messages.push(structuredClone(message)),
+    close: (code) => {
+      closed = code;
+    },
+  };
+  const id = room.connect(
+    { type: 'hello', version: PROTOCOL_VERSION, releaseId: room.release.manifest.releaseId, credential },
+    peer,
+  );
   assert.ok(id);
   const welcome = messages.find((message) => message.type === 'welcome');
   assert.ok(welcome);
-  return { id, welcome, messages, peer, get closed() { return closed; },
+  return {
+    id,
+    welcome,
+    messages,
+    peer,
+    get closed() {
+      return closed;
+    },
     send(sequence: number, action: object) {
       room.message(id, peer, { type: 'action', sequence, action: JSON.parse(JSON.stringify(action)) });
-    } };
+    },
+  };
 }
 
 /** Why a signal was aborted, as the Error a promise rejects with: an abort's reason is one (an AbortError, or the
@@ -73,7 +93,10 @@ export function stopHost(child: ChildProcess) {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
   return new Promise<void>((done) => {
     const force = setTimeout(() => child.kill('SIGKILL'), 3000);
-    child.once('exit', () => { clearTimeout(force); done(); });
+    child.once('exit', () => {
+      clearTimeout(force);
+      done();
+    });
     child.kill('SIGTERM');
   });
 }
@@ -81,25 +104,42 @@ export function stopHost(child: ChildProcess) {
 // The spaces kernels a host runs in the tests: the fake (test/fake-spaces.mjs) unless a test says otherwise, the real
 // binary `pnpm run deps` builds, when it is there, and none.
 export const FAKE_SPACES = join(import.meta.dirname, 'fake-spaces.mjs');
-export const REAL_SPACES = join(import.meta.dirname, '..', 'deps', 'skalet', 'bin', 'skalet' + (process.platform === 'win32' ? '.exe' : ''));
+export const REAL_SPACES = join(
+  import.meta.dirname,
+  '..',
+  'deps',
+  'skalet',
+  'bin',
+  'skalet' + (process.platform === 'win32' ? '.exe' : ''),
+);
 export const NO_SPACES = join(tmpdir(), 'zirbel-test-no-spaces-kernel');
 /** The kernels a contract runs against: the fake, and the real one once it is built. */
 export function kernelsUnderTest() {
   const kernels = [{ name: 'fake', binary: FAKE_SPACES }];
   if (existsSync(REAL_SPACES)) kernels.push({ name: 'real', binary: REAL_SPACES });
-  else console.log('# Skipping the real spaces kernel: run `git submodule update --init && pnpm run deps` to build it.');
+  else
+    console.log('# Skipping the real spaces kernel: run `git submodule update --init && pnpm run deps` to build it.');
   return kernels;
 }
 
 // Start a host that is stopped when the test ends. `ready` resolves with the
 // first value `pick` returns for one of the JSON lines the host prints. It runs the fake spaces kernel unless env names
 // another (ZIRBEL_SPACES_BINARY).
-export function launch<T>(t: TestContext, command: string[], args: string[], pick: (line: Record<string, unknown>) => T | undefined,
-  env?: Record<string, string>) {
-  const child = spawn(command[0]!, [...command.slice(1), ...args], { env: { ...process.env, ZIRBEL_SPACES_BINARY: FAKE_SPACES, ...env } });
+export function launch<T>(
+  t: TestContext,
+  command: string[],
+  args: string[],
+  pick: (line: Record<string, unknown>) => T | undefined,
+  env?: Record<string, string>,
+) {
+  const child = spawn(command[0]!, [...command.slice(1), ...args], {
+    env: { ...process.env, ZIRBEL_SPACES_BINARY: FAKE_SPACES, ...env },
+  });
   t.after(() => stopHost(child));
   let errors = '';
-  child.stderr.on('data', (chunk: Buffer) => { errors += chunk.toString('utf8'); });
+  child.stderr.on('data', (chunk: Buffer) => {
+    errors += chunk.toString('utf8');
+  });
   const ready = new Promise<T>((resolve, reject) => {
     createInterface({ input: child.stdout }).on('line', (line) => {
       const found = pick(JSON.parse(line) as Record<string, unknown>);
@@ -115,26 +155,63 @@ export function launch<T>(t: TestContext, command: string[], args: string[], pic
 // A net-v2 game (net: the player's origin) may also import the spaces kernel's modules and reach its socket.
 export function sandboxPolicy(runtime: string, base: string, ancestors: string, net?: string) {
   const addons = runtime + 'three/addons/';
-  return "sandbox allow-scripts allow-pointer-lock; default-src 'none'; " +
-    "script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + ' ' + runtime + 'game-sdk.js ' + runtime + 'three.module.js ' + addons +
-    (net ? ' ' + net + '/.skalet/net.js ' + net + '/.skalet/spaces.js' : '') + '; ' +
-    "style-src 'unsafe-inline' " + base + '; img-src data: blob: ' + base + '; media-src data: blob: ' + base + '; font-src data: ' + base + '; ' +
-    'connect-src ' + base + ' ' + addons + ' data: blob:' + (net ? ' ' + net.replace(/^http/, 'ws') + '/.skalet/spaces' : '') +
-    '; worker-src ' + base + " blob:; frame-src 'none'; form-action 'none'; base-uri 'none'; " +
-    'frame-ancestors ' + ancestors;
+  return (
+    "sandbox allow-scripts allow-pointer-lock; default-src 'none'; " +
+    "script-src 'unsafe-inline' 'wasm-unsafe-eval' " +
+    base +
+    ' ' +
+    runtime +
+    'game-sdk.js ' +
+    runtime +
+    'three.module.js ' +
+    addons +
+    (net ? ' ' + net + '/.skalet/net.js ' + net + '/.skalet/spaces.js' : '') +
+    '; ' +
+    "style-src 'unsafe-inline' " +
+    base +
+    '; img-src data: blob: ' +
+    base +
+    '; media-src data: blob: ' +
+    base +
+    '; font-src data: ' +
+    base +
+    '; ' +
+    'connect-src ' +
+    base +
+    ' ' +
+    addons +
+    ' data: blob:' +
+    (net ? ' ' + net.replace(/^http/, 'ws') + '/.skalet/spaces' : '') +
+    '; worker-src ' +
+    base +
+    " blob:; frame-src 'none'; form-action 'none'; base-uri 'none'; " +
+    'frame-ancestors ' +
+    ancestors
+  );
 }
-export const importMap = (runtime: string) => '<script type="importmap">{"imports":{"three":"' + runtime + 'three.module.js",' +
-  '"three/addons/":"' + runtime + 'three/addons/"}}</script>';
+export const importMap = (runtime: string) =>
+  '<script type="importmap">{"imports":{"three":"' +
+  runtime +
+  'three.module.js",' +
+  '"three/addons/":"' +
+  runtime +
+  'three/addons/"}}</script>';
 
 // A glTF binary (GLB) holding one triangle, a mesh named Tri, for the loader tests.
 export function triangleGlb() {
   const positions = Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer);
-  const json = Buffer.from(JSON.stringify({
-    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0, name: 'Tri' }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
-    accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] }],
-    bufferViews: [{ buffer: 0, byteLength: positions.length }], buffers: [{ byteLength: positions.length }],
-  }));
+  const json = Buffer.from(
+    JSON.stringify({
+      asset: { version: '2.0' },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ mesh: 0, name: 'Tri' }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] }],
+      bufferViews: [{ buffer: 0, byteLength: positions.length }],
+      buffers: [{ byteLength: positions.length }],
+    }),
+  );
   const chunk = (type: number, data: Buffer) => {
     const head = Buffer.alloc(8);
     head.writeUInt32LE(data.length, 0);
@@ -142,8 +219,10 @@ export function triangleGlb() {
     return Buffer.concat([head, data]);
   };
   // The JSON chunk is padded with spaces to four bytes; the 36 bytes of positions need none.
-  const body = Buffer.concat([chunk(0x4e4f534a, Buffer.concat([json, Buffer.alloc((4 - json.length % 4) % 4, 0x20)])),
-    chunk(0x004e4942, positions)]);
+  const body = Buffer.concat([
+    chunk(0x4e4f534a, Buffer.concat([json, Buffer.alloc((4 - (json.length % 4)) % 4, 0x20)])),
+    chunk(0x004e4942, positions),
+  ]);
   const header = Buffer.alloc(12);
   header.writeUInt32LE(0x46546c67, 0); // glTF
   header.writeUInt32LE(2, 4);
@@ -155,8 +234,12 @@ export function triangleGlb() {
 // fetch cannot override Host, so this goes through node:http.
 export function statusForHost(url: string, host: string) {
   return new Promise<number>((resolve, reject) => {
-    request(url, { headers: { host } }, (response) => { response.resume(); resolve(response.statusCode!); })
-      .on('error', reject).end();
+    request(url, { headers: { host } }, (response) => {
+      response.resume();
+      resolve(response.statusCode!);
+    })
+      .on('error', reject)
+      .end();
   });
 }
 
@@ -164,7 +247,12 @@ export function statusForHost(url: string, host: string) {
 export const NET_RULES = { kills: 25 };
 export function netGame(projects: Projects, players: number, title = 'Relay') {
   const base64 = (text: string) => Buffer.from(text).toString('base64');
-  return importGameFolder(projects, { title, files: {
-    'index.html': base64('<!doctype html><canvas></canvas>'), 'zirbel.json': base64(JSON.stringify({ players: { max: players } })),
-    'data/rules.json': base64(JSON.stringify(NET_RULES)) } });
+  return importGameFolder(projects, {
+    title,
+    files: {
+      'index.html': base64('<!doctype html><canvas></canvas>'),
+      'zirbel.json': base64(JSON.stringify({ players: { max: players } })),
+      'data/rules.json': base64(JSON.stringify(NET_RULES)),
+    },
+  });
 }

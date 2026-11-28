@@ -9,23 +9,40 @@ import { launch, tempDir } from './helpers.ts';
 
 /** A request to a local port with a Host header of its own, as a device that reached the box by its name sends. */
 function send(port: number, host: string, method: string, path: string, payload?: object) {
-  return new Promise<{ status: number; headers: Record<string, string | string[] | undefined>; text: string }>((resolve, reject) => {
-    const outgoing = request({ host: '127.0.0.1', port, method, path,
-      headers: { host, ...(payload ? { 'content-type': 'application/json' } : {}) } }, (incoming) => {
-      let text = '';
-      incoming.on('data', (chunk: Buffer) => { text += chunk.toString('utf8'); });
-      incoming.on('end', () => resolve({ status: incoming.statusCode ?? 0, headers: incoming.headers, text }));
-    });
-    outgoing.on('error', reject);
-    outgoing.end(payload ? JSON.stringify(payload) : undefined);
-  });
+  return new Promise<{ status: number; headers: Record<string, string | string[] | undefined>; text: string }>(
+    (resolve, reject) => {
+      const outgoing = request(
+        {
+          host: '127.0.0.1',
+          port,
+          method,
+          path,
+          headers: { host, ...(payload ? { 'content-type': 'application/json' } : {}) },
+        },
+        (incoming) => {
+          let text = '';
+          incoming.on('data', (chunk: Buffer) => {
+            text += chunk.toString('utf8');
+          });
+          incoming.on('end', () => resolve({ status: incoming.statusCode ?? 0, headers: incoming.headers, text }));
+        },
+      );
+      outgoing.on('error', reject);
+      outgoing.end(payload ? JSON.stringify(payload) : undefined);
+    },
+  );
 }
 
 test('the built editor in box mode answers its .local name, pairs, and puts its player on the host it was reached by', async (t) => {
   const data = tempDir(t, 'zirbel-box-data-');
   const account = tempDir(t, 'zirbel-box-account-');
-  const { ready } = launch(t, [process.execPath, 'dist/server.mjs'], ['--box', '--data', data, '--port', '0', '--player-port', '0'],
-    (line) => typeof line.editor === 'string' ? line : undefined, { ZIRBEL_ACCOUNT_DIR: account });
+  const { ready } = launch(
+    t,
+    [process.execPath, 'dist/server.mjs'],
+    ['--box', '--data', data, '--port', '0', '--player-port', '0'],
+    (line) => (typeof line.editor === 'string' ? line : undefined),
+    { ZIRBEL_ACCOUNT_DIR: account },
+  );
   const started = await ready;
   assert.equal(started.box, true);
   const port = Number(new URL(String(started.editor)).port);
@@ -51,8 +68,14 @@ test('the built editor in box mode answers its .local name, pairs, and puts its 
 // page: there crypto.randomUUID and crypto.subtle don't exist, and a page that calls them stops at its first call.
 test('pages a box serves over plain http call nothing that needs a secure page', () => {
   const web = new URL('../packages/web/', import.meta.url);
-  const calls = readdirSync(web).filter((file) => file.endsWith('.ts')).flatMap((file) =>
-    readFileSync(new URL(file, web), 'utf8').split('\n').map((line, index) => [file + ':' + (index + 1), line] as const)
-      .filter(([, line]) => !/^\s*\/\//.test(line) && /crypto\.(randomUUID|subtle)\b/.test(line)).map(([where]) => where));
+  const calls = readdirSync(web)
+    .filter((file) => file.endsWith('.ts'))
+    .flatMap((file) =>
+      readFileSync(new URL(file, web), 'utf8')
+        .split('\n')
+        .map((line, index) => [file + ':' + (index + 1), line] as const)
+        .filter(([, line]) => !/^\s*\/\//.test(line) && /crypto\.(randomUUID|subtle)\b/.test(line))
+        .map(([where]) => where),
+    );
   assert.deepEqual(calls, []);
 });

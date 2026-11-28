@@ -34,12 +34,28 @@ export function fixtures(t: TestContext) {
     shared: write('shared', releases.package(shared.id, 'main', rights, false)),
     tiles: write('tiles', releases.package(legacyProject(projects, 'tessellate').id, 'main', rights, false)),
     moss: write('moss', releases.package(legacyProject(projects, 'mosslight').id, 'main', rights, false)),
-    built: write('built', releases.package(importGameFolder(projects, { title: 'Built', files: Object.fromEntries(
-      Object.entries(builtFiles).map(([path, data]) => [path, Buffer.from(data).toString('base64')])) }).id, 'main', rights, false)),
+    built: write(
+      'built',
+      releases.package(
+        importGameFolder(projects, {
+          title: 'Built',
+          files: Object.fromEntries(
+            Object.entries(builtFiles).map(([path, data]) => [path, Buffer.from(data).toString('base64')]),
+          ),
+        }).id,
+        'main',
+        rights,
+        false,
+      ),
+    ),
   };
 }
 
-type Started = { process: ChildProcessWithoutNullStreams; player: string; rooms: { id: string; link: string; manifest: { releaseId: string } }[] };
+type Started = {
+  process: ChildProcessWithoutNullStreams;
+  player: string;
+  rooms: { id: string; link: string; manifest: { releaseId: string } }[];
+};
 
 // The host prints one line per room it opens, then the line naming its player address.
 export async function startHost(t: TestContext, command: string[], args: string[]): Promise<Started> {
@@ -55,6 +71,10 @@ export async function startHost(t: TestContext, command: string[], args: string[
 export function exitOf(command: string[], args: string[]) {
   const child = spawn(command[0]!, [...command.slice(1), '--host-only', '--player-port', '0', ...args]);
   let errors = '';
-  child.stderr.on('data', (chunk: Buffer) => { errors += chunk.toString('utf8'); });
-  return new Promise<{ code: number | null; errors: string }>((resolve) => child.once('exit', (code) => resolve({ code, errors })));
+  child.stderr.on('data', (chunk: Buffer) => {
+    errors += chunk.toString('utf8');
+  });
+  return new Promise<{ code: number | null; errors: string }>((resolve) =>
+    child.once('exit', (code) => resolve({ code, errors })),
+  );
 }

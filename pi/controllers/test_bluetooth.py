@@ -43,7 +43,7 @@ def fake_dbus() -> tuple[types.ModuleType, types.ModuleType]:
             self.bus, self.path = bus, path
 
     service.Object = Object
-    service.method = lambda interface, in_signature=None, out_signature=None: (lambda function: function)
+    service.method = lambda interface, in_signature=None, out_signature=None: lambda function: function
     module.service = service
     return module, service
 
@@ -60,8 +60,14 @@ bluetooth, agent, dbus = import_bluez()
 
 
 def device(address: str, name: str | None, paired=False, connected=False, rssi=None, **more) -> dict:
-    props = {"Address": address, "Alias": address.replace(":", "-"), "Paired": paired, "Connected": connected,
-             "Adapter": ADAPTER, **more}
+    props = {
+        "Address": address,
+        "Alias": address.replace(":", "-"),
+        "Paired": paired,
+        "Connected": connected,
+        "Adapter": ADAPTER,
+        **more,
+    }
     if name:
         props["Name"] = name
     if rssi is not None:
@@ -119,6 +125,7 @@ class FakeProxy:
             if failure:
                 raise failure
             return None
+
         return call
 
 
@@ -178,17 +185,24 @@ class Start(unittest.TestCase):
 class View(unittest.TestCase):
     def test_paired_gamepads_and_gamepads_found_closest_first(self):
         bus, _, found, _, _ = started(self)
-        bus.receivers["InterfacesAdded"](ADAPTER + "/dev_00_11_22_33_44_55",
-                                         device("00:11:22:33:44:55", "Arcade Stick", rssi=-30, Appearance=0x03C4))
-        bus.receivers["InterfacesAdded"](ADAPTER + "/dev_00_11_22_33_44_56", device("00:11:22:33:44:56", None, rssi=-20,
-                                                                                    Icon="input-gaming"))
+        bus.receivers["InterfacesAdded"](
+            ADAPTER + "/dev_00_11_22_33_44_55", device("00:11:22:33:44:55", "Arcade Stick", rssi=-30, Appearance=0x03C4)
+        )
+        bus.receivers["InterfacesAdded"](
+            ADAPTER + "/dev_00_11_22_33_44_56", device("00:11:22:33:44:56", None, rssi=-20, Icon="input-gaming")
+        )
         view = found.view()
         self.assertEqual(
             view["paired"], [{"address": "A0:B1:C2:D3:E4:F5", "name": "Wireless Controller", "connected": True}]
         )
         # Not the keyboard, nor one with no name yet.
-        self.assertEqual(view["found"], [{"address": "00:11:22:33:44:55", "name": "Arcade Stick"},
-                                         {"address": "11:22:33:44:55:66", "name": "Pro Controller"}])
+        self.assertEqual(
+            view["found"],
+            [
+                {"address": "00:11:22:33:44:55", "name": "Arcade Stick"},
+                {"address": "11:22:33:44:55:66", "name": "Pro Controller"},
+            ],
+        )
         self.assertEqual((view["scanning"], view["pairing"], view["error"]), (False, None, None))
 
     def test_signals_keep_the_view(self):
@@ -294,8 +308,12 @@ class Agent(unittest.TestCase):
         bus, _, found, _, _ = started(self)
         pairing = agent.Agent(bus, found)
         self.assertEqual(pairing.path, bluetooth.AGENT_PATH)
-        for ask in (lambda path: pairing.RequestConfirmation(path, 123456), pairing.RequestAuthorization,
-                    pairing.RequestPinCode, pairing.RequestPasskey):
+        for ask in (
+            lambda path: pairing.RequestConfirmation(path, 123456),
+            pairing.RequestAuthorization,
+            pairing.RequestPinCode,
+            pairing.RequestPasskey,
+        ):
             with self.assertRaises(dbus.DBusException) as refused:
                 ask(OTHER)
             self.assertEqual(refused.exception.get_dbus_name(), "org.bluez.Error.Rejected")

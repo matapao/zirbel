@@ -12,7 +12,10 @@ export function applyOperations(base: Pick<FullRevision, 'scene' | 'assets' | 'g
       case 'writeGame':
         // Only a game with its files replaces a folder game: one document alone would drop them.
         if (game?.files && !operation.game.files)
-          throw new ZirbelError(422, 'This game is a folder of files, which this change would drop. Change it in a harness turn, or import a new build.');
+          throw new ZirbelError(
+            422,
+            'This game is a folder of files, which this change would drop. Change it in a harness turn, or import a new build.',
+          );
         game = operation.game;
         break;
       case 'background':
@@ -42,7 +45,11 @@ export function applyOperations(base: Pick<FullRevision, 'scene' | 'assets' | 'g
     }
   }
   if (assets.size > 80) throw new ZirbelError(400, 'A project can reference up to 80 assets.');
-  return { scene: base.scene && scene.parse({ ...base.scene, background, objects: [...objects.values()] }), game, assets: [...assets.values()] };
+  return {
+    scene: base.scene && scene.parse({ ...base.scene, background, objects: [...objects.values()] }),
+    game,
+    assets: [...assets.values()],
+  };
 }
 
 export function referencesFor(base: Pick<FullRevision, 'id' | 'scene'>, references: Reference[]): Reference[] {
@@ -55,7 +62,11 @@ export function referencesFor(base: Pick<FullRevision, 'id' | 'scene'>, referenc
       return { ...reference, object };
     }
     const { x, y, width, height } = reference.bounds;
-    return { ...reference, objects: base.scene.objects.filter((item) => item.x >= x && item.x <= x + width &&
-      item.y >= y && item.y <= y + height) };
+    return {
+      ...reference,
+      objects: base.scene.objects.filter(
+        (item) => item.x >= x && item.x <= x + width && item.y >= y && item.y <= y + height,
+      ),
+    };
   });
 }

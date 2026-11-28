@@ -26,35 +26,63 @@ export function spacesFixtures(t: TestContext) {
 
 /** A link into a room's space: the player page with the space and its credential in the fragment. */
 export function spaceLink(link: unknown) {
-  const match = /^(http:\/\/127\.0\.0\.1:\d+)\/join\/([a-f0-9]{12})#skalet\.space=([0-9a-f]{12})&skalet\.(invite|ticket)=([\w-]{16,128})$/
-    .exec(String(link));
+  const match =
+    /^(http:\/\/127\.0\.0\.1:\d+)\/join\/([a-f0-9]{12})#skalet\.space=([0-9a-f]{12})&skalet\.(invite|ticket)=([\w-]{16,128})$/.exec(
+      String(link),
+    );
   assert.ok(match, 'a link into a space: ' + String(link));
-  return { origin: match[1]!, room: match[2]!, space: match[3]!, kind: match[4] as 'invite' | 'ticket', credential: match[5]! };
+  return {
+    origin: match[1]!,
+    room: match[2]!,
+    space: match[3]!,
+    kind: match[4] as 'invite' | 'ticket',
+    credential: match[5]!,
+  };
 }
 
 type Failure = { message: string; data?: { code?: string } };
-type Hello = { member?: { id: string; n: number; name: string; role: string }; resume?: string; features?: string[]; error?: Failure };
+type Hello = {
+  member?: { id: string; n: number; name: string; role: string };
+  resume?: string;
+  features?: string[];
+  error?: Failure;
+};
 /** A member's socket, which asks for the features a page's SDK does (its own hand-over and proofs): the hello's answer,
  *  how the socket ended, and its requests after the hello (their result, or the error's data.code). The socket stays
  *  until the test ends. */
-export async function member(t: TestContext, base: string, space: string, credential: Record<string, string>, origin = base) {
+export async function member(
+  t: TestContext,
+  base: string,
+  space: string,
+  credential: Record<string, string>,
+  origin = base,
+) {
   const ws = new WebSocket(base.replace('http', 'ws') + '/.skalet/spaces', ['skalet.spaces.v1.json'], { origin });
   t.after(() => ws.terminate());
   const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
-  await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
+  await new Promise((resolve, reject) => {
+    ws.once('open', resolve);
+    ws.once('error', reject);
+  });
   const waiting = new Map<number, (message: { result?: unknown; error?: Failure }) => void>();
   ws.on('message', (data: Buffer) => {
     const message = JSON.parse(data.toString('utf8')) as { id?: number; result?: unknown; error?: Failure };
     if (typeof message.id === 'number') waiting.get(message.id)?.(message);
   });
   let next = 0;
-  const request = (method: string, params?: object) => new Promise<{ result?: unknown; error?: Failure }>((resolve) => {
-    waiting.set(++next, resolve);
-    ws.send(JSON.stringify({ jsonrpc: '2.0', id: next, method, ...(params ? { params } : {}) }));
+  const request = (method: string, params?: object) =>
+    new Promise<{ result?: unknown; error?: Failure }>((resolve) => {
+      waiting.set(++next, resolve);
+      ws.send(JSON.stringify({ jsonrpc: '2.0', id: next, method, ...(params ? { params } : {}) }));
+    });
+  const answer = await request('space.hello', {
+    protocol: 1,
+    space,
+    credential,
+    features: ['members.v1', 'handover.v1', 'proof.v1'],
+    client: { name: 'zirbel-test', version: '1' },
   });
-  const answer = await request('space.hello', { protocol: 1, space, credential,
-    features: ['members.v1', 'handover.v1', 'proof.v1'], client: { name: 'zirbel-test', version: '1' } });
-  const hello: Hello = answer.error ? { error: answer.error } : answer.result as Hello;
+  const hello: Hello = answer.error ? { error: answer.error } : (answer.result as Hello);
   /** A request of the member's: its result, or a refusal's word. */
   const ask = async <T>(method: string) => {
     const { result, error } = await request(method);
@@ -66,21 +94,43 @@ export async function member(t: TestContext, base: string, space: string, creden
 
 /** A room's info for the holder of a credential (a member's proof, for a net game's room): its status and code. */
 export async function roomInfo(base: string, room: string, credential: string) {
-  const info = await call(base, 'GET', '/rooms/' + room + '/info', undefined, { authorization: 'Bearer ' + credential });
-  return { status: info.status, body: info.body as { code?: string; solo: boolean; gameUrl: string; manifest: { simulation: string } } };
+  const info = await call(base, 'GET', '/rooms/' + room + '/info', undefined, {
+    authorization: 'Bearer ' + credential,
+  });
+  return {
+    status: info.status,
+    body: info.body as { code?: string; solo: boolean; gameUrl: string; manifest: { simulation: string } },
+  };
 }
 
 /** The kernel child a host runs: its pid, or none. */
 export function kernelOf(host: number) {
   try {
-    return execFileSync('pgrep', ['-P', String(host)], { encoding: 'utf8' }).trim().split('\n').map(Number).find((pid) => pid > 0);
-  } catch { return undefined; }
+    return execFileSync('pgrep', ['-P', String(host)], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .map(Number)
+      .find((pid) => pid > 0);
+  } catch {
+    return undefined;
+  }
 }
 
-export const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+export const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /** Waits until check passes, a little at a time. */
-export async function until<T>(what: string, check: () => Promise<T | undefined> | T | undefined, timeout = 8000): Promise<T> {
+export async function until<T>(
+  what: string,
+  check: () => Promise<T | undefined> | T | undefined,
+  timeout = 8000,
+): Promise<T> {
   const deadline = Date.now() + timeout;
   for (;;) {
     const value = await check();
@@ -92,13 +142,25 @@ export async function until<T>(what: string, check: () => Promise<T | undefined>
 
 type Answer = { status: number; body: unknown; headers: Headers };
 /** A request with the base's own origin unless headers say otherwise, its JSON body when it has one. */
-export async function call(base: string, method: string, path: string, json?: unknown, headers: Record<string, string> = { origin: base }):
-  Promise<Answer> {
-  const response = await fetch(base + path, { method, body: json === undefined ? null : JSON.stringify(json),
-    headers: { ...(json === undefined ? {} : { 'content-type': 'application/json' }), ...headers } });
+export async function call(
+  base: string,
+  method: string,
+  path: string,
+  json?: unknown,
+  headers: Record<string, string> = { origin: base },
+): Promise<Answer> {
+  const response = await fetch(base + path, {
+    method,
+    body: json === undefined ? null : JSON.stringify(json),
+    headers: { ...(json === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
+  });
   const text = await response.text();
   let body: unknown = text;
-  try { body = JSON.parse(text); } catch { /* a page or a file */ }
+  try {
+    body = JSON.parse(text);
+  } catch {
+    /* a page or a file */
+  }
   return { status: response.status, body, headers: response.headers };
 }
 export const error = (answer: Answer) => [answer.status, (answer.body as { error?: string }).error];

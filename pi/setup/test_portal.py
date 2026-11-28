@@ -53,16 +53,18 @@ class Forms(unittest.TestCase):
             portal.parse(b"x" * (portal.FORM_BYTES + 1))
 
     def test_names_from_nearby_networks_are_escaped(self):
-        page = portal.choose_page("Zirbel-3456", [Network(b"<script>alert(1)</script>", -50, "NO")],
-                                  "<b>bad</b>").decode()
+        page = portal.choose_page(
+            "Zirbel-3456", [Network(b"<script>alert(1)</script>", -50, "NO")], "<b>bad</b>"
+        ).decode()
         self.assertNotIn("<script>", page)
         self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", page)
         self.assertIn("&lt;b&gt;bad&lt;/b&gt;", page)
         self.assertIn("value=" + b"<script>alert(1)</script>".hex(), page)
 
     def test_joining_shows_the_pairing_code_and_link_first(self):
-        page = portal.joining_page("Zirbel-3456", "Home <5G>",
-                                   portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair?code=ABCD-EFGH&x='y'")).decode()
+        page = portal.joining_page(
+            "Zirbel-3456", "Home <5G>", portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair?code=ABCD-EFGH&x='y'")
+        ).decode()
         self.assertIn("ABCD-EFGH", page)
         self.assertIn("href='http://zirbel.local/pair?code=ABCD-EFGH&amp;x=&#x27;y&#x27;'", page)
         self.assertIn("Home &lt;5G&gt;", page)
@@ -70,8 +72,9 @@ class Forms(unittest.TestCase):
         self.assertIn("http://zirbel.local", portal.joining_page("Zirbel-3456", "Home", None).decode())
 
     def test_an_unclaimed_box_is_claimed_with_no_code_and_no_hurry(self):
-        page = portal.joining_page("Zirbel-3456", "Home",
-                                   portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair", claim=True)).decode()
+        page = portal.joining_page(
+            "Zirbel-3456", "Home", portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair", claim=True)
+        ).decode()
         self.assertIn("Claim this box", page)
         self.assertIn("href='http://zirbel.local/pair'", page)
         self.assertNotIn("ABCD-EFGH", page)
@@ -100,8 +103,9 @@ class Forms(unittest.TestCase):
         self.assertIn("http://10.42.0.1", portal.own_page("Zirbel-3456", OWN, None).decode())
 
     def test_a_link_moves_to_the_boxs_own_address(self):
-        self.assertEqual(portal.at("http://zirbel.local/pair?code=ABCD-EFGH", "10.42.0.1"),
-                         "http://10.42.0.1/pair?code=ABCD-EFGH")
+        self.assertEqual(
+            portal.at("http://zirbel.local/pair?code=ABCD-EFGH", "10.42.0.1"), "http://10.42.0.1/pair?code=ABCD-EFGH"
+        )
         self.assertEqual(portal.at("http://zirbel.local:8080/pair", "fd00::5"), "http://[fd00::5]:8080/pair")
 
 
@@ -122,8 +126,9 @@ class Server(unittest.TestCase):
                 page = answer.read().decode()
             self.assertIn("Home", page)
             started = time.monotonic()
-            request = urllib.request.Request(f"http://127.0.0.1:{port}/join",
-                                             data=f"network={b'Home'.hex()}&password=password1".encode())
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{port}/join", data=f"network={b'Home'.hex()}&password=password1".encode()
+            )
             with NO_PROXY.open(request) as answer:
                 ready = answer.read().decode()
             # The page with what comes next stays: the box joins only on Join now, with that page's own token.
@@ -156,9 +161,14 @@ class Server(unittest.TestCase):
     def test_the_box_makes_its_own_wifi_only_on_make_it_now_and_after_the_answer_went_out(self):
         made = threading.Event()
         joined = []
-        offered = portal.Portal("Zirbel-3456", lambda: [Network(b"Home", -40, "WPA2")],
-                                lambda: portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair?code=ABCD-EFGH"),
-                                joined.append, own=OWN, make=made.set)
+        offered = portal.Portal(
+            "Zirbel-3456",
+            lambda: [Network(b"Home", -40, "WPA2")],
+            lambda: portal.Pairing("ABCD-EFGH", "http://zirbel.local/pair?code=ABCD-EFGH"),
+            joined.append,
+            own=OWN,
+            make=made.set,
+        )
         bare = portal.Portal("Zirbel-3456", lambda: [], lambda: None, joined.append)
         offered.start("127.0.0.1", 0)
         bare.start("127.0.0.1", 0)
@@ -202,8 +212,10 @@ class Hotspot(unittest.TestCase):
         setup.nm = types.SimpleNamespace(hotspot_up=lambda ssid: asked.append(ssid) or "active")
         setup.portal = types.SimpleNamespace(start=started.append, error="")
         setup.busy, setup.hotspot, setup.hotspot_ssid = True, None, "Zirbel setup 3456"
-        with mock.patch.dict("sys.modules", {"network": types.SimpleNamespace(HOTSPOT_ADDRESS="10.42.0.1")}), \
-                mock.patch("sys.stdout", new_callable=io.StringIO) as said:
+        with (
+            mock.patch.dict("sys.modules", {"network": types.SimpleNamespace(HOTSPOT_ADDRESS="10.42.0.1")}),
+            mock.patch("sys.stdout", new_callable=io.StringIO) as said,
+        ):
             setup._hotspot_up()
             self.assertEqual(asked, [], "the radio is joining a network")
             setup.busy = False
@@ -239,9 +251,20 @@ class Editor(unittest.TestCase):
             # As the box's editor answers on loopback.
             def do_GET(self):
                 test.calls.append(("GET", self.path, None))
-                self._reply({"box": True, "paired": False, "claimable": test.claimable,
-                             "settings": {"harnesses": True, "externalMcp": False, "onboarded": False,
-                                          "setupRequested": test.requested, "ownNetwork": test.own}})
+                self._reply(
+                    {
+                        "box": True,
+                        "paired": False,
+                        "claimable": test.claimable,
+                        "settings": {
+                            "harnesses": True,
+                            "externalMcp": False,
+                            "onboarded": False,
+                            "setupRequested": test.requested,
+                            "ownNetwork": test.own,
+                        },
+                    }
+                )
 
             def do_PUT(self):
                 payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -251,8 +274,15 @@ class Editor(unittest.TestCase):
                     return
                 test.own = payload["ownNetwork"]
                 editor.network_wake().write_text("")  # as the editor wakes the service for a change
-                self._reply({"harnesses": True, "externalMcp": False, "onboarded": False, "setupRequested": False,
-                             "ownNetwork": test.own})
+                self._reply(
+                    {
+                        "harnesses": True,
+                        "externalMcp": False,
+                        "onboarded": False,
+                        "setupRequested": False,
+                        "ownNetwork": test.own,
+                    }
+                )
 
             def do_POST(self):
                 payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -260,8 +290,15 @@ class Editor(unittest.TestCase):
                 if self.path == "/api/box/setup":
                     self._reply({"setupRequested": payload["requested"]})
                     return
-                self._reply({"code": "ABCD-EFGH", "url": "http://zirbel.local/pair?code=ABCD-EFGH",
-                             "expiresAt": "2026-01-01T00:00:00Z", "qr": "data:image/png;base64,"}, 201)
+                self._reply(
+                    {
+                        "code": "ABCD-EFGH",
+                        "url": "http://zirbel.local/pair?code=ABCD-EFGH",
+                        "expiresAt": "2026-01-01T00:00:00Z",
+                        "qr": "data:image/png;base64,",
+                    },
+                    201,
+                )
 
         self.requested = False
         self.claimable = True

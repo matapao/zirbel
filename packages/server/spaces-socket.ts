@@ -26,7 +26,8 @@ function dial(address: string): Socket {
   return connect({ host: match[1]!, port: Number(match[2]) });
 }
 
-const record = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+const record = (value: unknown) =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 
 export class SpacesSocket {
   private next = 1;
@@ -53,7 +54,12 @@ export class SpacesSocket {
       socket.once('error', reject);
     });
     const link = new SpacesSocket(socket);
-    try { await link.call('app.hello', { token, protocol: 1 }); } catch (error) { link.close(); throw error; }
+    try {
+      await link.call('app.hello', { token, protocol: 1 });
+    } catch (error) {
+      link.close();
+      throw error;
+    }
     return link;
   }
 
@@ -77,11 +83,16 @@ export class SpacesSocket {
     else this.ended.push(listener);
   }
 
-  close() { this.socket.destroy(); }
+  close() {
+    this.socket.destroy();
+  }
 
   private read(chunk: string) {
     this.buffer += chunk;
-    if (this.buffer.length > LINE) { this.socket.destroy(); return; }
+    if (this.buffer.length > LINE) {
+      this.socket.destroy();
+      return;
+    }
     for (let at = this.buffer.indexOf('\n'); at >= 0; at = this.buffer.indexOf('\n')) {
       const line = this.buffer.slice(0, at);
       this.buffer = this.buffer.slice(at + 1);
@@ -91,13 +102,23 @@ export class SpacesSocket {
 
   private message(line: string) {
     let value: unknown;
-    try { value = JSON.parse(line); } catch { return; }
+    try {
+      value = JSON.parse(line);
+    } catch {
+      return;
+    }
     const message = record(value);
     if (!message) return;
     if (typeof message.method === 'string') {
       // A request of the kernel's (rules Zirbel doesn't provide): no such method here.
-      if (message.id !== undefined && message.id !== null) this.socket.write(JSON.stringify({ jsonrpc: '2.0', id: message.id,
-        error: { code: -32601, message: 'Zirbel provides no ' + message.method + '.' } }) + '\n');
+      if (message.id !== undefined && message.id !== null)
+        this.socket.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: message.id,
+            error: { code: -32601, message: 'Zirbel provides no ' + message.method + '.' },
+          }) + '\n',
+        );
       return;
     }
     const waiting = typeof message.id === 'number' ? this.pending.get(message.id) : undefined;
@@ -107,8 +128,12 @@ export class SpacesSocket {
     const error = record(message.error);
     if (error) {
       const code = record(error.data)?.code;
-      waiting.reject(new SpacesError(typeof code === 'string' ? code : 'error',
-        typeof error.message === 'string' ? error.message : 'The spaces kernel refused that.'));
+      waiting.reject(
+        new SpacesError(
+          typeof code === 'string' ? code : 'error',
+          typeof error.message === 'string' ? error.message : 'The spaces kernel refused that.',
+        ),
+      );
     } else waiting.resolve(message.result);
   }
 

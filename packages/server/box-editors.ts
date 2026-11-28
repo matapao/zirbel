@@ -22,7 +22,7 @@ const SEEN_MS = 60_000;
 export const EDITOR_COOKIE = 'zirbel_editor';
 /** The cookie that ends an editor's session on a device, when it pairs as an owner. */
 export const END_EDITOR = EDITOR_COOKIE + '=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0';
-export const WRONG_EDIT_CODE = 'That code doesn\'t open a game.';
+export const WRONG_EDIT_CODE = "That code doesn't open a game.";
 /** What an editor whose session ended is told: the owner removed it, or its game. */
 export const ENDED = 'This device’s edit access has ended. Ask the box’s owner for a new edit code.';
 export const ONE_GAME = 'This device edits one game only.';
@@ -33,9 +33,18 @@ const iso = z.iso.datetime();
 const plainCode = z.string().regex(/^[2-9A-HJ-NP-Z]{6}$/);
 const code = z.strictObject({ project: id, code: plainCode, createdAt: iso, expiresAt: iso });
 const editor = z.strictObject({
-  id, project: id, name: z.string().min(1).max(24), tokenHash: z.string().regex(/^[0-9a-f]{64}$/), since: iso, lastSeen: iso,
+  id,
+  project: id,
+  name: z.string().min(1).max(24),
+  tokenHash: z.string().regex(/^[0-9a-f]{64}$/),
+  since: iso,
+  lastSeen: iso,
 });
-const store = z.strictObject({ version: z.literal(1), codes: z.array(code).max(4096), editors: z.array(editor).max(4096) });
+const store = z.strictObject({
+  version: z.literal(1),
+  codes: z.array(code).max(4096),
+  editors: z.array(editor).max(4096),
+});
 type Code = z.infer<typeof code>;
 type Editor = z.infer<typeof editor>;
 type Store = z.infer<typeof store>;
@@ -50,7 +59,10 @@ export function plainEditCode(input: string) {
 }
 
 /** An edit code as it is shown, XXX-XXX, or none. */
-export const editCode = (input: string) => { const plain = plainEditCode(input); return plain && shown(plain); };
+export const editCode = (input: string) => {
+  const plain = plainEditCode(input);
+  return plain && shown(plain);
+};
 
 /** The editor's session a Cookie header carries, if it carries one in the form this box makes. */
 export function editorToken(cookie = '') {
@@ -75,12 +87,21 @@ export class Editors {
   /** A new code for a game, replacing the one it had; never another game's code now, as a code opens one game. */
   createCode(project: string) {
     const kept = this.read();
-    const taken = new Set(this.live(kept).filter((known) => known.project !== project).map((known) => known.code));
+    const taken = new Set(
+      this.live(kept)
+        .filter((known) => known.project !== project)
+        .map((known) => known.code),
+    );
     let plain: string;
     do plain = Array.from({ length: 6 }, () => ALPHABET[randomInt(ALPHABET.length)]).join('');
     while (taken.has(plain));
     const at = this.now();
-    const made: Code = { project, code: plain, createdAt: new Date(at).toISOString(), expiresAt: new Date(at + EDIT_CODE_MS).toISOString() };
+    const made: Code = {
+      project,
+      code: plain,
+      createdAt: new Date(at).toISOString(),
+      expiresAt: new Date(at + EDIT_CODE_MS).toISOString(),
+    };
     this.write({ ...kept, codes: [...kept.codes.filter((known) => known.project !== project), made] });
     return { code: shown(plain), plain, expiresAt: made.expiresAt };
   }
@@ -122,8 +143,14 @@ export class Editors {
       throw new ZirbelError(409, 'This game has as many editors as it keeps. Remove one first.');
     const token = randomBytes(32).toString('base64url');
     const stamp = new Date(at).toISOString();
-    const made: Editor = { id: newId(), project, name: given, tokenHash: sha256(token).toString('hex'),
-      since: stamp, lastSeen: stamp };
+    const made: Editor = {
+      id: newId(),
+      project,
+      name: given,
+      tokenHash: sha256(token).toString('hex'),
+      since: stamp,
+      lastSeen: stamp,
+    };
     this.write({ ...kept, editors: [...editors, made] });
     return { token, editor: made };
   }
@@ -149,7 +176,9 @@ export class Editors {
 
   /** The people editing a game, by the names they gave. */
   list(project: string) {
-    return this.read().editors.filter((known) => known.project === project).map(({ id, name, since, lastSeen }) => ({ id, name, since, lastSeen }));
+    return this.read()
+      .editors.filter((known) => known.project === project)
+      .map(({ id, name, since, lastSeen }) => ({ id, name, since, lastSeen }));
   }
 
   /** An editor by its id, while its session lasts. */
@@ -162,18 +191,23 @@ export class Editors {
   remove(project: string, editorId: string) {
     const kept = this.read();
     const editors = kept.editors.filter((known) => known.project !== project || known.id !== editorId);
-    if (editors.length === kept.editors.length) throw new ZirbelError(404, 'That device doesn\'t edit this game.');
+    if (editors.length === kept.editors.length) throw new ZirbelError(404, "That device doesn't edit this game.");
     this.write({ ...kept, editors });
   }
 
   /** A removed game takes its code and its editors with it. */
   removeProject(project: string) {
     const kept = this.read();
-    this.write({ version: 1, codes: kept.codes.filter((known) => known.project !== project),
-      editors: kept.editors.filter((known) => known.project !== project) });
+    this.write({
+      version: 1,
+      codes: kept.codes.filter((known) => known.project !== project),
+      editors: kept.editors.filter((known) => known.project !== project),
+    });
   }
 
-  private live(kept: Store) { return kept.codes.filter((known) => Date.parse(known.expiresAt) > this.now()); }
+  private live(kept: Store) {
+    return kept.codes.filter((known) => Date.parse(known.expiresAt) > this.now());
+  }
 
   private find(kept: Store, cookie: string | undefined) {
     const token = editorToken(cookie);
@@ -186,11 +220,17 @@ export class Editors {
 
   private read(): Store {
     let text: string;
-    try { text = readFileSync(this.file, 'utf8'); } catch (error) {
+    try {
+      text = readFileSync(this.file, 'utf8');
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, codes: [], editors: [] };
       throw error;
     }
-    try { return store.parse(JSON.parse(text)); } catch { throw new ZirbelError(500, 'The game editors could not be read.'); }
+    try {
+      return store.parse(JSON.parse(text));
+    } catch {
+      throw new ZirbelError(500, 'The game editors could not be read.');
+    }
   }
 
   /** Writes what is kept, without the codes that have expired. */

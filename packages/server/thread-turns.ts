@@ -20,30 +20,48 @@ export type TurnTools = {
 type Turn = { id: string; harness: string; text: string; noteId?: string };
 
 /** The harnesses as one thread's turn sees them: each start in the thread's folder, continuing its session. */
-function threadHarness(harnesses: Processors, threads: Threads, key: string, folder: string,
-  extra: { mcpServers: McpServerSpec[]; readable: string[] }): Processors {
+function threadHarness(
+  harnesses: Processors,
+  threads: Threads,
+  key: string,
+  folder: string,
+  extra: { mcpServers: McpServerSpec[]; readable: string[] },
+): Processors {
   const start: Processors['start'] = async (id, prompt, run = {}) => {
     let state = threads.open(key);
     if (state.sessionId && state.harness && state.harness !== id) {
       // A session of another harness is discarded: a new one starts here, and all the old one's harness kept of it goes.
-      await harnesses.removeSession?.(state.harness, { cwd: folder, sessionId: state.sessionId })
+      await harnesses
+        .removeSession?.(state.harness, { cwd: folder, sessionId: state.sessionId })
         .catch(() => console.warn('Could not remove a thread’s earlier session.'));
       state = threads.update(key, { sessionId: undefined, harness: id });
     }
     const attempt = async (resume: boolean) => {
-      const reply = await harnesses.start(id, prompt, { ...run,
+      const reply = await harnesses.start(id, prompt, {
+        ...run,
         place: { cwd: folder, sessionId: resume ? state.sessionId : undefined, resume, ...extra },
-        session: (sessionId) => { threads.update(key, { harness: id, sessionId }); run.session?.(sessionId); } });
+        session: (sessionId) => {
+          threads.update(key, { harness: id, sessionId });
+          run.session?.(sessionId);
+        },
+      });
       if (reply.sessionId) threads.update(key, { harness: id, sessionId: reply.sessionId });
       return reply;
     };
     const resume = Boolean(state.sessionId && state.harness === id);
-    try { return await attempt(resume); }
-    catch (error) {
+    try {
+      return await attempt(resume);
+    } catch (error) {
       if (!resume || !(error instanceof TurnEndedError) || error.ended !== 'session-not-found') throw error;
       run.signal?.throwIfAborted();
-      run.update?.({ type: 'activity', entry: { id: 'new-session', kind: 'notice',
-        title: error.message + ' It starts a new session in the thread’s folder.' } });
+      run.update?.({
+        type: 'activity',
+        entry: {
+          id: 'new-session',
+          kind: 'notice',
+          title: error.message + ' It starts a new session in the thread’s folder.',
+        },
+      });
       state = threads.update(key, { sessionId: undefined });
       return attempt(false);
     }
@@ -52,16 +70,28 @@ function threadHarness(harnesses: Processors, threads: Threads, key: string, fol
 }
 
 /** Runs work as one turn of the thread `key`, with the thread's harness and folder. */
-export async function inThread<T>(threads: Threads, harnesses: Processors, key: string, turn: Turn, tools: TurnTools,
-  signal: AbortSignal | undefined, work: (harness: Processors, folder: string) => Promise<T>): Promise<T> {
+export async function inThread<T>(
+  threads: Threads,
+  harnesses: Processors,
+  key: string,
+  turn: Turn,
+  tools: TurnTools,
+  signal: AbortSignal | undefined,
+  work: (harness: Processors, folder: string) => Promise<T>,
+): Promise<T> {
   const folder = threads.folder(key);
   threads.begin(key, turn);
   let interrupted = false;
   const own = tools.server?.(folder);
   try {
     tools.prepare?.(folder);
-    return await work(threadHarness(harnesses, threads, key, folder,
-      { mcpServers: own?.servers ?? [], readable: tools.readable ?? [] }), folder);
+    return await work(
+      threadHarness(harnesses, threads, key, folder, {
+        mcpServers: own?.servers ?? [],
+        readable: tools.readable ?? [],
+      }),
+      folder,
+    );
   } catch (error) {
     interrupted = signal?.reason instanceof EditorStopping;
     throw error;

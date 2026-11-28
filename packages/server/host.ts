@@ -12,10 +12,15 @@ import { claimDirectory } from './service-lock.ts';
 // harnesses or MCP, so it stays small enough for a Raspberry Pi.
 const { values } = parseArgs({
   options: {
-    'host-only': { type: 'boolean' }, data: { type: 'string' }, lan: { type: 'boolean' },
-    'player-port': { type: 'string' }, 'player-host': { type: 'string' }, 'pads-socket': { type: 'string' },
+    'host-only': { type: 'boolean' },
+    data: { type: 'string' },
+    lan: { type: 'boolean' },
+    'player-port': { type: 'string' },
+    'player-host': { type: 'string' },
+    'pads-socket': { type: 'string' },
     'spaces-binary': { type: 'string' },
-    release: { type: 'string', multiple: true }, import: { type: 'string', multiple: true },
+    release: { type: 'string', multiple: true },
+    import: { type: 'string', multiple: true },
   },
 });
 
@@ -25,8 +30,11 @@ async function start() {
   const lanHost = readLanHost(values['player-host'] ?? process.env.ZIRBEL_LAN_HOST);
   const boot = newId();
   const releases = new Releases(new Projects(root), fileURLToPath(new URL('./web/', import.meta.url)));
-  const players = new Players(new Rooms(), releases, { playerPort, lanHost,
-    spacesBinary: values['spaces-binary'] || process.env.ZIRBEL_SPACES_BINARY || undefined });
+  const players = new Players(new Rooms(), releases, {
+    playerPort,
+    lanHost,
+    spacesBinary: values['spaces-binary'] || process.env.ZIRBEL_SPACES_BINARY || undefined,
+  });
   const claim = claimDirectory(root, { pid: process.pid, port: 0, boot, editor: false });
   if (!claim.owner) throw new Error('This project directory is owned by process ' + claim.pid + '.');
   let stopping = false;
@@ -45,13 +53,26 @@ async function start() {
     const pads = values['pads-socket'] || process.env.ZIRBEL_PADS_SOCKET;
     if (pads) await players.listenForPads(pads);
     for (const id of values.release ?? []) console.log(JSON.stringify(await players.start(id, Boolean(values.lan))));
-    console.log(JSON.stringify({ pid: process.pid, data: root, editor: null, player: 'http://127.0.0.1:' + local.port, mcp: false }));
+    console.log(
+      JSON.stringify({
+        pid: process.pid,
+        data: root,
+        editor: null,
+        player: 'http://127.0.0.1:' + local.port,
+        mcp: false,
+      }),
+    );
     process.once('SIGINT', () => void stopOnSignal(stop));
     process.once('SIGTERM', () => void stopOnSignal(stop));
-  } catch (error) { await stop(); throw error; }
+  } catch (error) {
+    await stop();
+    throw error;
+  }
 }
 
-try { await start(); } catch (error) {
+try {
+  await start();
+} catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 }

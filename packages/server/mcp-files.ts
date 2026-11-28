@@ -14,26 +14,46 @@ import { GAME_BYTES } from './turn-folder.ts';
 import type { Ident } from '../core/git.ts';
 
 /** Base64 in whole groups of four, as the import reads it. */
-const base64 = z.string().max(PORTABLE_FILE_LIMIT).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
-export const readFileInput = z.strictObject({ path: gameFilePath, branch: id.default('main'), revision: id.optional() });
+const base64 = z
+  .string()
+  .max(PORTABLE_FILE_LIMIT)
+  .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
+export const readFileInput = z.strictObject({
+  path: gameFilePath,
+  branch: id.default('main'),
+  revision: id.optional(),
+});
 const change = z.union([
   z.strictObject({ path: gameFilePath, text: z.string().max(PORTABLE_FILE_LIMIT) }),
   z.strictObject({ path: gameFilePath, base64 }),
   z.strictObject({ path: gameFilePath, remove: z.literal(true) }),
 ]);
 export const writeFilesInput = z.strictObject({
-  branch: id.default('main'), baseRevision: id, label: z.string().trim().min(1).max(120),
-  files: z.array(change).min(1).max(MAX_GAME_FILES + 1),
+  branch: id.default('main'),
+  baseRevision: id,
+  label: z.string().trim().min(1).max(120),
+  files: z
+    .array(change)
+    .min(1)
+    .max(MAX_GAME_FILES + 1),
 });
 
 const utf8 = (bytes: Buffer, ignoreBOM: boolean) => {
-  try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM }).decode(bytes); }
-  catch { return undefined; }
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM }).decode(bytes);
+  } catch {
+    return undefined;
+  }
 };
 
 /** One file of a revision's game: UTF-8 text as text, anything else as base64. */
-export function readGameFile(projects: Projects, projectId: string, { path, branch, revision }: z.output<typeof readFileInput>) {
-  const source = revision === undefined ? head(projects.read(projectId), branch) : projects.revision(projectId, revision);
+export function readGameFile(
+  projects: Projects,
+  projectId: string,
+  { path, branch, revision }: z.output<typeof readFileInput>,
+) {
+  const source =
+    revision === undefined ? head(projects.read(projectId), branch) : projects.revision(projectId, revision);
   const game = source.game;
   if (!game) throw new ZirbelError(404, 'This revision has no game.');
   let bytes: Buffer;
@@ -45,17 +65,30 @@ export function readGameFile(projects: Projects, projectId: string, { path, bran
   }
   // The text is the file's bytes exactly, a byte order mark included.
   const text = utf8(bytes, true);
-  return { revision: source.id, path, size: bytes.length, ...(text === undefined ? { base64: bytes.toString('base64') } : { text }) };
+  return {
+    revision: source.id,
+    path,
+    size: bytes.length,
+    ...(text === undefined ? { base64: bytes.toString('base64') } : { text }),
+  };
 }
 
 /** A stored game file's size, from the asset store. */
 function storedSize(projects: Projects, hash: string) {
-  try { return statSync(join(projects.root, 'assets', hash)).size; }
-  catch { throw new ZirbelError(422, 'An asset file is missing.'); }
+  try {
+    return statSync(join(projects.root, 'assets', hash)).size;
+  } catch {
+    throw new ZirbelError(422, 'An asset file is missing.');
+  }
 }
 
 /** Stages the branch head's game with these files written or removed, and the rest as they are. */
-export function stageFiles(projects: Projects, projectId: string, input: z.output<typeof writeFilesInput>, author?: Ident) {
+export function stageFiles(
+  projects: Projects,
+  projectId: string,
+  input: z.output<typeof writeFilesInput>,
+  author?: Ident,
+) {
   const { branch, baseRevision, label } = input;
   const paths = new Set<string>();
   for (const { path } of input.files) {
@@ -82,7 +115,8 @@ export function stageFiles(projects: Projects, projectId: string, input: z.outpu
       const text = utf8(bytes, false);
       if (text === undefined) throw new ZirbelError(422, 'index.html must be UTF-8 text.');
       const parsed = gameDocument.shape.html.safeParse(text);
-      if (!parsed.success) throw new ZirbelError(422, 'index.html must hold the game’s page, at most 400,000 characters.');
+      if (!parsed.success)
+        throw new ZirbelError(422, 'index.html must hold the game’s page, at most 400,000 characters.');
       html = parsed.data;
       continue;
     }
@@ -97,19 +131,36 @@ export function stageFiles(projects: Projects, projectId: string, input: z.outpu
   let size = Buffer.byteLength(html, 'utf8');
   for (const hash of kept.values()) size += storedSize(projects, hash);
   for (const bytes of written.values()) size += bytes.length;
-  if (size > GAME_BYTES) throw new ZirbelError(413, 'The game would be larger than a game can be (' + Math.floor(GAME_BYTES / 1e6) + ' MB).');
+  if (size > GAME_BYTES)
+    throw new ZirbelError(
+      413,
+      'The game would be larger than a game can be (' + Math.floor(GAME_BYTES / 1e6) + ' MB).',
+    );
   const stored = new Map(kept);
   for (const [path, bytes] of written) stored.set(path, projects.storeAsset(bytes));
   // Sorted, as the Go host writes a map, so both hosts stage the same document.
   const files = Object.fromEntries([...stored].sort(([a], [b]) => (a < b ? -1 : 1)));
   if (!described && base.game?.adapter !== undefined && !stored.has(base.game.adapter)) described = true;
-  const manifest = written.get('zirbel.json') ?? (kept.has('zirbel.json') ? projects.readAsset(kept.get('zirbel.json')!) : undefined);
-  const players = described ? describedGame(manifest?.toString('base64'), (path) => stored.has(path))
-    : { maxPlayers: base.game?.maxPlayers ?? 1, ...(base.game?.net ? { net: true as const } : {}),
-      ...(base.game?.adapter === undefined ? {} : { adapter: base.game.adapter }),
-      ...(base.game?.controls === undefined ? {} : { controls: base.game.controls }) };
-  const game: GameDocument = { html, ...players,
+  const manifest =
+    written.get('zirbel.json') ?? (kept.has('zirbel.json') ? projects.readAsset(kept.get('zirbel.json')!) : undefined);
+  const players = described
+    ? describedGame(manifest?.toString('base64'), (path) => stored.has(path))
+    : {
+        maxPlayers: base.game?.maxPlayers ?? 1,
+        ...(base.game?.net ? { net: true as const } : {}),
+        ...(base.game?.adapter === undefined ? {} : { adapter: base.game.adapter }),
+        ...(base.game?.controls === undefined ? {} : { controls: base.game.controls }),
+      };
+  const game: GameDocument = {
+    html,
+    ...players,
     ...(base.game?.registerObjects === undefined ? {} : { registerObjects: base.game.registerObjects }),
-    ...(count || base.game?.files ? { files } : {}) };
-  return projects.submit(projectId, { branch, baseRevision, label, operations: [{ op: 'writeGame', game }] }, true, author);
+    ...(count || base.game?.files ? { files } : {}),
+  };
+  return projects.submit(
+    projectId,
+    { branch, baseRevision, label, operations: [{ op: 'writeGame', game }] },
+    true,
+    author,
+  );
 }

@@ -3,8 +3,25 @@
 // presses as a keyboard would (packages/web/game-keys.ts). controls.keys are P1's keys; controls.players gives each
 // place (P1 to P8) its own keys, and the name and colour of what it drives, and where it is given controls.keys is not
 // used. The map is the folder's, never part of the game itself. No Zod: the game frame reads these too.
-export const CONTROL_INPUTS = ['a', 'b', 'x', 'y', 'lb', 'rb', 'lt', 'rt', 'select', 'start', 'ls', 'rs', 'up', 'down', 'left',
-  'right', 'home'] as const;
+export const CONTROL_INPUTS = [
+  'a',
+  'b',
+  'x',
+  'y',
+  'lb',
+  'rb',
+  'lt',
+  'rt',
+  'select',
+  'start',
+  'ls',
+  'rs',
+  'up',
+  'down',
+  'left',
+  'right',
+  'home',
+] as const;
 export type ControlInput = (typeof CONTROL_INPUTS)[number];
 export const KEY_CODE = /^[A-Za-z0-9]{1,24}$/;
 /** A screen's places, P1 to P8 (0 to 7 on the wire). */
@@ -25,8 +42,10 @@ export function checkedKeys(value: unknown): ControlKeys | undefined {
   if (!isObject(value)) return undefined;
   const entries = Object.entries(value);
   const known = (input: string): input is ControlInput => (CONTROL_INPUTS as readonly string[]).includes(input);
-  return entries.length && entries.every(([input, code]) => known(input) && typeof code === 'string' && KEY_CODE.test(code))
-    ? Object.fromEntries(entries.sort(byInput)) : undefined;
+  return entries.length &&
+    entries.every(([input, code]) => known(input) && typeof code === 'string' && KEY_CODE.test(code))
+    ? Object.fromEntries(entries.sort(byInput))
+    : undefined;
 }
 
 /** A place's name (1 to 24 characters) and colour (#rrggbb), each where given and right; nothing where either is wrong. */
@@ -44,11 +63,15 @@ export function checkedControls(value: unknown): Controls | undefined {
   if (!isObject(value)) return undefined;
   const keys = checkedKeys(value.keys);
   const list = value.players;
-  let players: ControlPlayer[] | undefined = Array.isArray(list) && list.length && list.length <= MAX_PLACES ? [] : undefined;
-  for (const item of players ? list as unknown[] : []) {
+  let players: ControlPlayer[] | undefined =
+    Array.isArray(list) && list.length && list.length <= MAX_PLACES ? [] : undefined;
+  for (const item of players ? (list as unknown[]) : []) {
     const label = checkedLabel(item);
     const own = isObject(item) && item.keys !== undefined ? checkedKeys(item.keys) : undefined;
-    if (!label || (isObject(item) && item.keys !== undefined && !own)) { players = undefined; break; }
+    if (!label || (isObject(item) && item.keys !== undefined && !own)) {
+      players = undefined;
+      break;
+    }
     players!.push({ ...(own ? { keys: own } : {}), ...label });
   }
   return keys || players ? { ...(keys ? { keys } : {}), ...(players ? { players } : {}) } : undefined;

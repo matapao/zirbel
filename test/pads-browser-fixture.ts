@@ -28,21 +28,49 @@ export const encoded = (files: Record<string, string>) =>
 export async function startHost(t: TestContext, more: string[] = [], command = node) {
   const root = tempDir(t, 'zirbel-pads-browser-');
   const projects = new Projects(join(root, 'source'));
-  const project = importGameFolder(projects, { title: 'Pads', files: encoded({ 'index.html': game, 'zirbel.json': JSON.stringify({
-    players: { max: 2 }, controls: { players: [{ keys: { a: 'KeyF' }, name: 'Red car', color: '#d03030' }, { keys: { a: 'Space', up: 'ArrowUp' } }] },
-  }) }) });
+  const project = importGameFolder(projects, {
+    title: 'Pads',
+    files: encoded({
+      'index.html': game,
+      'zirbel.json': JSON.stringify({
+        players: { max: 2 },
+        controls: {
+          players: [
+            { keys: { a: 'KeyF' }, name: 'Red car', color: '#d03030' },
+            { keys: { a: 'Space', up: 'ArrowUp' } },
+          ],
+        },
+      }),
+    }),
+  });
   const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
   const file = join(root, 'release.json');
   writeFileSync(file, JSON.stringify(release));
   // Without the spaces kernel: the game, for two by its zirbel.json, has a seat of its room's own, which Show on TV hands
   // over (a net game's member in a space goes to the TV in the last test, in pads-browser-hosts.ts).
-  return launch(t, command, ['--host-only', ...more, '--player-port', '0', '--data', join(root, 'data'), '--import', file, '--release',
-    release.manifest.releaseId], (line) => typeof line.link === 'string' ? line.link : undefined, { ZIRBEL_SPACES_BINARY: NO_SPACES }).ready;
+  return launch(
+    t,
+    command,
+    [
+      '--host-only',
+      ...more,
+      '--player-port',
+      '0',
+      '--data',
+      join(root, 'data'),
+      '--import',
+      file,
+      '--release',
+      release.manifest.releaseId,
+    ],
+    (line) => (typeof line.link === 'string' ? line.link : undefined),
+    { ZIRBEL_SPACES_BINARY: NO_SPACES },
+  ).ready;
 }
 
 export async function until(check: () => boolean | Promise<boolean>, what: string) {
   const end = Date.now() + 10_000;
-  while (!await check()) {
+  while (!(await check())) {
     if (Date.now() > end) throw new Error('Waited in vain for ' + what);
     await new Promise((done) => setTimeout(done, 25));
   }

@@ -36,8 +36,13 @@ The view_game tool renders game/ in a browser as the editor runs it, and returns
 Report only checks that actually ran.`;
 
 /** The game a create or edit keeps: the folder's game/, its files stored by their hashes. */
-function folderGame(projects: Projects, folder: string | undefined, output: Exclude<Plan, { action: 'reply' }>,
-  current: GameDocument | undefined, registerObjects: boolean): GameDocument {
+function folderGame(
+  projects: Projects,
+  folder: string | undefined,
+  output: Exclude<Plan, { action: 'reply' }>,
+  current: GameDocument | undefined,
+  registerObjects: boolean,
+): GameDocument {
   if (!folder) throw new ZirbelError(422, 'This turn had no working folder to read the game from.');
   const { html, files } = readGameFolder(folder);
   const stored: Record<string, string> = {};
@@ -47,60 +52,136 @@ function folderGame(projects: Projects, folder: string | undefined, output: Excl
   // controls it names.
   const described = describedGame(files.get('zirbel.json')?.toString('base64'), (path) => files.has(path));
   const adapter = kept?.net ? described.adapter : undefined;
-  return { html, maxPlayers: output.maxPlayers ?? kept?.maxPlayers ?? 1, ...(kept?.net ? { net: true as const } : {}),
-    ...(adapter ? { adapter } : {}), ...(described.controls ? { controls: described.controls } : {}),
-    ...(registerObjects ? {} : { registerObjects: false }), ...(files.size ? { files: stored } : {}) };
+  return {
+    html,
+    maxPlayers: output.maxPlayers ?? kept?.maxPlayers ?? 1,
+    ...(kept?.net ? { net: true as const } : {}),
+    ...(adapter ? { adapter } : {}),
+    ...(described.controls ? { controls: described.controls } : {}),
+    ...(registerObjects ? {} : { registerObjects: false }),
+    ...(files.size ? { files: stored } : {}),
+  };
 }
 
 type Turn = {
-  text: string; branch: string; proposalId?: string | undefined; registerObjects?: boolean | undefined;
-  objects?: RegisteredObject[] | undefined; markedIds?: string[] | undefined;
+  text: string;
+  branch: string;
+  proposalId?: string | undefined;
+  registerObjects?: boolean | undefined;
+  objects?: RegisteredObject[] | undefined;
+  markedIds?: string[] | undefined;
   /** The thread's working folder, whose game/ a create or edit keeps. */
   folder?: string | undefined;
   /** Who sent the message. The harness is the author of what it makes. */
   author?: Ident | undefined;
 };
-export async function runHarnessChat(harnesses: Processors, processor: string, projects: Projects, project: Project, base: Revision,
-  request: Turn, references: Reference[], options?: ProcessorRun): Promise<ChatReply & { task?: string }> {
+export async function runHarnessChat(
+  harnesses: Processors,
+  processor: string,
+  projects: Projects,
+  project: Project,
+  base: Revision,
+  request: Turn,
+  references: Reference[],
+  options?: ProcessorRun,
+): Promise<ChatReply & { task?: string }> {
   options?.signal?.throwIfAborted();
   const control = applyChatControl(projects, project, base, request);
   if (control) return control;
-  const history = project.notes.filter((note) => note.branch === request.branch).slice(-12)
+  const history = project.notes
+    .filter((note) => note.branch === request.branch)
+    .slice(-12)
     .map(({ text, role }) => ({ text, role: role ?? 'creator' }));
-  const { run, usage, output } = await askHarness(harnesses, processor, request.text, history,
-    { title: project.title, revision: base.id, maxPlayers: base.game?.maxPlayers ?? null, assets: base.assets,
-      registeredObjects: request.objects ?? [], markedIds: request.markedIds ?? [],
-      ...(project.template && !base.game ? { previousScene: base.scene } : {}) }, references, options, request.registerObjects);
+  const { run, usage, output } = await askHarness(
+    harnesses,
+    processor,
+    request.text,
+    history,
+    {
+      title: project.title,
+      revision: base.id,
+      maxPlayers: base.game?.maxPlayers ?? null,
+      assets: base.assets,
+      registeredObjects: request.objects ?? [],
+      markedIds: request.markedIds ?? [],
+      ...(project.template && !base.game ? { previousScene: base.scene } : {}),
+    },
+    references,
+    options,
+    request.registerObjects,
+  );
   options?.signal?.throwIfAborted();
   const context = { projectId: project.id, branch: request.branch, task: run.task };
   const by = harnessAuthor(processor, run.name);
 
   if (head(projects.read(project.id), request.branch).id !== base.id)
-    throw new ZirbelError(409, 'The game changed while the harness was working. Send the request again against the current revision.');
+    throw new ZirbelError(
+      409,
+      'The game changed while the harness was working. Send the request again against the current revision.',
+    );
   if (output.action !== 'reply') {
     const game = folderGame(projects, request.folder, output, base.game, request.registerObjects !== false);
     if (output.action === 'create' && (base.game || base.scene)) {
       const draft = startFromChat(projects, { title: output.title, game }, request.text, output.message, usage, [], by);
       return { ...draft, task: run.task };
     }
-    const proposal = projects.submit(project.id, { label: output.message.slice(0, 120), branch: request.branch, baseRevision: base.id,
-      operations: [{ op: 'writeGame', game }] }, true, by).proposal;
+    const proposal = projects.submit(
+      project.id,
+      {
+        label: output.message.slice(0, 120),
+        branch: request.branch,
+        baseRevision: base.id,
+        operations: [{ op: 'writeGame', game }],
+      },
+      true,
+      by,
+    ).proposal;
     return { ...finishChatEdit(projects, proposal, request.text, output.message, usage), task: run.task };
   }
-  projects.addNote(project.id, { text: output.message, branch: request.branch,
-    role: 'assistant', references: [], attachments: [], usage });
+  projects.addNote(project.id, {
+    text: output.message,
+    branch: request.branch,
+    role: 'assistant',
+    references: [],
+    attachments: [],
+    usage,
+  });
   return context;
 }
 
-export async function runWorkspaceChat(harnesses: Processors, processor: string, projects: Projects, text: string,
-  history: WorkspaceMessage[], options?: ProcessorRun, registerObjects = true, folder?: string) {
-  const { run, usage, output } = await askHarness(harnesses, processor, text, history.map(({ role, text }) => ({ role, text })), null, [], options, registerObjects);
+export async function runWorkspaceChat(
+  harnesses: Processors,
+  processor: string,
+  projects: Projects,
+  text: string,
+  history: WorkspaceMessage[],
+  options?: ProcessorRun,
+  registerObjects = true,
+  folder?: string,
+) {
+  const { run, usage, output } = await askHarness(
+    harnesses,
+    processor,
+    text,
+    history.map(({ role, text }) => ({ role, text })),
+    null,
+    [],
+    options,
+    registerObjects,
+  );
   options?.signal?.throwIfAborted();
   const control = chatControl(text);
   if (!control && output.action !== 'reply') {
     const game = folderGame(projects, folder, output, undefined, registerObjects);
-    const draft = startFromChat(projects, { title: output.action === 'create' ? output.title : undefined, game }, text, output.message, usage, history,
-      harnessAuthor(processor, run.name));
+    const draft = startFromChat(
+      projects,
+      { title: output.action === 'create' ? output.title : undefined, game },
+      text,
+      output.message,
+      usage,
+      history,
+      harnessAuthor(processor, run.name),
+    );
     return { ...draft, task: run.task };
   }
   const reply = control ? 'There’s no game open yet. Describe the game you want to create.' : output.message;
@@ -112,16 +193,32 @@ export async function runWorkspaceChat(harnesses: Processors, processor: string,
   return { task: run.task, conversation: conversation.slice(-12) };
 }
 
-async function askHarness(harnesses: Processors, processor: string, text: string, history: Array<{ role: string; text: string }>,
-  game: Record<string, unknown> | null, references: Reference[], options?: ProcessorRun, registerObjects = true) {
-  const prompt = instructions + '\n' + JSON.stringify({
-    message: text, game, registerObjects, marked: references, recentConversation: history,
-  });
+async function askHarness(
+  harnesses: Processors,
+  processor: string,
+  text: string,
+  history: Array<{ role: string; text: string }>,
+  game: Record<string, unknown> | null,
+  references: Reference[],
+  options?: ProcessorRun,
+  registerObjects = true,
+) {
+  const prompt =
+    instructions +
+    '\n' +
+    JSON.stringify({
+      message: text,
+      game,
+      registerObjects,
+      marked: references,
+      recentConversation: history,
+    });
   options?.signal?.throwIfAborted();
   const result = await harnesses.start(processor, prompt, options);
   options?.signal?.throwIfAborted();
   if (result.stopReason === 'cancelled') throw new ZirbelError(409, result.name + ' cancelled the turn.');
-  if (!result.text?.trim()) throw new ZirbelError(502, result.name + ' returned no reply. Try sending the message again.');
+  if (!result.text?.trim())
+    throw new ZirbelError(502, result.name + ' returned no reply. Try sending the message again.');
   options?.update?.({ type: 'progress', phase: 'validating' });
   const run = { ...result, text: result.text };
   const usage = run.usage ? { source: run.name, total: run.usage.totalTokens } : undefined;
@@ -132,7 +229,13 @@ async function askHarness(harnesses: Processors, processor: string, text: string
   if (!raw.startsWith('{') && !textOutput.startsWith('```') && !fenced)
     return { run, usage, output: plan.parse({ action: 'reply', message: raw.slice(0, 3000) }) };
   let output;
-  try { output = plan.parse(JSON.parse(raw)); }
-  catch { throw new ZirbelError(422, 'The harness’s reply is not one the editor takes: a create, edit or reply as JSON. Send the request again.'); }
+  try {
+    output = plan.parse(JSON.parse(raw));
+  } catch {
+    throw new ZirbelError(
+      422,
+      'The harness’s reply is not one the editor takes: a create, edit or reply as JSON. Send the request again.',
+    );
+  }
   return { run, usage, output };
 }

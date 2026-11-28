@@ -7,7 +7,14 @@ import type { AgentAsk, AskAnswer } from 'celler/harness';
 import { z } from 'zod';
 import { newId, ZirbelError } from '../core/projects.ts';
 import { boundEntry, TurnLog } from '../sdk/activity.ts';
-import { chatStreamType, type ActionValue, type ActivityEntry, type ChatEvent, type ChatUpdate, type HarnessAction } from '../sdk/chat-stream.ts';
+import {
+  chatStreamType,
+  type ActionValue,
+  type ActivityEntry,
+  type ChatEvent,
+  type ChatUpdate,
+  type HarnessAction,
+} from '../sdk/chat-stream.ts';
 import type { Note } from '../sdk/contracts.ts';
 import { describeAsk, type AskPlace } from './ask-summary.ts';
 import { fail, failure, reply } from './http.ts';
@@ -20,8 +27,13 @@ const replySchema = z.discriminatedUnion('choice', [
   z.strictObject({ choice: z.literal('dismiss') }),
   z.strictObject({ choice: z.literal('decline') }),
   z.strictObject({ choice: z.literal('option'), option: z.string().min(1).max(160) }),
-  z.strictObject({ choice: z.literal('submit'), values: z.record(z.string().max(160),
-    z.union([z.string().max(4000), z.number(), z.boolean(), z.array(z.string().max(400)).max(40)])) }),
+  z.strictObject({
+    choice: z.literal('submit'),
+    values: z.record(
+      z.string().max(160),
+      z.union([z.string().max(4000), z.number(), z.boolean(), z.array(z.string().max(400)).max(40)]),
+    ),
+  }),
 ]);
 
 // The harness's options, by short names: its own when short, else what the option does.
@@ -42,21 +54,44 @@ function actionOf(question: AgentAsk, place: AskPlace = {}): HarnessAction {
   }
   if (form) {
     const fields = form.fields ?? [];
-    if (fields.length > 20 || fields.some(({ name, choices }) => name.length > 160 ||
-        (choices?.length ?? 0) > 40 || choices?.some(({ value }) => value.length > 400)))
+    if (
+      fields.length > 20 ||
+      fields.some(
+        ({ name, choices }) =>
+          name.length > 160 || (choices?.length ?? 0) > 40 || choices?.some(({ value }) => value.length > 400),
+      )
+    )
       throw new ZirbelError(422, 'The harness requested a form that exceeds the input limits.');
-    return { id, title, kind: 'form', scope: 'outside', reach: 'Sends what you enter to ' + (place.harness ?? 'the harness'),
-      fields: fields.map((field) => ({ ...field, title: field.title.slice(0, 400),
-        description: field.description?.slice(0, 800), choices: field.choices?.map(({ value, label }) => ({ value, label: label.slice(0, 400) })),
-      })) };
+    return {
+      id,
+      title,
+      kind: 'form',
+      scope: 'outside',
+      reach: 'Sends what you enter to ' + (place.harness ?? 'the harness'),
+      fields: fields.map((field) => ({
+        ...field,
+        title: field.title.slice(0, 400),
+        description: field.description?.slice(0, 800),
+        choices: field.choices?.map(({ value, label }) => ({ value, label: label.slice(0, 400) })),
+      })),
+    };
   }
   const input = JSON.stringify(question.input, null, 2);
   const detail = input && input.length <= 12_000 ? input : undefined;
-  const options = question.options.filter(({ optionId, kind }) => optionId.length <= 160 &&
-    (kind === 'reject_once' || (kind === 'allow_once' && detail)))
-    .slice(0, 12).map(({ optionId, name, kind }) => ({ id: optionId, title: optionTitle(name.slice(0, 200), kind) }));
-  return { id, title, kind: 'permission', ...describeAsk(question, place),
-    detail: detail ?? 'The harness did not provide action details for approval.', options };
+  const options = question.options
+    .filter(
+      ({ optionId, kind }) => optionId.length <= 160 && (kind === 'reject_once' || (kind === 'allow_once' && detail)),
+    )
+    .slice(0, 12)
+    .map(({ optionId, name, kind }) => ({ id: optionId, title: optionTitle(name.slice(0, 200), kind) }));
+  return {
+    id,
+    title,
+    kind: 'permission',
+    ...describeAsk(question, place),
+    detail: detail ?? 'The harness did not provide action details for approval.',
+    options,
+  };
 }
 
 /** A request's headline: what it asks to do, never the raw command. */
@@ -74,15 +109,27 @@ function requestSubject(action: HarnessAction) {
 /** A request as a step of the turn: its headline, and once it closes, the answer it got. */
 function requestEntry(action: HarnessAction, answer?: string): ActivityEntry {
   const headline = requestHeadline(action);
-  const parts = [answer, action.kind === 'permission' ? action.reason : undefined, action.reach, requestSubject(action)];
-  return { id: 'request:' + action.id, kind: 'request', title: headline, detail: parts.filter(Boolean).join('\n\n'),
-    state: answer === undefined ? 'waiting' : 'completed', ...(action.kind === 'permission' && action.diff ? { diff: action.diff } : {}) };
+  const parts = [
+    answer,
+    action.kind === 'permission' ? action.reason : undefined,
+    action.reach,
+    requestSubject(action),
+  ];
+  return {
+    id: 'request:' + action.id,
+    kind: 'request',
+    title: headline,
+    detail: parts.filter(Boolean).join('\n\n'),
+    state: answer === undefined ? 'waiting' : 'completed',
+    ...(action.kind === 'permission' && action.diff ? { diff: action.diff } : {}),
+  };
 }
 
 function answerText(action: HarnessAction, answer: AskAnswer | null) {
   if (!answer) return 'Not answered';
   if ('option' in answer) {
-    const chosen = action.kind === 'permission' ? action.options.find(({ id }) => id === answer.option)?.title : undefined;
+    const chosen =
+      action.kind === 'permission' ? action.options.find(({ id }) => id === answer.option)?.title : undefined;
     return 'Answered: ' + (chosen ?? answer.option);
   }
   if (answer.accept) return action.kind === 'link' ? 'Continued' : 'Sent';
@@ -91,14 +138,17 @@ function answerText(action: HarnessAction, answer: AskAnswer | null) {
 
 function formValue(field: Extract<HarnessAction, { kind: 'form' }>['fields'][number], value: ActionValue) {
   const { type, choices } = field;
-  if (type === 'array') return Array.isArray(value) && value.every((item) => !choices || choices.some(({ value }) => value === item));
+  if (type === 'array')
+    return Array.isArray(value) && value.every((item) => !choices || choices.some(({ value }) => value === item));
   if (type === 'integer') return typeof value === 'number' && Number.isSafeInteger(value);
   return typeof value === type && (!choices || choices.some((choice) => choice.value === value));
 }
 
 /** Why a turn's signal aborts when the editor stops: the turn is interrupted, not stopped by the person. */
 export class EditorStopping extends ZirbelError {
-  constructor() { super(503, 'The editor stopped while the turn was running.'); }
+  constructor() {
+    super(503, 'The editor stopped while the turn was running.');
+  }
 }
 
 type PendingAction = { action: HarnessAction; answer: (answer: AskAnswer | null) => void };
@@ -139,7 +189,9 @@ export class ActiveTurn {
     ];
   }
 
-  get running() { return !this.outcome; }
+  get running() {
+    return !this.outcome;
+  }
 }
 
 export class ChatRuns {
@@ -148,14 +200,20 @@ export class ChatRuns {
   private threads = new Map<string, ActiveTurn>();
 
   /** Starts a turn in a thread that has none running. The handler runs it to its end, whoever streams it. */
-  start(thread: string, meta: { name: string; text: string; note?: Note },
-    handler: (run: ProcessorRun, turn: ActiveTurn) => Promise<unknown>) {
-    if (this.threads.has(thread)) throw new ZirbelError(409, 'A turn is already running in this thread. Stop it, or wait for it to end.');
+  start(
+    thread: string,
+    meta: { name: string; text: string; note?: Note },
+    handler: (run: ProcessorRun, turn: ActiveTurn) => Promise<unknown>,
+  ) {
+    if (this.threads.has(thread))
+      throw new ZirbelError(409, 'A turn is already running in this thread. Stop it, or wait for it to end.');
     const turn = new ActiveTurn(thread, meta.name, meta.text, meta.note);
     this.turns.set(turn.id, turn);
     this.threads.set(thread, turn);
     const { signal } = turn.controller;
-    const send = (event: ChatEvent<unknown>) => { for (const listener of turn.listeners) listener(event); };
+    const send = (event: ChatEvent<unknown>) => {
+      for (const listener of turn.listeners) listener(event);
+    };
     const update = (event: ChatUpdate) => {
       if (event.type === 'activity') {
         const entry = boundEntry(event.entry);
@@ -171,8 +229,9 @@ export class ChatRuns {
       const waiting = AbortSignal.any([signal, withdrawn]);
       if (waiting.aborted) return null;
       let action: HarnessAction;
-      try { action = actionOf(question, place); }
-      catch (error) {
+      try {
+        action = actionOf(question, place);
+      } catch (error) {
         update({ type: 'activity', entry: { id: newId(), kind: 'notice', title: (error as Error).message } });
         return null;
       }
@@ -183,8 +242,10 @@ export class ChatRuns {
       update({ type: 'activity', entry: requestEntry(action) });
       update({ type: 'action', action });
       let answer: AskAnswer | null = null;
-      try { answer = await pending.promise; return answer; }
-      finally {
+      try {
+        answer = await pending.promise;
+        return answer;
+      } finally {
         waiting.removeEventListener('abort', cancel);
         turn.actions.delete(action.id);
         update({ type: 'activity', entry: requestEntry(action, answerText(action, answer)) });
@@ -193,7 +254,10 @@ export class ChatRuns {
     };
     turn.finished = Promise.resolve()
       .then(() => handler({ signal, update, ask }, turn))
-      .then((result) => ({ result }), (error: unknown) => ({ error }))
+      .then(
+        (result) => ({ result }),
+        (error: unknown) => ({ error }),
+      )
       .then((outcome: Outcome) => {
         turn.outcome = outcome;
         turn.controller.abort(new ZirbelError(409, 'This turn has already ended.'));
@@ -205,7 +269,9 @@ export class ChatRuns {
   }
 
   /** The turn running in a thread, if one is. */
-  running(thread: string) { return this.threads.get(thread); }
+  running(thread: string) {
+    return this.threads.get(thread);
+  }
 
   get(id: string) {
     const turn = this.turns.get(id);
@@ -214,7 +280,9 @@ export class ChatRuns {
   }
 
   /** How many turns are running. */
-  get count() { return this.threads.size; }
+  get count() {
+    return this.threads.size;
+  }
 
   stop(id: string) {
     const turn = this.turns.get(id);
@@ -257,8 +325,12 @@ export class ChatRuns {
         if (value === undefined ? field.required : !formValue(field, value))
           throw new ZirbelError(422, 'Check the value for ' + field.title + '.');
       }
-      answer = { accept: true, content: Object.fromEntries(fields.flatMap(({ name }) =>
-        Object.hasOwn(reply.values, name) ? [[name, reply.values[name]]] : [])) };
+      answer = {
+        accept: true,
+        content: Object.fromEntries(
+          fields.flatMap(({ name }) => (Object.hasOwn(reply.values, name) ? [[name, reply.values[name]]] : [])),
+        ),
+      };
     }
     turn.actions.delete(actionId);
     pending.answer(answer);
@@ -266,7 +338,9 @@ export class ChatRuns {
 }
 
 const outcomeEvent = (outcome: Outcome): ChatEvent<unknown> =>
-  'error' in outcome ? { type: 'error', error: failure(outcome.error).message } : { type: 'result', result: outcome.result };
+  'error' in outcome
+    ? { type: 'error', error: failure(outcome.error).message }
+    : { type: 'result', result: outcome.result };
 
 /** Streams a turn to one request: as it stands, then each step as it comes, then its outcome. The request closing
  *  only stops the stream. A request that doesn't ask for the stream gets the outcome as JSON, once the turn ends. */
@@ -283,11 +357,18 @@ export async function streamTurn(request: IncomingMessage, response: ServerRespo
   response.flushHeaders();
   const write = (event: ChatEvent<unknown>) => {
     if (response.destroyed) return;
-    if (response.writableLength > 2_000_000) { response.destroy(); return; }
+    if (response.writableLength > 2_000_000) {
+      response.destroy();
+      return;
+    }
     response.write(JSON.stringify(event) + '\n');
   };
   for (const event of turn.snapshot()) write(event);
-  if (turn.outcome) { write(outcomeEvent(turn.outcome)); response.end(); return; }
+  if (turn.outcome) {
+    write(outcomeEvent(turn.outcome));
+    response.end();
+    return;
+  }
   const closed = Promise.withResolvers<undefined>();
   const close = () => closed.resolve(undefined);
   response.once('close', close);

@@ -9,7 +9,11 @@ import type { ToolLink } from './turn-folder.ts';
 
 /** A package's folder by its real path, found from `from`, or undefined where it isn't installed. */
 function packageFolder(name: string, from: NodeJS.Require) {
-  try { return realpathSync(dirname(from.resolve(name + '/package.json'))); } catch { return undefined; }
+  try {
+    return realpathSync(dirname(from.resolve(name + '/package.json')));
+  } catch {
+    return undefined;
+  }
 }
 
 /** The node_modules folder a package is in, which holds what it resolves its own dependencies from. */
@@ -37,7 +41,10 @@ export function turnTools(webRoot: string, from = createRequire(import.meta.url)
     readable.add(real);
   }
   const platform = process.platform + '-' + process.arch;
-  for (const [name, binary] of [['typescript', '@typescript/typescript-' + platform], ['esbuild', '@esbuild/' + platform]] as const) {
+  for (const [name, binary] of [
+    ['typescript', '@typescript/typescript-' + platform],
+    ['esbuild', '@esbuild/' + platform],
+  ] as const) {
     const found = withBinary(name, binary, from);
     if (!found) continue;
     links.push({ name, target: found.folder });

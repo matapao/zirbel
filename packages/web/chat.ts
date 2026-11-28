@@ -53,7 +53,11 @@ export function renderChatStatus() {
   status.classList.toggle('failed', turn?.failed === true);
   status.hidden = !step;
   clearInterval(clock);
-  clock = turn?.pending ? setInterval(() => { $('chat-elapsed').textContent = elapsed(turn.startedAt); }, 1000) : undefined;
+  clock = turn?.pending
+    ? setInterval(() => {
+        $('chat-elapsed').textContent = elapsed(turn.startedAt);
+      }, 1000)
+    : undefined;
   const stop = $<HTMLButtonElement>('stop-run');
   const send = $<HTMLButtonElement>('send');
   const focusStop = Boolean(turn?.connection) && document.activeElement === send;
@@ -68,18 +72,36 @@ export function renderChips() {
   const marked = $('marked');
   if (!marked || !ws.project) return;
   if (authored()) {
-    marked.replaceChildren(...[...markedObjects].map((id) => action(id + ' ×', () => {
-      markedObjects.delete(id); renderChips(); renderObjects();
-    }, 'chip')));
+    marked.replaceChildren(
+      ...[...markedObjects].map((id) =>
+        action(
+          id + ' ×',
+          () => {
+            markedObjects.delete(id);
+            renderChips();
+            renderObjects();
+          },
+          'chip',
+        ),
+      ),
+    );
     return;
   }
-  marked.replaceChildren(...references().map((reference) => action(
-    reference.type === 'instance' ? reference.object.name + ' ×' : 'Marked region ×',
-    () => {
-      if (reference.type === 'instance') ws.selected.delete(reference.object.id); else ws.region = undefined;
-      renderObjects(); renderChips(); scheduleDraw();
-    }, 'chip',
-  )));
+  marked.replaceChildren(
+    ...references().map((reference) =>
+      action(
+        reference.type === 'instance' ? reference.object.name + ' ×' : 'Marked region ×',
+        () => {
+          if (reference.type === 'instance') ws.selected.delete(reference.object.id);
+          else ws.region = undefined;
+          renderObjects();
+          renderChips();
+          scheduleDraw();
+        },
+        'chip',
+      ),
+    ),
+  );
 }
 
 /** The empty desk: one prompt, the folder import, and the games opened recently. */
@@ -110,18 +132,33 @@ function renderNotice(ready: boolean) {
   notice.hidden = ready || processorNotice === 'Checking harnesses…';
   const project = ws.project;
   if (editorOf()) {
-    notice.replaceChildren('The AI on this box is its owner’s.', ' ', ws.health.mcp && project
-      ? action('Use your own Claude Code or Codex', () => ownAgentDialog(project.id, project.title), 'link')
-      : 'Its owner can turn on agent access, so you can use your own Claude Code or Codex.');
+    notice.replaceChildren(
+      'The AI on this box is its owner’s.',
+      ' ',
+      ws.health.mcp && project
+        ? action('Use your own Claude Code or Codex', () => ownAgentDialog(project.id, project.title), 'link')
+        : 'Its owner can turn on agent access, so you can use your own Claude Code or Codex.',
+    );
     return;
   }
-  notice.replaceChildren(ws.health.chat ? processorNotice : 'This editor has no harness chat. Import a game folder, or open a game from the Library.');
+  notice.replaceChildren(
+    ws.health.chat
+      ? processorNotice
+      : 'This editor has no harness chat. Import a game folder, or open a game from the Library.',
+  );
   if (notice.hidden || !ws.health.chat) return;
   if (ws.health.box && !ws.health.box.harnesses) {
-    notice.replaceChildren('Harnesses are off on this box.', ' ', action('Box settings', () => openBoxSettings(), 'link'));
+    notice.replaceChildren(
+      'Harnesses are off on this box.',
+      ' ',
+      action('Box settings', () => openBoxSettings(), 'link'),
+    );
     return;
   }
-  notice.append(' ', action('Harnesses', () => openHarnesses(), 'link'));
+  notice.append(
+    ' ',
+    action('Harnesses', () => openHarnesses(), 'link'),
+  );
 }
 
 /** What the harness list says when none is ready: still checking, a sign-in needed, or none at all. */
@@ -136,8 +173,10 @@ export function renderProcessors() {
   if (!select || !send) return;
   const available = providers.filter(({ ready }) => ready !== false);
   const empty = noHarness();
-  select.replaceChildren(...(available.length ? available.map(({ id, name }) => option(id, name)) : [option('', empty)]));
-  select.value = available.some(({ id }) => id === preferredProcessor) ? preferredProcessor : available[0]?.id ?? '';
+  select.replaceChildren(
+    ...(available.length ? available.map(({ id, name }) => option(id, name)) : [option('', empty)]),
+  );
+  select.value = available.some(({ id }) => id === preferredProcessor) ? preferredProcessor : (available[0]?.id ?? '');
   select.disabled = chatBusy() || !available.length;
   // An editor of one game on a box has no harness here to write to, nor a game folder to import.
   $('prompt-form').hidden = $('import-folder').hidden = Boolean(editorOf());
@@ -155,7 +194,10 @@ function updateSendButton() {
 
 function updateModelControls() {
   const provider = $<HTMLSelectElement>('provider');
-  ws.modelControl?.setProcessor(providers.find(({ id }) => id === provider.value), chatBusy());
+  ws.modelControl?.setProcessor(
+    providers.find(({ id }) => id === provider.value),
+    chatBusy(),
+  );
   updateSendButton();
 }
 
@@ -166,20 +208,27 @@ export async function refreshProcessors() {
       // The box's harnesses are its owners' alone.
       const access = editorOf() ? { processors: [] } : await api<{ processors: Processor[] }>('processors');
       providers = access.processors;
-      processorNotice = providers.some(({ signIn }) => signIn) ? 'Open Harnesses to sign in.' : 'No harness is available.';
+      processorNotice = providers.some(({ signIn }) => signIn)
+        ? 'Open Harnesses to sign in.'
+        : 'No harness is available.';
     } catch {
       providers = [];
       processorNotice = 'Could not check harnesses. Open Harnesses to refresh.';
     }
     renderProcessors();
   })();
-  try { await refreshingProcessors; } finally { refreshingProcessors = undefined; }
+  try {
+    await refreshingProcessors;
+  } finally {
+    refreshingProcessors = undefined;
+  }
 }
 
-export const openHarnesses = () => showHarnessAccounts(async () => {
-  await refreshProcessors();
-  return { providers, notice: processorNotice };
-});
+export const openHarnesses = () =>
+  showHarnessAccounts(async () => {
+    await refreshProcessors();
+    return { providers, notice: processorNotice };
+  });
 
 export function setupActivity() {
   setupThread();
@@ -211,5 +260,8 @@ export function setupActivity() {
     form.requestSubmit();
   });
   renderMessages();
-  if (ws.project) { renderChips(); renderSuggestions(); }
+  if (ws.project) {
+    renderChips();
+    renderSuggestions();
+  }
 }

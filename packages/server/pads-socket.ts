@@ -26,9 +26,16 @@ const SERVICE_MESSAGE = 4096;
 
 /** A text frame's JSON message as the contract reads it, or the code that closes the socket: 1007 for one that isn't
  *  JSON, 1008 for one that isn't a message. */
-function read<T>(data: Buffer, contract: { safeParse(value: unknown): { success: true; data: T } | { success: false } }) {
+function read<T>(
+  data: Buffer,
+  contract: { safeParse(value: unknown): { success: true; data: T } | { success: false } },
+) {
   let value: unknown;
-  try { value = JSON.parse(data.toString('utf8')); } catch { return 1007; }
+  try {
+    value = JSON.parse(data.toString('utf8'));
+  } catch {
+    return 1007;
+  }
   const message = contract.safeParse(value);
   return message.success ? message : 1008;
 }
@@ -36,11 +43,18 @@ function read<T>(data: Buffer, contract: { safeParse(value: unknown): { success:
 const linkOf = (socket: WebSocket): PadsLink => ({
   text(message) {
     if (socket.readyState !== WebSocket.OPEN) return;
-    if (socket.bufferedAmount > BACKLOG) { socket.terminate(); return; }
+    if (socket.bufferedAmount > BACKLOG) {
+      socket.terminate();
+      return;
+    }
     socket.send(JSON.stringify(message));
   },
-  binary(frame) { if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount <= FRAME_BACKLOG) socket.send(frame); },
-  close(code) { socket.close(code); },
+  binary(frame) {
+    if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount <= FRAME_BACKLOG) socket.send(frame);
+  },
+  close(code) {
+    socket.close(code);
+  },
 });
 
 /** The pads sockets of one player listener, for the screens and phones of its own access. */
@@ -55,7 +69,10 @@ export function padsSockets(pads: Pads, access: Access) {
     if (now - pinged < PING) return;
     pinged = now;
     for (const [socket, screen] of screens) {
-      if (!screen.alive) { socket.terminate(); continue; }
+      if (!screen.alive) {
+        socket.terminate();
+        continue;
+      }
       screen.alive = false;
       socket.ping();
     }
@@ -63,15 +80,25 @@ export function padsSockets(pads: Pads, access: Access) {
 
   function screen(socket: WebSocket, request: IncomingMessage, resume: string) {
     const link = linkOf(socket);
-    const held = pads.openScreen(link, access, loopback(request.socket.remoteAddress?.replace(/^::ffff:/, '') ?? ''), resume);
+    const held = pads.openScreen(
+      link,
+      access,
+      loopback(request.socket.remoteAddress?.replace(/^::ffff:/, '') ?? ''),
+      resume,
+    );
     if (!held) return;
     const watch = { alive: true };
     screens.set(socket, watch);
-    socket.on('pong', () => { watch.alive = true; });
+    socket.on('pong', () => {
+      watch.alive = true;
+    });
     socket.on('message', (data, binary) => {
       if (socket.readyState !== WebSocket.OPEN || !Buffer.isBuffer(data)) return;
       // A screen sends no pad frames.
-      if (binary) { socket.close(PADS_CLOSE.unsupported); return; }
+      if (binary) {
+        socket.close(PADS_CLOSE.unsupported);
+        return;
+      }
       const message = read(data, padsScreenMessage);
       if (typeof message === 'number') socket.close(message);
       else pads.screenMessage(held, link, message.data);
@@ -85,15 +112,24 @@ export function padsSockets(pads: Pads, access: Access) {
   function pad(socket: WebSocket, request: IncomingMessage, query: URLSearchParams) {
     const link = linkOf(socket);
     const place = query.get('place') ?? '';
-    const phone = pads.openPad(link, access, request.socket.remoteAddress ?? '', query.get('code') ?? '',
-      /^[0-7]$/.test(place) ? Number(place) : undefined, query.get('resume') ?? '');
+    const phone = pads.openPad(
+      link,
+      access,
+      request.socket.remoteAddress ?? '',
+      query.get('code') ?? '',
+      /^[0-7]$/.test(place) ? Number(place) : undefined,
+      query.get('resume') ?? '',
+    );
     if (!phone) return;
     const watch = { lastRx: performance.now() };
     phones.set(socket, watch);
     socket.on('message', (data, binary) => {
       if (socket.readyState !== WebSocket.OPEN || !Buffer.isBuffer(data)) return;
       watch.lastRx = performance.now();
-      if (binary) { pads.padFrame(phone, data); return; }
+      if (binary) {
+        pads.padFrame(phone, data);
+        return;
+      }
       const message = read(data, padsPadMessage);
       if (typeof message === 'number') socket.close(message);
       else pads.padMessage(phone, message.data);
@@ -107,9 +143,15 @@ export function padsSockets(pads: Pads, access: Access) {
   return {
     upgrade(request: IncomingMessage, stream: Duplex, head: Buffer, url: URL) {
       // Pages of this listener open it; a game's opaque-origin frame never does.
-      if (request.headers.origin === 'null' || !upgradeOrigin(request)) { refuseUpgrade(stream, 403, 'Cross-origin requests are denied.'); return; }
+      if (request.headers.origin === 'null' || !upgradeOrigin(request)) {
+        refuseUpgrade(stream, 403, 'Cross-origin requests are denied.');
+        return;
+      }
       const role = url.searchParams.get('role');
-      if (role !== 'screen' && role !== 'pad') { refuseUpgrade(stream, 400, 'Open the pads socket as a screen or a pad.'); return; }
+      if (role !== 'screen' && role !== 'pad') {
+        refuseUpgrade(stream, 400, 'Open the pads socket as a screen or a pad.');
+        return;
+      }
       sockets.handleUpgrade(request, stream, head, (socket) => {
         // A message over maxPayload closes the socket with 1009 by itself; the error only reports it.
         socket.on('error', () => {});
@@ -129,7 +171,9 @@ export function padsSockets(pads: Pads, access: Access) {
  *  u16 length (LE), then a payload: 0 and a JSON control message, or 1, a gamepad's number and its pad state. */
 export async function padsService(pads: Pads, path: string) {
   // A socket left behind by an earlier run is taken over; anything else at the path is not.
-  try { if (lstatSync(path).isSocket()) unlinkSync(path); } catch (error) {
+  try {
+    if (lstatSync(path).isSocket()) unlinkSync(path);
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
   const connections = new Set<Socket>();
@@ -140,7 +184,10 @@ export async function padsService(pads: Pads, path: string) {
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(path, () => { server.off('error', reject); resolve(); });
+    server.listen(path, () => {
+      server.off('error', reject);
+      resolve();
+    });
   });
   chmodSync(path, 0o660);
   return {
@@ -154,23 +201,33 @@ export async function padsService(pads: Pads, path: string) {
 function serve(pads: Pads, connection: Socket) {
   const link: PadsLink = {
     text(message) {
-      if (connection.writableLength > BACKLOG) { connection.destroy(); return; }
+      if (connection.writableLength > BACKLOG) {
+        connection.destroy();
+        return;
+      }
       const payload = Buffer.from(JSON.stringify(message));
       const head = Buffer.alloc(3);
       head.writeUInt16LE(payload.length + 1, 0);
       connection.write(Buffer.concat([head, payload]));
     },
     binary() {},
-    close() { connection.destroy(); },
+    close() {
+      connection.destroy();
+    },
   };
   pads.attachService(link);
   let pending = Buffer.alloc(0);
   // A frame that isn't one ends the connection; the service connects again.
   const payload = (frame: Buffer) => {
-    if (frame[0] === 1 && frame.length >= 2 && frame.length <= 2 + MAX_PAD_FRAME) return pads.serviceInput(link, frame[1]!, frame.subarray(2));
+    if (frame[0] === 1 && frame.length >= 2 && frame.length <= 2 + MAX_PAD_FRAME)
+      return pads.serviceInput(link, frame[1]!, frame.subarray(2));
     if (frame[0] !== 0 || frame.length > 1 + SERVICE_MESSAGE) return false;
     let value: unknown;
-    try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(frame.subarray(1))); } catch { return false; }
+    try {
+      value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(frame.subarray(1)));
+    } catch {
+      return false;
+    }
     const message = padsServiceMessage.safeParse(value);
     if (message.success) pads.serviceMessage(link, message.data);
     return message.success;
@@ -181,11 +238,17 @@ function serve(pads: Pads, connection: Socket) {
     pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
     while (pending.length >= 2) {
       const length = pending.readUInt16LE(0);
-      if (length < 1 || length > 1 + SERVICE_MESSAGE) { connection.destroy(); return; }
+      if (length < 1 || length > 1 + SERVICE_MESSAGE) {
+        connection.destroy();
+        return;
+      }
       if (pending.length < 2 + length) return;
       const frame = pending.subarray(2, 2 + length);
       pending = pending.subarray(2 + length);
-      if (!payload(frame)) { connection.destroy(); return; }
+      if (!payload(frame)) {
+        connection.destroy();
+        return;
+      }
     }
   });
   connection.on('error', () => {});

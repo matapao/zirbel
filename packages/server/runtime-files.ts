@@ -37,8 +37,13 @@ export function prepareRuntime(runtime: ReadonlyMap<string, Buffer>) {
 
 // A file at a release's own address never changes there; one at a fixed address (the lobby's page) is checked against
 // its etag on each use, so a box that is updated hands every page the new one.
-export function sendImmutable(request: IncomingMessage, response: ServerResponse, type: string, entry: RuntimeEntry,
-  cache = IMMUTABLE) {
+export function sendImmutable(
+  request: IncomingMessage,
+  response: ServerResponse,
+  type: string,
+  entry: RuntimeEntry,
+  cache = IMMUTABLE,
+) {
   const headers = { 'content-type': type, 'cache-control': cache, etag: entry.etag, vary: 'accept-encoding' };
   if (request.headers['if-none-match'] === entry.etag) {
     response.writeHead(304, headers);
@@ -79,16 +84,28 @@ export function threeAddons(webRoot: string): Addons {
 /** The lobby's page and the files it loads (public/lobby.html, packages/web/lobby.ts), served on every player listener
  *  at / and beside it, the TV page's (public/tv.html, packages/web/tv.ts) at /tv, and the pad page's (public/pad.html,
  *  packages/web/pad.ts) at /pad. They are the host's own, not a release's. */
-const LOBBY_FILES = ['lobby.html', 'lobby.js', 'lobby.css', 'tv.html', 'tv.js', 'tv.css', 'pad.html', 'pad.js', 'pad.css'] as const;
+const LOBBY_FILES = [
+  'lobby.html',
+  'lobby.js',
+  'lobby.css',
+  'tv.html',
+  'tv.js',
+  'tv.css',
+  'pad.html',
+  'pad.js',
+  'pad.css',
+] as const;
 export type LobbyFiles = ReadonlyMap<string, RuntimeEntry>;
 export function lobbyFiles(webRoot: string): LobbyFiles {
-  return new Map(LOBBY_FILES.map((name) => {
-    let body;
-    try {
-      body = readFileSync(join(webRoot, name));
-    } catch {
-      throw new Error('The player runtime is missing ' + name + '; run `pnpm build`.');
-    }
-    return [name, runtimeEntry(name, body)];
-  }));
+  return new Map(
+    LOBBY_FILES.map((name) => {
+      let body;
+      try {
+        body = readFileSync(join(webRoot, name));
+      } catch {
+        throw new Error('The player runtime is missing ' + name + '; run `pnpm build`.');
+      }
+      return [name, runtimeEntry(name, body)];
+    }),
+  );
 }

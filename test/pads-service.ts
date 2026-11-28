@@ -6,10 +6,17 @@ import type { TestContext } from 'node:test';
 
 export type ServiceMessage = { type: string; [key: string]: unknown };
 
-export async function padsService(t: TestContext, path: string, answer: (message: ServiceMessage) => object | undefined = () => undefined) {
+export async function padsService(
+  t: TestContext,
+  path: string,
+  answer: (message: ServiceMessage) => object | undefined = () => undefined,
+) {
   const socket = connect(path);
   t.after(() => socket.destroy());
-  await new Promise<void>((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject); });
+  await new Promise<void>((resolve, reject) => {
+    socket.once('connect', resolve);
+    socket.once('error', reject);
+  });
   const heard: ServiceMessage[] = [];
   const frame = (payload: Buffer) => {
     const head = Buffer.alloc(2);
@@ -31,8 +38,11 @@ export async function padsService(t: TestContext, path: string, answer: (message
     }
   });
   return {
-    heard, json,
-    input(device: number, pad: Uint8Array) { frame(Buffer.concat([Buffer.from([1, device]), pad])); },
+    heard,
+    json,
+    input(device: number, pad: Uint8Array) {
+      frame(Buffer.concat([Buffer.from([1, device]), pad]));
+    },
     async close() {
       const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()));
       socket.end();

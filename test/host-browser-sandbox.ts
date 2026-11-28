@@ -18,7 +18,8 @@ import { encoded, hosts } from './host-browser-fixture.ts';
 // and an image all load from beside its document, and a request elsewhere is refused.
 const dot = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 const builtGame: Record<string, string> = {
-  'index.html': '<!doctype html><link rel="stylesheet" href="./style.css"><p id="out">waiting</p><script type="module" src="./assets/main.js"></script>',
+  'index.html':
+    '<!doctype html><link rel="stylesheet" href="./style.css"><p id="out">waiting</p><script type="module" src="./assets/main.js"></script>',
   'style.css': '#out { color: rgb(1, 2, 3); }',
   'assets/main.js': `import { word } from './word.js';
     const level = await (await fetch('./data/level.json')).json();
@@ -32,17 +33,36 @@ const builtGame: Record<string, string> = {
 
 // One player joins a one-player game on a host and gets the game's frame: a single document (html), or a built
 // folder (files, as text or base64).
-async function playAlone(t: TestContext, host: { command: string[] }, game: { html: string } | { files: Record<string, string> }) {
+async function playAlone(
+  t: TestContext,
+  host: { command: string[] },
+  game: { html: string } | { files: Record<string, string> },
+) {
   const root = tempDir(t, 'zirbel-host-game-');
   const projects = new Projects(join(root, 'source'));
-  const project = 'html' in game ? projects.createGame('Game', { html: game.html, maxPlayers: 1 })
-    : importGameFolder(projects, { title: 'Built', files: game.files });
+  const project =
+    'html' in game
+      ? projects.createGame('Game', { html: game.html, maxPlayers: 1 })
+      : importGameFolder(projects, { title: 'Built', files: game.files });
   const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
   const file = join(root, 'release.json');
   writeFileSync(file, JSON.stringify(release));
-  const link = await launch(t, host.command, ['--host-only', '--player-port', '0',
-    '--data', join(root, 'data'), '--import', file, '--release', release.manifest.releaseId],
-  (line) => typeof line.link === 'string' ? line.link : undefined).ready;
+  const link = await launch(
+    t,
+    host.command,
+    [
+      '--host-only',
+      '--player-port',
+      '0',
+      '--data',
+      join(root, 'data'),
+      '--import',
+      file,
+      '--release',
+      release.manifest.releaseId,
+    ],
+    (line) => (typeof line.link === 'string' ? line.link : undefined),
+  ).ready;
 
   const browser = await chromium.launch();
   t.after(() => browser.close());
@@ -67,7 +87,10 @@ for (const host of hosts) {
 // addon, compile WebAssembly, fetch a decoder the addons load at runtime (as DRACOLoader does) and run a worker. A
 // request to another origin, another loopback port among them, is refused before it leaves the browser.
 // (module (func (export "answer") (result i32) i32.const 42))
-const answer = [0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 127, 3, 2, 1, 0, 7, 10, 1, 6, 97, 110, 115, 119, 101, 114, 0, 0, 10, 6, 1, 4, 0, 65, 42, 11];
+const answer = [
+  0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 127, 3, 2, 1, 0, 7, 10, 1, 6, 97, 110, 115, 119, 101, 114, 0, 0, 10,
+  6, 1, 4, 0, 65, 42, 11,
+];
 function capabilities(model: string, elsewhere: string[], extra = 'undefined') {
   return `import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     const out = document.getElementById('out');
@@ -85,31 +108,54 @@ function capabilities(model: string, elsewhere: string[], extra = 'undefined') {
 }
 
 for (const host of hosts) {
-  test(host.name + ' host: every game loads three.js addons, WebAssembly and workers, and reaches no other origin', async (t) => {
-    // Another server on loopback, which would answer any origin.
-    let requests = 0;
-    const other = createServer((_request, response) => { requests++; response.writeHead(200, { 'access-control-allow-origin': '*' }).end('reached'); });
-    other.listen(0, '127.0.0.1');
-    await once(other, 'listening');
-    t.after(() => other.close());
-    const { port } = other.address() as AddressInfo;
-    const elsewhere = ['http://127.0.0.1:' + port + '/', 'http://localhost:' + port + '/'];
-    const glb = triangleGlb();
+  test(
+    host.name + ' host: every game loads three.js addons, WebAssembly and workers, and reaches no other origin',
+    async (t) => {
+      // Another server on loopback, which would answer any origin.
+      let requests = 0;
+      const other = createServer((_request, response) => {
+        requests++;
+        response.writeHead(200, { 'access-control-allow-origin': '*' }).end('reached');
+      });
+      other.listen(0, '127.0.0.1');
+      await once(other, 'listening');
+      t.after(() => other.close());
+      const { port } = other.address() as AddressInfo;
+      const elsewhere = ['http://127.0.0.1:' + port + '/', 'http://localhost:' + port + '/'];
+      const glb = triangleGlb();
 
-    const single = await playAlone(t, host, { html: '<!doctype html><p id="out">waiting</p><script type="module">' +
-      capabilities('data:model/gltf-binary;base64,' + glb.toString('base64'), elsewhere) + '</script>' });
-    const built = await playAlone(t, host, { files: { ...encoded({
-      'index.html': '<!doctype html><p id="out">waiting</p><script type="module" src="./assets/main.js"></script>',
-      // A game's own TypeScript is text, so importing it as a module fails.
-      'assets/main.js': capabilities('./models/tri.glb', elsewhere, "import('../src/main.ts').then(() => 'ran', () => 'unrun')"),
-      'src/main.ts': 'export const speed: number = 2;',
-    }), 'models/tri.glb': glb.toString('base64') } });
-    for (const [game, expected] of [[single, 'Mesh 42 decoder 42 refused refused'], [built, 'Mesh 42 decoder 42 refused refused unrun']] as const) {
-      const out = game.frame.locator('#out');
-      await out.filter({ hasNotText: 'waiting' }).waitFor({ timeout: 15_000 });
-      assert.equal(await out.textContent(), expected);
-      assert.deepEqual(game.failures, []);
-    }
-    assert.equal(requests, 0);
-  });
+      const single = await playAlone(t, host, {
+        html:
+          '<!doctype html><p id="out">waiting</p><script type="module">' +
+          capabilities('data:model/gltf-binary;base64,' + glb.toString('base64'), elsewhere) +
+          '</script>',
+      });
+      const built = await playAlone(t, host, {
+        files: {
+          ...encoded({
+            'index.html':
+              '<!doctype html><p id="out">waiting</p><script type="module" src="./assets/main.js"></script>',
+            // A game's own TypeScript is text, so importing it as a module fails.
+            'assets/main.js': capabilities(
+              './models/tri.glb',
+              elsewhere,
+              "import('../src/main.ts').then(() => 'ran', () => 'unrun')",
+            ),
+            'src/main.ts': 'export const speed: number = 2;',
+          }),
+          'models/tri.glb': glb.toString('base64'),
+        },
+      });
+      for (const [game, expected] of [
+        [single, 'Mesh 42 decoder 42 refused refused'],
+        [built, 'Mesh 42 decoder 42 refused refused unrun'],
+      ] as const) {
+        const out = game.frame.locator('#out');
+        await out.filter({ hasNotText: 'waiting' }).waitFor({ timeout: 15_000 });
+        assert.equal(await out.textContent(), expected);
+        assert.deepEqual(game.failures, []);
+      }
+      assert.equal(requests, 0);
+    },
+  );
 }

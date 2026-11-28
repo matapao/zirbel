@@ -11,7 +11,9 @@ export function authorOf(access: Access): Ident {
 }
 
 /** An agent with a project grant, over MCP or git. */
-export const grantAuthor = (grant: string) => ident('MCP grant ' + grant.slice(0, 8), 'grant.' + grant + '@zirbel.invalid');
+export const grantAuthor = (grant: string) =>
+  ident('MCP grant ' + grant.slice(0, 8), 'grant.' + grant + '@zirbel.invalid');
 
 /** One of the editor's harnesses, in a turn. */
-export const harnessAuthor = (processor: string, name: string) => ident(name, 'harness.' + processor + '@zirbel.invalid');
+export const harnessAuthor = (processor: string, name: string) =>
+  ident(name, 'harness.' + processor + '@zirbel.invalid');

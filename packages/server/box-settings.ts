@@ -14,7 +14,11 @@ import { privateDirectory } from './account.ts';
 import type { ProcessorRun, Processors } from './processors.ts';
 
 const settings = z.strictObject({
-  version: z.literal(1), harnesses: z.boolean(), externalMcp: z.boolean(), onboarded: z.boolean(), setupRequested: z.boolean(),
+  version: z.literal(1),
+  harnesses: z.boolean(),
+  externalMcp: z.boolean(),
+  onboarded: z.boolean(),
+  setupRequested: z.boolean(),
   // Settings written before the box could make its own Wi-Fi have none: it is off.
   ownNetwork: z.boolean().default(false),
   // Nor, before its TV console, a tv switch: it is as on a new box.
@@ -23,8 +27,11 @@ const settings = z.strictObject({
 export type BoxSwitches = Required<z.infer<typeof settings>>;
 /** What a paired device or the box itself may change. */
 export const settingsChange = z.strictObject({
-  harnesses: z.boolean().optional(), externalMcp: z.boolean().optional(), onboarded: z.boolean().optional(),
-  ownNetwork: z.boolean().optional(), tv: z.boolean().optional(),
+  harnesses: z.boolean().optional(),
+  externalMcp: z.boolean().optional(),
+  onboarded: z.boolean().optional(),
+  ownNetwork: z.boolean().optional(),
+  tv: z.boolean().optional(),
 });
 
 /** What the box is, as it starts: harnesses runs only where Claude Code and Codex are made for the system, 64-bit ARM
@@ -37,16 +44,22 @@ const tvByDefault = (capabilities: Capabilities) => capabilities.arch === 'arm64
 
 export function boxCapabilities(): Capabilities {
   let model: string | undefined;
-  try { model = readFileSync('/proc/device-tree/model', 'utf8').replace(/\0/g, '').trim().slice(0, 120) || undefined; }
-  catch { /* Not a single-board computer, or not Linux. */ }
+  try {
+    model = readFileSync('/proc/device-tree/model', 'utf8').replace(/\0/g, '').trim().slice(0, 120) || undefined;
+  } catch {
+    /* Not a single-board computer, or not Linux. */
+  }
   const harnesses = ['linux', 'darwin', 'win32'].includes(process.platform) && ['arm64', 'x64'].includes(process.arch);
   return { arch: process.arch, memoryMB: Math.round(totalmem() / 1048576), ...(model ? { model } : {}), harnesses };
 }
 
 /** Why harnesses can't be turned on here, in plain words, or nothing when they can. */
 export function harnessesUnavailable(capabilities: Capabilities) {
-  return capabilities.harnesses ? undefined : 'Claude Code and Codex aren’t made for this box’s ' +
-    capabilities.arch + ' system. Use your own agent over MCP instead.';
+  return capabilities.harnesses
+    ? undefined
+    : 'Claude Code and Codex aren’t made for this box’s ' +
+        capabilities.arch +
+        ' system. Use your own agent over MCP instead.';
 }
 
 export class BoxSettings {
@@ -57,19 +70,32 @@ export class BoxSettings {
   constructor(folder: string, capabilities: Capabilities) {
     privateDirectory(folder);
     this.file = join(folder, 'settings.json');
-    this.defaults = { version: 1, harnesses: capabilities.harnesses && capabilities.memoryMB >= ROOMY_MB,
-      externalMcp: false, onboarded: false, setupRequested: false, ownNetwork: false, tv: tvByDefault(capabilities) };
+    this.defaults = {
+      version: 1,
+      harnesses: capabilities.harnesses && capabilities.memoryMB >= ROOMY_MB,
+      externalMcp: false,
+      onboarded: false,
+      setupRequested: false,
+      ownNetwork: false,
+      tv: tvByDefault(capabilities),
+    };
   }
 
   read(): BoxSwitches {
     if (this.cached) return this.cached;
     let text: string;
-    try { text = readFileSync(this.file, 'utf8'); } catch (error) {
+    try {
+      text = readFileSync(this.file, 'utf8');
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return (this.cached = this.defaults);
       throw error;
     }
     let read;
-    try { read = settings.parse(JSON.parse(text)); } catch { throw new ZirbelError(500, 'The box settings could not be read.'); }
+    try {
+      read = settings.parse(JSON.parse(text));
+    } catch {
+      throw new ZirbelError(500, 'The box settings could not be read.');
+    }
     return (this.cached = { ...read, tv: read.tv ?? this.defaults.tv });
   }
 
@@ -107,8 +133,12 @@ export class BoxHarnesses implements Processors {
     await inner?.close?.();
   }
 
-  async list() { return this.on() ? this.get().list() : []; }
-  async start(id: string, prompt: string, run?: ProcessorRun) { return this.get().start(id, prompt, run); }
+  async list() {
+    return this.on() ? this.get().list() : [];
+  }
+  async start(id: string, prompt: string, run?: ProcessorRun) {
+    return this.get().start(id, prompt, run);
+  }
 
   async settings(id: string, model?: string, signal?: AbortSignal): Promise<ModelSettings> {
     const inner = this.get();
@@ -139,5 +169,7 @@ export class BoxHarnesses implements Processors {
     if (this.on()) await this.get().removeSession?.(id, session);
   }
 
-  async close() { await this.inner?.close?.(); }
+  async close() {
+    await this.inner?.close?.();
+  }
 }

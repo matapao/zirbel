@@ -97,11 +97,13 @@ class Credentials(unittest.TestCase):
         self.assertEqual(os.listdir(self.folder.name), ["own-network.json"], "nothing half-written is left")
 
     def test_a_kept_file_a_network_cannot_take_is_made_again(self):
-        for kept in ({"version": 1, "name": "Zirbel", "password": "short"},
-                     {"version": 1, "name": "x" * 33, "password": "long enough"},
-                     {"version": 1, "name": "Zirbel", "password": "naïve-password"},
-                     {"version": 2, "name": "Zirbel", "password": "long enough"},
-                     {"version": 1, "name": "Zirbel", "password": "long enough", "extra": True}):
+        for kept in (
+            {"version": 1, "name": "Zirbel", "password": "short"},
+            {"version": 1, "name": "x" * 33, "password": "long enough"},
+            {"version": 1, "name": "Zirbel", "password": "naïve-password"},
+            {"version": 2, "name": "Zirbel", "password": "long enough"},
+            {"version": 1, "name": "Zirbel", "password": "long enough", "extra": True},
+        ):
             self.state.write_text(json.dumps(kept))
             self.assertIsNone(own_network.read(self.state), kept)
             self.assertNotEqual(own_network.credentials("3F2A", self.state).password, kept["password"])
@@ -166,15 +168,19 @@ class AccessPoint(unittest.TestCase):
         values = self.network.own_network_settings("Zirbel 3F2A", "abcd-efgh-jkmn")
         connection, wifi = values["connection"], values["802-11-wireless"]
         security, ipv4 = values["802-11-wireless-security"], values["ipv4"]
-        self.assertEqual((connection["id"], connection["type"], connection["autoconnect"]),
-                         ("zirbel-network", "802-11-wireless", True))
+        self.assertEqual(
+            (connection["id"], connection["type"], connection["autoconnect"]),
+            ("zirbel-network", "802-11-wireless", True),
+        )
         self.assertGreaterEqual(connection["autoconnect-priority"], 100)
         self.assertEqual(type(connection["autoconnect-priority"]).__name__, "Int32")
         self.assertEqual((bytes(wifi["ssid"]), wifi["mode"], wifi["band"]), (b"Zirbel 3F2A", "ap", "bg"))
         self.assertEqual(type(wifi["ssid"]).__name__, "ByteArray")
         self.assertEqual((security["key-mgmt"], security["psk"]), ("wpa-psk", "abcd-efgh-jkmn"))
-        self.assertEqual((list(security["proto"]), list(security["pairwise"]), list(security["group"])),
-                         (["rsn"], ["ccmp"], ["ccmp"]))
+        self.assertEqual(
+            (list(security["proto"]), list(security["pairwise"]), list(security["group"])),
+            (["rsn"], ["ccmp"], ["ccmp"]),
+        )
         self.assertEqual((security["pmf"], type(security["pmf"]).__name__), (1, "Int32"))  # off, for older phones
         self.assertEqual(ipv4["method"], "shared")
         self.assertEqual([(item["address"], item["prefix"]) for item in ipv4["address-data"]], [("10.42.0.1", 24)])
@@ -195,8 +201,10 @@ class AccessPoint(unittest.TestCase):
                 self.network.wildcard_dns(False)
                 self.assertFalse(dns.exists())
                 self.network.wildcard_dns(False)  # gone already
-            with mock.patch.object(self.network, "DNS_FILE", Path(folder) / "none" / "zirbel-setup.conf"), \
-                    mock.patch("sys.stdout", new_callable=io.StringIO) as said:
+            with (
+                mock.patch.object(self.network, "DNS_FILE", Path(folder) / "none" / "zirbel-setup.conf"),
+                mock.patch("sys.stdout", new_callable=io.StringIO) as said,
+            ):
                 self.network.wildcard_dns(True)  # said, and the hotspot goes on without it
             self.assertIn("The setup hotspot's DNS could not be set", said.getvalue())
 

@@ -21,7 +21,11 @@ const joinCode = byId<HTMLInputElement>('join-code');
 const NAME_KEY = 'zirbel-lobby-name';
 const REFRESH_MS = 5000;
 
-try { nameField.value = localStorage.getItem(NAME_KEY) ?? ''; } catch { /* the name is typed again */ }
+try {
+  nameField.value = localStorage.getItem(NAME_KEY) ?? '';
+} catch {
+  /* the name is typed again */
+}
 // A session's QR code opens the lobby with its code: whoever scanned it types a name and joins.
 const invited = new URLSearchParams(location.search).get('code')?.trim().slice(0, joinCode.maxLength);
 if (invited) {
@@ -29,7 +33,11 @@ if (invited) {
   nameField.focus();
 }
 nameField.addEventListener('change', () => {
-  try { localStorage.setItem(NAME_KEY, nameField.value.trim()); } catch { /* kept for this page only */ }
+  try {
+    localStorage.setItem(NAME_KEY, nameField.value.trim());
+  } catch {
+    /* kept for this page only */
+  }
 });
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string) {
@@ -40,10 +48,13 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, classN
 }
 
 async function call<T>(path: string, value?: object): Promise<T> {
-  const response = await fetch('/lobby/' + path, value
-    ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value) } : {});
-  const result = await response.json().catch(() => ({})) as { error?: unknown };
-  if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : 'The lobby could not do that. Try again.');
+  const response = await fetch(
+    '/lobby/' + path,
+    value ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value) } : {},
+  );
+  const result = (await response.json().catch(() => ({}))) as { error?: unknown };
+  if (!response.ok)
+    throw new Error(typeof result.error === 'string' ? result.error : 'The lobby could not do that. Try again.');
   return result as T;
 }
 
@@ -53,11 +64,15 @@ function playerName() {
     nameField.focus();
     throw new Error('Enter your name first.');
   }
-  try { localStorage.setItem(NAME_KEY, name); } catch { /* kept for this page only */ }
+  try {
+    localStorage.setItem(NAME_KEY, name);
+  } catch {
+    /* kept for this page only */
+  }
   return name;
 }
 
-const seats = (game: Game) => game.players.max === 1 ? '1 player' : 'Up to ' + game.players.max + ' players';
+const seats = (game: Game) => (game.players.max === 1 ? '1 player' : 'Up to ' + game.players.max + ' players');
 
 function ago(when: string) {
   const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(when)) / 60_000));
@@ -69,38 +84,50 @@ function ago(when: string) {
 async function attempt(button: HTMLButtonElement, work: () => Promise<void>) {
   error.textContent = '';
   button.disabled = true;
-  try { await work(); } catch (reason) { error.textContent = (reason as Error).message; }
-  finally { button.disabled = false; }
+  try {
+    await work();
+  } catch (reason) {
+    error.textContent = (reason as Error).message;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function render(state: State) {
   const games = byId('games');
-  games.replaceChildren(...state.games.map((game) => {
-    const item = el('li');
-    const about = el('div');
-    about.append(el('strong', game.title), el('small', seats(game)));
-    const button = el('button', game.multiplayer ? 'Start session' : 'Play', 'primary');
-    button.type = 'button';
-    button.setAttribute('aria-label', (game.multiplayer ? 'Start session of ' : 'Play ') + game.title);
-    button.addEventListener('click', () => void attempt(button, () => start(game)));
-    item.append(about, button);
-    return item;
-  }));
+  games.replaceChildren(
+    ...state.games.map((game) => {
+      const item = el('li');
+      const about = el('div');
+      about.append(el('strong', game.title), el('small', seats(game)));
+      const button = el('button', game.multiplayer ? 'Start session' : 'Play', 'primary');
+      button.type = 'button';
+      button.setAttribute('aria-label', (game.multiplayer ? 'Start session of ' : 'Play ') + game.title);
+      button.addEventListener('click', () => void attempt(button, () => start(game)));
+      item.append(about, button);
+      return item;
+    }),
+  );
   byId('no-games').hidden = state.games.length > 0;
   byId('no-spaces').hidden = state.spaces;
   const sessions = byId('sessions');
-  sessions.replaceChildren(...state.sessions.map((session) => {
-    const item = el('li');
-    item.dataset.session = session.id;
-    const about = el('div');
-    about.append(el('strong', session.title), el('small', ago(session.started)));
-    const count = el('span', session.players + ' / ' + session.max, 'count');
-    count.setAttribute('aria-label', session.players + ' of ' + session.max + ' players');
-    item.append(about, count);
-    return item;
-  }));
+  sessions.replaceChildren(
+    ...state.sessions.map((session) => {
+      const item = el('li');
+      item.dataset.session = session.id;
+      const about = el('div');
+      about.append(el('strong', session.title), el('small', ago(session.started)));
+      const count = el('span', session.players + ' / ' + session.max, 'count');
+      count.setAttribute('aria-label', session.players + ' of ' + session.max + ' players');
+      item.append(about, count);
+      return item;
+    }),
+  );
   byId('no-sessions').hidden = state.sessions.length > 0;
-  for (const [id, address] of [['pair', state.pair], ['edit', state.edit]] as const) {
+  for (const [id, address] of [
+    ['pair', state.pair],
+    ['edit', state.edit],
+  ] as const) {
     const anchor = byId<HTMLAnchorElement>(id);
     anchor.hidden = !address;
     if (address) anchor.href = address;
@@ -108,7 +135,11 @@ function render(state: State) {
 }
 
 async function refresh() {
-  try { render(await call<State>('state')); } catch (reason) { error.textContent = (reason as Error).message; }
+  try {
+    render(await call<State>('state'));
+  } catch (reason) {
+    error.textContent = (reason as Error).message;
+  }
 }
 
 /** An address of this lobby: its QR code in frame, and the link itself in anchor. */
@@ -120,9 +151,15 @@ async function showAddress(address: string, frame: string, anchor: string, alt: 
 }
 
 async function start(game: Game) {
-  const { code, link } = await call<{ code: string | null; link: string }>('sessions', { release: game.release, name: playerName() });
+  const { code, link } = await call<{ code: string | null; link: string }>('sessions', {
+    release: game.release,
+    name: playerName(),
+  });
   const target = playerLink(link, location.href);
-  if (!code) { location.assign(target); return; }
+  if (!code) {
+    location.assign(target);
+    return;
+  }
   byId('code').textContent = code;
   byId('code').setAttribute('aria-label', 'Code ' + code.split('').join(' '));
   byId<HTMLAnchorElement>('go-in').href = target;
@@ -131,8 +168,12 @@ async function start(game: Game) {
   started.hidden = false;
   byId('go-in').focus();
   // The code is enough to join by, should its QR code fail.
-  await showAddress(location.origin + '/?code=' + encodeURIComponent(code), 'session-qr', 'session-link',
-    'QR code that joins this session');
+  await showAddress(
+    location.origin + '/?code=' + encodeURIComponent(code),
+    'session-qr',
+    'session-link',
+    'QR code that joins this session',
+  );
 }
 
 byId('back').addEventListener('click', () => {
@@ -143,13 +184,17 @@ byId('back').addEventListener('click', () => {
 
 // Inviting others to the lobby: its own address, as a QR code to scan.
 const inviteToggle = byId<HTMLButtonElement>('invite-toggle');
-inviteToggle.addEventListener('click', () => void attempt(inviteToggle, async () => {
-  const invite = byId('invite');
-  if (invite.hidden && !byId('lobby-qr').firstChild)
-    await showAddress(location.origin + '/', 'lobby-qr', 'lobby-link', 'QR code that opens this lobby');
-  invite.hidden = !invite.hidden;
-  inviteToggle.setAttribute('aria-expanded', String(!invite.hidden));
-}));
+inviteToggle.addEventListener(
+  'click',
+  () =>
+    void attempt(inviteToggle, async () => {
+      const invite = byId('invite');
+      if (invite.hidden && !byId('lobby-qr').firstChild)
+        await showAddress(location.origin + '/', 'lobby-qr', 'lobby-link', 'QR code that opens this lobby');
+      invite.hidden = !invite.hidden;
+      inviteToggle.setAttribute('aria-expanded', String(!invite.hidden));
+    }),
+);
 
 const joinForm = byId<HTMLFormElement>('join-form');
 joinForm.addEventListener('submit', (event) => {
@@ -167,10 +212,19 @@ joinForm.addEventListener('submit', (event) => {
 const named = location.pathname === '/join' ? new URLSearchParams(location.hash.slice(1)).get('skalet.space') : null;
 if (named && /^[0-9a-f]{12}$/.test(named)) {
   home.hidden = true;
-  void call<{ room: string }>('spaces/' + named).then(({ room }) => location.replace('/join/' + room + location.search + location.hash),
-    (reason: unknown) => { home.hidden = false; error.textContent = (reason as Error).message; });
+  void call<{ room: string }>('spaces/' + named).then(
+    ({ room }) => location.replace('/join/' + room + location.search + location.hash),
+    (reason: unknown) => {
+      home.hidden = false;
+      error.textContent = (reason as Error).message;
+    },
+  );
 }
 
-setInterval(() => { if (document.visibilityState === 'visible' && started.hidden) void refresh(); }, REFRESH_MS);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void refresh(); });
+setInterval(() => {
+  if (document.visibilityState === 'visible' && started.hidden) void refresh();
+}, REFRESH_MS);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') void refresh();
+});
 void refresh();

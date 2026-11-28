@@ -17,7 +17,10 @@ test('a full host closes the oldest unwatched solo playtest instead of refusing'
   const shared = rooms.create(release, false);
   assert.throws(() => rooms.get(solo[0]!.id), /does not exist/);
   assert.equal(rooms.get(solo[1]!.id), solo[1]);
-  assert.deepEqual(rooms.list().map(({ id }) => id), [shared.id]);
+  assert.deepEqual(
+    rooms.list().map(({ id }) => id),
+    [shared.id],
+  );
 });
 
 test('a development room pins the revision and admits only invited guests', (t) => {
@@ -44,8 +47,12 @@ test('a development room pins the revision and admits only invited guests', (t) 
   assert.equal(restored.id, player.id);
   assert.equal(restored.welcome.ack, 1);
 
-  const draft = projects.submit(project.id, { branch: 'main', baseRevision: initial.id, label: 'Edit while hosting',
-    operations: [{ op: 'update', id: 'campfire', changes: { color: '#fafafa' } }] });
+  const draft = projects.submit(project.id, {
+    branch: 'main',
+    baseRevision: initial.id,
+    label: 'Edit while hosting',
+    operations: [{ op: 'update', id: 'campfire', changes: { color: '#fafafa' } }],
+  });
   projects.commit(project.id, draft.proposal.id);
   assert.equal(room.release.manifest.sourceRevision, initial.id);
   assert.notEqual(room.release.manifest.sourceRevision, head(projects.read(project.id), 'main').id);
@@ -65,7 +72,9 @@ test('two independent stores run the same release and enforce the turn-based rul
   broken.files['player.js'] = Buffer.from('unverified file').toString('base64');
   assert.throws(() => b.releases.import(broken), /requires a verified build/);
   const hosts = [new Rooms(), new Rooms()];
-  t.after(() => { for (const host of hosts) host.dispose(); });
+  t.after(() => {
+    for (const host of hosts) host.dispose();
+  });
   const [left, right] = [hosts[0]!.create(original, false), hosts[1]!.create(imported, false)];
   for (const room of [left, right]) {
     const alice = joinRoom(room, room.reserve(room.invite, 'Alice', 'player'));
@@ -117,11 +126,19 @@ test('game documents carry an HTTP sandbox and only the room-scoped game SDK', a
   const { projects, releases } = install(t);
   const game = { html: '<main>original source</main>', maxPlayers: 1 };
   const p = projects.createGame('Independent game', game);
-  const page = gamePage(releases.package(p.id, 'main', rights, false), 'http://localhost:4000/runtime/test/', "'self'", 'http://localhost:4000/game/test/key/');
+  const page = gamePage(
+    releases.package(p.id, 'main', rights, false),
+    'http://localhost:4000/runtime/test/',
+    "'self'",
+    'http://localhost:4000/game/test/key/',
+  );
   assert.match(page.policy, /sandbox allow-scripts allow-pointer-lock;/);
   // WebAssembly compiles ('wasm-unsafe-eval'); strings never run as code.
   assert.doesNotMatch(page.policy, /allow-same-origin|'unsafe-eval'/);
-  assert.match(page.policy, /connect-src http:\/\/localhost:4000\/game\/test\/key\/ http:\/\/localhost:4000\/runtime\/test\/three\/addons\/ data: blob:;/);
+  assert.match(
+    page.policy,
+    /connect-src http:\/\/localhost:4000\/game\/test\/key\/ http:\/\/localhost:4000\/runtime\/test\/three\/addons\/ data: blob:;/,
+  );
   assert.match(page.html, /runtime\/test\/three\.module\.js/);
   assert.ok(page.html.endsWith(game.html));
 });
@@ -131,7 +148,9 @@ test('a release to import is checked and read through one handle: only a file un
   const { PORTABLE_FILE_LIMIT } = await import('../packages/sdk/contracts.ts');
   const { root } = install(t);
   const imported: unknown[] = [];
-  const releases = { import: (release: unknown) => imported.push(release) } as unknown as Parameters<typeof importReleases>[0];
+  const releases = { import: (release: unknown) => imported.push(release) } as unknown as Parameters<
+    typeof importReleases
+  >[0];
   const file = join(root, 'release.json');
   writeFileSync(file, '{"manifest":{}}');
   importReleases(releases, [file]);
@@ -216,14 +235,20 @@ test('the player gzips and caches runtime files, and the headless host starts wi
   }
   assert.equal(response.headers.get('content-type'), 'application/wasm');
   assert.equal(response.headers.get('access-control-allow-origin'), '*');
-  assert.deepEqual(Buffer.from(await response.arrayBuffer()), readFileSync('dist/web/three/examples/jsm/libs/draco/draco_decoder.wasm'));
+  assert.deepEqual(
+    Buffer.from(await response.arrayBuffer()),
+    readFileSync('dist/web/three/examples/jsm/libs/draco/draco_decoder.wasm'),
+  );
   for (const name of ['libs/draco/README.md', 'libs', 'nothing.js'])
     assert.equal((await fetch(url.replace('three.module.js', 'three/addons/' + name))).status, 404, name);
   const { threeAddons } = await import('../packages/server/runtime-files.ts');
   assert.throws(() => threeAddons(root), /missing three/);
 
-  const host = spawn(process.execPath, ['dist/server.mjs', '--host-only', '--data', join(root, 'host'), '--player-port', '0'],
-    { stdio: ['ignore', 'pipe', 'inherit'] });
+  const host = spawn(
+    process.execPath,
+    ['dist/server.mjs', '--host-only', '--data', join(root, 'host'), '--player-port', '0'],
+    { stdio: ['ignore', 'pipe', 'inherit'] },
+  );
   t.after(() => host.kill());
   const started = await new Promise<{ editor: null; player: string }>((resolve, reject) => {
     let output = '';
@@ -240,8 +265,10 @@ test('the player gzips and caches runtime files, and the headless host starts wi
 
 test('the player runtime in releases contains no editor code', () => {
   // Every runtime chunk must be reachable from the player entry points.
-  const imports = (file: string) => [...readFileSync(join('dist/web', file), 'utf8').matchAll(/["'](?:\.\/)?(chunks\/[\w.-]+\.js|[\w-]+\.js)["']/g)]
-    .map((match) => match[1]!.startsWith('chunks/') ? match[1]! : 'chunks/' + match[1]!);
+  const imports = (file: string) =>
+    [
+      ...readFileSync(join('dist/web', file), 'utf8').matchAll(/["'](?:\.\/)?(chunks\/[\w.-]+\.js|[\w-]+\.js)["']/g),
+    ].map((match) => (match[1]!.startsWith('chunks/') ? match[1]! : 'chunks/' + match[1]!));
   const reached = new Set<string>();
   const visit = (file: string) => {
     for (const chunk of imports(file)) {
@@ -252,6 +279,11 @@ test('the player runtime in releases contains no editor code', () => {
   };
   visit('player.js');
   visit('garden-3d.js');
-  const shipped = readdirSync('dist/web/chunks').filter((file) => file.endsWith('.js')).map((file) => 'chunks/' + file);
-  assert.deepEqual(shipped.filter((chunk) => !reached.has(chunk)), []);
+  const shipped = readdirSync('dist/web/chunks')
+    .filter((file) => file.endsWith('.js'))
+    .map((file) => 'chunks/' + file);
+  assert.deepEqual(
+    shipped.filter((chunk) => !reached.has(chunk)),
+    [],
+  );
 });

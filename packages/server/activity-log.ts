@@ -48,7 +48,13 @@ export class ActivityStore {
       this.save(projectId, noteId, log);
     };
     const timer = setInterval(flush, FLUSH_INTERVAL).unref();
-    return { flush, close() { clearInterval(timer); flush(); } };
+    return {
+      flush,
+      close() {
+        clearInterval(timer);
+        flush();
+      },
+    };
   }
 
   read(projectId: string, noteId: string) {

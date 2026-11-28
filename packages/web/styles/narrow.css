@@ -1,7 +1,17 @@
 /* Narrow windows, a phone's among them: a tighter top bar and desk. */
-@media(max-width:680px){
-  .topbar{padding:.4rem .5rem;gap:.3rem}
-  .topbar-end button{padding:.35rem .45rem;font-size:.85rem}
-  .switcher{max-width:40vw}
-  #desk{padding:0 .3rem .3rem}
+@media (max-width: 680px) {
+  .topbar {
+    padding: 0.4rem 0.5rem;
+    gap: 0.3rem;
+  }
+  .topbar-end button {
+    padding: 0.35rem 0.45rem;
+    font-size: 0.85rem;
+  }
+  .switcher {
+    max-width: 40vw;
+  }
+  #desk {
+    padding: 0 0.3rem 0.3rem;
+  }
 }

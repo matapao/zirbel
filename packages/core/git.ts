@@ -20,7 +20,10 @@ export const OWNER: Ident = { name: 'Owner', email: 'owner@zirbel.invalid' };
 /** A name as an ident takes it: no angle brackets, control characters or surrounding space, at most 120 code points. */
 export function identName(name: string, fallback = 'Unknown') {
   // oxlint-disable-next-line no-control-regex -- control characters are what a name in a commit loses
-  const plain = Array.from(name.replace(/[<>\u0000-\u001f\u007f]/g, '').trim()).slice(0, 120).join('').trim();
+  const plain = Array.from(name.replace(/[<>\u0000-\u001f\u007f]/g, '').trim())
+    .slice(0, 120)
+    .join('')
+    .trim();
   return plain || fallback;
 }
 export const ident = (name: string, email: string): Ident => ({ name: identName(name), email });
@@ -32,16 +35,30 @@ export function gitEnvironment(extra: Record<string, string> = {}): Record<strin
     const value = process.env[key];
     if (value) kept[key] = value;
   }
-  return { ...kept, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: devNull, GIT_TERMINAL_PROMPT: '0',
-    GIT_NO_REPLACE_OBJECTS: '1', LC_ALL: 'C', ...extra };
+  return {
+    ...kept,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_NO_REPLACE_OBJECTS: '1',
+    LC_ALL: 'C',
+    ...extra,
+  };
 }
 
 /** Runs git on a repository and waits: its output, or a 500 with git's own words in the log. allow: exit codes that
  *  are answers (1 for "no"), not failures. */
-export function git(repo: string, args: string[], options: { input?: Buffer | string; allow?: number[];
-  env?: Record<string, string> | undefined } = {}) {
-  const result = spawnSync('git', ['--git-dir=' + repo, ...args], { input: options.input, env: options.env ?? gitEnvironment(),
-    maxBuffer: 1 << 30, windowsHide: true });
+export function git(
+  repo: string,
+  args: string[],
+  options: { input?: Buffer | string; allow?: number[]; env?: Record<string, string> | undefined } = {},
+) {
+  const result = spawnSync('git', ['--git-dir=' + repo, ...args], {
+    input: options.input,
+    env: options.env ?? gitEnvironment(),
+    maxBuffer: 1 << 30,
+    windowsHide: true,
+  });
   if (result.error) throw new Error('git could not run: ' + result.error.message);
   const status = result.status ?? -1;
   if (status !== 0 && !options.allow?.includes(status))
@@ -61,17 +78,31 @@ export function requireGit() {
   const version = gitVersion();
   const [major, minor] = GIT_MINIMUM;
   if (version && (version.major > major || (version.major === major && version.minor >= minor))) return;
-  throw new Error('Zirbel needs git ' + major + '.' + minor + ' or later to keep its games\' history (found ' +
-    (version?.text ?? 'no git') + '). Install git and start Zirbel again.');
+  throw new Error(
+    'Zirbel needs git ' +
+      major +
+      '.' +
+      minor +
+      " or later to keep its games' history (found " +
+      (version?.text ?? 'no git') +
+      '). Install git and start Zirbel again.',
+  );
 }
 
 /** A blob's id, as git names it: SHA-1 of its header and bytes. */
-export const blobId = (bytes: Buffer) => createHash('sha1').update('blob ' + bytes.length + '\0').update(bytes).digest('hex');
+export const blobId = (bytes: Buffer) =>
+  createHash('sha1')
+    .update('blob ' + bytes.length + '\0')
+    .update(bytes)
+    .digest('hex');
 
 /** A new bare repository whose HEAD is main, its objects named by SHA-1 whatever git's default is. */
 export function initRepository(repo: string) {
   rmSync(repo, { recursive: true, force: true });
-  const result = spawnSync('git', ['init', '--bare', '--quiet', '--object-format=sha1', repo], { env: gitEnvironment(), windowsHide: true });
+  const result = spawnSync('git', ['init', '--bare', '--quiet', '--object-format=sha1', repo], {
+    env: gitEnvironment(),
+    windowsHide: true,
+  });
   if (result.status !== 0) throw new Error('git init failed: ' + result.stderr.toString('utf8').trim());
   git(repo, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
 }
@@ -82,11 +113,14 @@ export function readBranches(repo: string): Record<string, string> {
   const name = /^[a-z0-9][a-z0-9_-]{0,79}$/;
   const branches: Record<string, string> = {};
   if (existsSync(join(repo, 'reftable'))) {
-    const listed = git(repo, ['for-each-ref', '--format=%(objectname) %(refname)', 'refs/heads/']).stdout.toString('utf8');
+    const listed = git(repo, ['for-each-ref', '--format=%(objectname) %(refname)', 'refs/heads/']).stdout.toString(
+      'utf8',
+    );
     for (const line of listed.split('\n')) {
       const [oid, ref] = line.split(' ');
       const branch = ref?.slice('refs/heads/'.length);
-      if (oid && branch && ref?.startsWith('refs/heads/') && name.test(branch) && isCommitId(oid)) branches[branch] = oid;
+      if (oid && branch && ref?.startsWith('refs/heads/') && name.test(branch) && isCommitId(oid))
+        branches[branch] = oid;
     }
     return branches;
   }
@@ -95,13 +129,23 @@ export function readBranches(repo: string): Record<string, string> {
       const match = /^([0-9a-f]{40}) refs\/heads\/([^\s]+)$/.exec(line);
       if (match && name.test(match[2]!)) branches[match[2]!] = match[1]!;
     }
-  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
   let loose: string[] = [];
-  try { loose = readdirSync(join(repo, 'refs', 'heads')); } catch { /* none yet */ }
+  try {
+    loose = readdirSync(join(repo, 'refs', 'heads'));
+  } catch {
+    /* none yet */
+  }
   for (const branch of loose) {
     if (!name.test(branch)) continue;
     let text = '';
-    try { text = readFileSync(join(repo, 'refs', 'heads', branch), 'utf8').trim(); } catch { continue; }
+    try {
+      text = readFileSync(join(repo, 'refs', 'heads', branch), 'utf8').trim();
+    } catch {
+      continue;
+    }
     if (isCommitId(text)) branches[branch] = text;
   }
   return Object.fromEntries(Object.entries(branches).sort(([a], [b]) => (a < b ? -1 : 1)));
@@ -118,7 +162,13 @@ export function listTree(repo: string, treeish: string, env?: Record<string, str
     if (!record) continue;
     const tab = record.indexOf('\t');
     const [mode, type, oid, size] = record.slice(0, tab).split(/ +/);
-    entries.push({ mode: mode!, type: type!, oid: oid!, size: size === '-' ? 0 : Number(size), path: record.slice(tab + 1) });
+    entries.push({
+      mode: mode!,
+      type: type!,
+      oid: oid!,
+      size: size === '-' ? 0 : Number(size),
+      path: record.slice(tab + 1),
+    });
   }
   return entries;
 }
@@ -149,7 +199,14 @@ export function parseCommit(id: string, raw: Buffer): CommitInfo {
   const text = raw.toString('utf8');
   const split = text.indexOf('\n\n');
   const head = split < 0 ? text : text.slice(0, split);
-  const info: CommitInfo = { id, tree: '', parents: [], author: '', time: 0, message: split < 0 ? '' : text.slice(split + 2) };
+  const info: CommitInfo = {
+    id,
+    tree: '',
+    parents: [],
+    author: '',
+    time: 0,
+    message: split < 0 ? '' : text.slice(split + 2),
+  };
   for (const line of head.split('\n')) {
     if (line.startsWith('tree ')) info.tree = line.slice(5);
     else if (line.startsWith('parent ')) info.parents.push(line.slice(7));
@@ -173,19 +230,38 @@ export function isAncestor(repo: string, ancestor: string, descendant: string, e
 /** Moves refs in one transaction: each update names the value it expects (ZERO: none yet), so nothing moves when one
  *  of them has moved on. Says whether it went through. */
 export function updateRefs(repo: string, updates: { ref: string; to?: string; from?: string }[]) {
-  const lines = updates.map(({ ref, to, from }) => (to === undefined ? 'delete ' + ref : 'update ' + ref + ' ' + to) + (from ? ' ' + from : ''));
+  const lines = updates.map(
+    ({ ref, to, from }) => (to === undefined ? 'delete ' + ref : 'update ' + ref + ' ' + to) + (from ? ' ' + from : ''),
+  );
   const out = git(repo, ['update-ref', '--stdin'], { input: lines.join('\n') + '\n', allow: [128] });
   if (out.status === 0) return true;
-  if (/cannot lock ref|is at .* but expected|reference already exists|unable to resolve reference/.test(out.stderr)) return false;
+  if (/cannot lock ref|is at .* but expected|reference already exists|unable to resolve reference/.test(out.stderr))
+    return false;
   throw new Error('git update-ref failed: ' + out.stderr.trim().slice(0, 400));
 }
 
 /** A commit of an existing tree, its parents in order: its id. */
-export function commitTree(repo: string, tree: string, parents: string[], author: Ident, time: number, message: string) {
+export function commitTree(
+  repo: string,
+  tree: string,
+  parents: string[],
+  author: Ident,
+  time: number,
+  message: string,
+) {
   const stamp = time + ' +0000';
-  const env = gitEnvironment({ GIT_AUTHOR_NAME: identName(author.name), GIT_AUTHOR_EMAIL: author.email, GIT_AUTHOR_DATE: stamp,
-    GIT_COMMITTER_NAME: COMMITTER.name, GIT_COMMITTER_EMAIL: COMMITTER.email, GIT_COMMITTER_DATE: stamp });
-  const out = git(repo, ['commit-tree', tree, ...parents.flatMap((parent) => ['-p', parent]), '-F', '-'], { input: message, env });
+  const env = gitEnvironment({
+    GIT_AUTHOR_NAME: identName(author.name),
+    GIT_AUTHOR_EMAIL: author.email,
+    GIT_AUTHOR_DATE: stamp,
+    GIT_COMMITTER_NAME: COMMITTER.name,
+    GIT_COMMITTER_EMAIL: COMMITTER.email,
+    GIT_COMMITTER_DATE: stamp,
+  });
+  const out = git(repo, ['commit-tree', tree, ...parents.flatMap((parent) => ['-p', parent]), '-F', '-'], {
+    input: message,
+    env,
+  });
   return out.stdout.toString('utf8').trim();
 }
 
@@ -210,13 +286,21 @@ export class FastImport {
   }
 
   /** A commit on ref. changes: 'deleteall', ['M', mode, blob mark or id, path] or ['D', path]. Its mark. */
-  commit(ref: string, info: { author: Ident; time: number; message: string; from?: string | undefined; merge?: string[] },
-    changes: Array<'deleteall' | ['M', string, string, string] | ['D', string]>) {
+  commit(
+    ref: string,
+    info: { author: Ident; time: number; message: string; from?: string | undefined; merge?: string[] },
+    changes: Array<'deleteall' | ['M', string, string, string] | ['D', string]>,
+  ) {
     const mark = ':' + ++this.marks;
     const message = Buffer.from(info.message);
     const who = (person: Ident) => identName(person.name) + ' <' + person.email + '> ' + info.time + ' +0000';
-    const lines = ['commit ' + ref, 'mark ' + mark, 'author ' + who(info.author), 'committer ' + who(COMMITTER),
-      'data ' + message.length];
+    const lines = [
+      'commit ' + ref,
+      'mark ' + mark,
+      'author ' + who(info.author),
+      'committer ' + who(COMMITTER),
+      'data ' + message.length,
+    ];
     this.chunks.push(Buffer.from(lines.join('\n') + '\n'), message, Buffer.from('\n'));
     const tail: string[] = [];
     if (info.from) tail.push('from ' + info.from);
@@ -231,7 +315,9 @@ export class FastImport {
   }
 
   /** A ref set to a mark or commit, or with none, so that the next commit on it is a root. */
-  reset(ref: string, to?: string) { this.chunks.push(Buffer.from('reset ' + ref + '\n' + (to ? 'from ' + to + '\n' : '') + '\n')); }
+  reset(ref: string, to?: string) {
+    this.chunks.push(Buffer.from('reset ' + ref + '\n' + (to ? 'from ' + to + '\n' : '') + '\n'));
+  }
 
   /** Runs the stream: each mark's object id. */
   run(repo: string) {
@@ -239,14 +325,18 @@ export class FastImport {
     try {
       // --force: a stretch of a migration may move the import ref to a commit that isn't a descendant (a branch forked
       // from an earlier revision), which is the point of the ref there.
-      git(repo, ['fast-import', '--quiet', '--force', '--export-marks=' + marks], { input: Buffer.concat([...this.chunks, Buffer.from('done\n')]) });
+      git(repo, ['fast-import', '--quiet', '--force', '--export-marks=' + marks], {
+        input: Buffer.concat([...this.chunks, Buffer.from('done\n')]),
+      });
       const ids = new Map<string, string>();
       for (const line of readFileSync(marks, 'utf8').split('\n')) {
         const [mark, oid] = line.split(' ');
         if (mark && oid) ids.set(mark, oid);
       }
       return ids;
-    } finally { rmSync(marks, { force: true }); }
+    } finally {
+      rmSync(marks, { force: true });
+    }
   }
 }
 

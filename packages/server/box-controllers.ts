@@ -28,7 +28,9 @@ export class BoxControllers {
   constructor(service: ControllerService, answerMs = ANSWER_MS) {
     this.service = service;
     this.answerMs = answerMs;
-    service.viewed = () => { for (const done of this.waiting) done(); };
+    service.viewed = () => {
+      for (const done of this.waiting) done();
+    };
   }
 
   /** The service's view now, as the contract reads it. */
@@ -40,7 +42,11 @@ export class BoxControllers {
   /** Waits for the service's next view, or a while. */
   private next() {
     return new Promise<void>((resolve) => {
-      const done = () => { clearTimeout(timer); this.waiting.delete(done); resolve(); };
+      const done = () => {
+        clearTimeout(timer);
+        this.waiting.delete(done);
+        resolve();
+      };
       const timer = setTimeout(done, this.answerMs);
       this.waiting.add(done);
     });
@@ -65,16 +71,23 @@ export class BoxControllers {
     const view = this.view();
     if (!view || !this.service.connected) throw new ZirbelError(503, NO_SERVICE);
     const { type: _type, devices, ...rest } = view;
-    return { ...rest, devices: devices.map((item) => {
-      const screen = item.device === undefined ? undefined : this.service.screenOf(item.device);
-      return { ...item, screen: screen ? { code: screen.code, tv: screen.box, place: screen.place } : null };
-    }) };
+    return {
+      ...rest,
+      devices: devices.map((item) => {
+        const screen = item.device === undefined ? undefined : this.service.screenOf(item.device);
+        return { ...item, screen: screen ? { code: screen.code, tv: screen.box, place: screen.place } : null };
+      }),
+    };
   }
 }
 
 /** GET /api/box/controllers and POST /api/box/controllers/scan|pair|forget; whether it answered the request. */
-export async function controllersRequest(controllers: BoxControllers | undefined, request: IncomingMessage,
-  response: ServerResponse, action: string | undefined) {
+export async function controllersRequest(
+  controllers: BoxControllers | undefined,
+  request: IncomingMessage,
+  response: ServerResponse,
+  action: string | undefined,
+) {
   const method = request.method;
   if (!action && method === 'GET') {
     if (!controllers) throw new ZirbelError(503, NO_SERVICE);
@@ -82,7 +95,10 @@ export async function controllersRequest(controllers: BoxControllers | undefined
     return true;
   }
   if (method !== 'POST' || !['scan', 'pair', 'forget'].includes(action ?? '')) return false;
-  const input = action === 'scan' ? controllersScan.parse(await body(request, 1024)) : controllersAddress.parse(await body(request, 1024));
+  const input =
+    action === 'scan'
+      ? controllersScan.parse(await body(request, 1024))
+      : controllersAddress.parse(await body(request, 1024));
   if (!controllers) throw new ZirbelError(503, NO_SERVICE);
   reply(response, await controllers.ask({ type: action, ...input }));
   return true;

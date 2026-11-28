@@ -11,13 +11,35 @@ import type { ConsoleLine, Renderer, Step, ViewRequest } from './view-game.ts';
 
 /** An installed Chromium browser: ZIRBEL_BROWSER when it names one, else Chrome, Edge or Chromium where they install. */
 export function findBrowser(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  if (env.ZIRBEL_BROWSER) return isAbsolute(env.ZIRBEL_BROWSER) && existsSync(env.ZIRBEL_BROWSER) ? env.ZIRBEL_BROWSER : undefined;
-  const apps = (root: string) => ['Google Chrome.app/Contents/MacOS/Google Chrome', 'Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    'Chromium.app/Contents/MacOS/Chromium'].map((app) => join(root, app));
-  const windows = (root: string | undefined) => root ? ['Google/Chrome/Application/chrome.exe', 'Microsoft/Edge/Application/msedge.exe',
-    'Chromium/Application/chrome.exe'].map((exe) => join(root, exe)) : [];
-  const onPath = (env.PATH ?? '').split(delimiter).filter((dir) => isAbsolute(dir)).flatMap((dir) =>
-    ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'microsoft-edge', 'microsoft-edge-stable'].map((name) => join(dir, name)));
+  if (env.ZIRBEL_BROWSER)
+    return isAbsolute(env.ZIRBEL_BROWSER) && existsSync(env.ZIRBEL_BROWSER) ? env.ZIRBEL_BROWSER : undefined;
+  const apps = (root: string) =>
+    [
+      'Google Chrome.app/Contents/MacOS/Google Chrome',
+      'Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+      'Chromium.app/Contents/MacOS/Chromium',
+    ].map((app) => join(root, app));
+  const windows = (root: string | undefined) =>
+    root
+      ? [
+          'Google/Chrome/Application/chrome.exe',
+          'Microsoft/Edge/Application/msedge.exe',
+          'Chromium/Application/chrome.exe',
+        ].map((exe) => join(root, exe))
+      : [];
+  const onPath = (env.PATH ?? '')
+    .split(delimiter)
+    .filter((dir) => isAbsolute(dir))
+    .flatMap((dir) =>
+      [
+        'google-chrome',
+        'google-chrome-stable',
+        'chromium',
+        'chromium-browser',
+        'microsoft-edge',
+        'microsoft-edge-stable',
+      ].map((name) => join(dir, name)),
+    );
   const installed = (candidates: string[]) => candidates.find((file) => existsSync(file));
   if (process.platform === 'darwin')
     return installed([...apps('/Applications'), ...apps(join(homedir(), 'Applications'))]);
@@ -30,22 +52,37 @@ export const NO_BROWSER = 'No browser available to render the game: install Chro
 
 /** Keys by their name, as the DevTools protocol takes them; any other single character types itself. */
 const KEYS: Record<string, { code: string; keyCode: number; text?: string }> = {
-  ArrowUp: { code: 'ArrowUp', keyCode: 38 }, ArrowDown: { code: 'ArrowDown', keyCode: 40 },
-  ArrowLeft: { code: 'ArrowLeft', keyCode: 37 }, ArrowRight: { code: 'ArrowRight', keyCode: 39 },
-  Enter: { code: 'Enter', keyCode: 13, text: '\r' }, Escape: { code: 'Escape', keyCode: 27 }, Tab: { code: 'Tab', keyCode: 9 },
-  Backspace: { code: 'Backspace', keyCode: 8 }, ' ': { code: 'Space', keyCode: 32, text: ' ' }, Space: { code: 'Space', keyCode: 32, text: ' ' },
-  Shift: { code: 'ShiftLeft', keyCode: 16 }, Control: { code: 'ControlLeft', keyCode: 17 }, Alt: { code: 'AltLeft', keyCode: 18 },
+  ArrowUp: { code: 'ArrowUp', keyCode: 38 },
+  ArrowDown: { code: 'ArrowDown', keyCode: 40 },
+  ArrowLeft: { code: 'ArrowLeft', keyCode: 37 },
+  ArrowRight: { code: 'ArrowRight', keyCode: 39 },
+  Enter: { code: 'Enter', keyCode: 13, text: '\r' },
+  Escape: { code: 'Escape', keyCode: 27 },
+  Tab: { code: 'Tab', keyCode: 9 },
+  Backspace: { code: 'Backspace', keyCode: 8 },
+  ' ': { code: 'Space', keyCode: 32, text: ' ' },
+  Space: { code: 'Space', keyCode: 32, text: ' ' },
+  Shift: { code: 'ShiftLeft', keyCode: 16 },
+  Control: { code: 'ControlLeft', keyCode: 17 },
+  Alt: { code: 'AltLeft', keyCode: 18 },
 };
 export function keyEvent(key: string) {
   const named = KEYS[key];
   if (named) return { key: key === 'Space' ? ' ' : key, ...named };
-  if (/^[a-z]$/i.test(key)) return { key, code: 'Key' + key.toUpperCase(), keyCode: key.toUpperCase().charCodeAt(0), text: key };
+  if (/^[a-z]$/i.test(key))
+    return { key, code: 'Key' + key.toUpperCase(), keyCode: key.toUpperCase().charCodeAt(0), text: key };
   if (/^\d$/.test(key)) return { key, code: 'Digit' + key, keyCode: 48 + Number(key), text: key };
   return { key, code: '', keyCode: 0, ...(Array.from(key).length === 1 ? { text: key } : {}) };
 }
 
-type Message = { id?: number; method?: string; sessionId?: string; params?: Record<string, unknown>; result?: Record<string, unknown>;
-  error?: { message: string } };
+type Message = {
+  id?: number;
+  method?: string;
+  sessionId?: string;
+  params?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  error?: { message: string };
+};
 type RemoteObject = { type?: string; value?: unknown; description?: string; unserializableValue?: string };
 
 const describe = (value: RemoteObject) => {
@@ -56,7 +93,10 @@ const describe = (value: RemoteObject) => {
 /** One browser for one render: started, driven and gone with its profile once the render ends. */
 class Session {
   private next = 0;
-  private waiting = new Map<number, { resolve: (result: Record<string, unknown>) => void; reject: (error: Error) => void }>();
+  private waiting = new Map<
+    number,
+    { resolve: (result: Record<string, unknown>) => void; reject: (error: Error) => void }
+  >();
   private events = new Set<(message: Message) => void>();
   private buffered = '';
   sessionId?: string;
@@ -86,13 +126,19 @@ class Session {
     for (const listener of this.events) listener(message);
   }
 
-  on(listener: (message: Message) => void) { this.events.add(listener); }
+  on(listener: (message: Message) => void) {
+    this.events.add(listener);
+  }
 
   send(method: string, params: Record<string, unknown> = {}, page = true) {
     if (this.input.destroyed || this.input.writableEnded) return Promise.reject(new Error('The browser has ended.'));
     const id = ++this.next;
-    const promise = new Promise<Record<string, unknown>>((resolve, reject) => this.waiting.set(id, { resolve, reject }));
-    this.input.write(JSON.stringify({ id, method, params, ...(page && this.sessionId ? { sessionId: this.sessionId } : {}) }) + '\0');
+    const promise = new Promise<Record<string, unknown>>((resolve, reject) =>
+      this.waiting.set(id, { resolve, reject }),
+    );
+    this.input.write(
+      JSON.stringify({ id, method, params, ...(page && this.sessionId ? { sessionId: this.sessionId } : {}) }) + '\0',
+    );
     return promise;
   }
 
@@ -103,34 +149,78 @@ class Session {
 }
 
 /** A wait that a render's end cuts short; one that only bounds another never fails. */
-const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
-  const stop = () => { clearTimeout(timer); reject(signal.reason as Error); };
-  const timer = setTimeout(() => { signal.removeEventListener('abort', stop); resolve(); }, ms);
-  signal.addEventListener('abort', stop, { once: true });
-});
+const sleep = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const stop = () => {
+      clearTimeout(timer);
+      reject(signal.reason as Error);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', stop);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', stop, { once: true });
+  });
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms).unref());
 
 async function act(session: Session, action: Step, signal: AbortSignal) {
   if ('wait' in action) return sleep(action.wait, signal);
-  if ('text' in action) { await session.send('Input.insertText', { text: action.text }); return; }
+  if ('text' in action) {
+    await session.send('Input.insertText', { text: action.text });
+    return;
+  }
   if ('click' in action) {
     const { x, y } = action.click;
     await session.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
-    await session.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
-    await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 });
+    await session.send('Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      x,
+      y,
+      button: 'left',
+      buttons: 1,
+      clickCount: 1,
+    });
+    await session.send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x,
+      y,
+      button: 'left',
+      buttons: 0,
+      clickCount: 1,
+    });
     return;
   }
   const { key, code, keyCode, text } = keyEvent(action.key);
-  await session.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: keyCode, ...(text ? { text } : {}) });
+  await session.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key,
+    code,
+    windowsVirtualKeyCode: keyCode,
+    ...(text ? { text } : {}),
+  });
   await sleep(action.hold ?? 100, signal);
   await session.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: keyCode });
 }
 
-const ARGS = ['--headless=new', '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check', '--disable-extensions',
-  '--disable-background-networking', '--disable-component-update', '--disable-default-apps', '--disable-sync', '--mute-audio',
-  '--metrics-recording-only', '--password-store=basic', '--use-mock-keychain', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
+const ARGS = [
+  '--headless=new',
+  '--remote-debugging-pipe',
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--disable-extensions',
+  '--disable-background-networking',
+  '--disable-component-update',
+  '--disable-default-apps',
+  '--disable-sync',
+  '--mute-audio',
+  '--metrics-recording-only',
+  '--password-store=basic',
+  '--use-mock-keychain',
+  '--use-angle=swiftshader',
+  '--enable-unsafe-swiftshader',
   // Nothing but loopback, which no proxy takes: anything else goes to a port where nothing answers.
-  '--proxy-server=http://127.0.0.1:9'];
+  '--proxy-server=http://127.0.0.1:9',
+];
 
 async function drive(session: Session, request: ViewRequest, signal: AbortSignal, lines: ConsoleLine[]) {
   const { targetId } = await session.send('Target.createTarget', { url: 'about:blank' }, false);
@@ -141,7 +231,10 @@ async function drive(session: Session, request: ViewRequest, signal: AbortSignal
     if (from !== session.sessionId) return;
     if (method === 'Page.loadEventFired') loaded.resolve();
     if (method === 'Runtime.consoleAPICalled')
-      lines.push({ level: String(params.type), text: ((params.args as RemoteObject[] | undefined) ?? []).map(describe).join(' ') });
+      lines.push({
+        level: String(params.type),
+        text: ((params.args as RemoteObject[] | undefined) ?? []).map(describe).join(' '),
+      });
     if (method === 'Runtime.exceptionThrown') {
       const details = params.exceptionDetails as { text?: string; exception?: RemoteObject } | undefined;
       lines.push({ level: 'error', text: details?.exception?.description ?? details?.text ?? 'Uncaught error' });
@@ -153,17 +246,30 @@ async function drive(session: Session, request: ViewRequest, signal: AbortSignal
     if (method === 'Fetch.requestPaused') {
       const url = String((params.request as { url?: string } | undefined)?.url ?? '');
       const requestId = params.requestId;
-      if (url.startsWith(request.origin + '/')) void session.send('Fetch.continueRequest', { requestId }).catch(() => {});
+      if (url.startsWith(request.origin + '/'))
+        void session.send('Fetch.continueRequest', { requestId }).catch(() => {});
       else {
-        lines.push({ level: 'error', text: 'Blocked a request to ' + url.slice(0, 300) + ': the game has no network.' });
+        lines.push({
+          level: 'error',
+          text: 'Blocked a request to ' + url.slice(0, 300) + ': the game has no network.',
+        });
         void session.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' }).catch(() => {});
       }
     }
   });
-  await Promise.all([session.send('Page.enable'), session.send('Runtime.enable'), session.send('Log.enable'),
+  await Promise.all([
+    session.send('Page.enable'),
+    session.send('Runtime.enable'),
+    session.send('Log.enable'),
     session.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] }),
-    session.send('Emulation.setDeviceMetricsOverride', { width: request.width, height: request.height, deviceScaleFactor: 1, mobile: false }),
-    session.send('Emulation.setFocusEmulationEnabled', { enabled: true })]);
+    session.send('Emulation.setDeviceMetricsOverride', {
+      width: request.width,
+      height: request.height,
+      deviceScaleFactor: 1,
+      mobile: false,
+    }),
+    session.send('Emulation.setFocusEmulationEnabled', { enabled: true }),
+  ]);
   await session.send('Page.navigate', { url: request.url });
   await Promise.race([loaded.promise, delay(20_000)]);
   await sleep(300, signal);
@@ -189,11 +295,19 @@ export function chromeRenderer(find = () => findBrowser()): Renderer {
       const profile = await mkdtemp(join(tmpdir(), 'zirbel-view-'));
       let child: ChildProcess | undefined;
       try {
-        child = spawn(browser, [...ARGS, '--user-data-dir=' + profile, 'about:blank'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
+        child = spawn(browser, [...ARGS, '--user-data-dir=' + profile, 'about:blank'], {
+          stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'],
+        });
         const [, , , input, output] = child.stdio;
         const session = new Session(input as Writable, output as Readable);
-        const exited = new Promise<never>((_resolve, reject) => child?.once('exit', () => reject(new Error('The browser ended before the game was rendered.'))));
-        const stopped = new Promise<never>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('Rendering the game took too long.')), { once: true }));
+        const exited = new Promise<never>((_resolve, reject) =>
+          child?.once('exit', () => reject(new Error('The browser ended before the game was rendered.'))),
+        );
+        const stopped = new Promise<never>((_resolve, reject) =>
+          signal.addEventListener('abort', () => reject(new Error('Rendering the game took too long.')), {
+            once: true,
+          }),
+        );
         // Either may settle after the render is done: that is no one's error.
         exited.catch(() => {});
         stopped.catch(() => {});

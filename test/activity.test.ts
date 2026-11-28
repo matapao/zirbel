@@ -93,7 +93,13 @@ test('harness progress becomes steps: messages, tool calls, MCP calls by server,
   report({ type: 'settings', settings: [{ id: 'model', name: 'Model', value: 'gpt-6.1-sol' }] });
   report({ type: 'text', text: long });
   report({ type: 'tool', tool: 'execute', call: 'run', summary: 'execute: npm test' });
-  report({ type: 'tool', tool: 'zirbel.view_game', call: 'view', summary: 'zirbel.view_game', mcp: { server: 'zirbel', tool: 'view_game' } });
+  report({
+    type: 'tool',
+    tool: 'zirbel.view_game',
+    call: 'view',
+    summary: 'zirbel.view_game',
+    mcp: { server: 'zirbel', tool: 'view_game' },
+  });
   report({ type: 'tool', tool: 'Agent', call: 'helper', summary: 'Agent', helper: 'Check the controls' });
   report({ type: 'tool', tool: 'Write', call: 'write', parent: 'helper', summary: 'Write game/index.html' });
   report({ type: 'helper-done', call: 'helper', ok: true });
@@ -111,8 +117,14 @@ test('harness progress becomes steps: messages, tool calls, MCP calls by server,
   assert.equal(steps.get('tool:helper')?.detail, 'Check the controls');
   assert.equal(steps.get('tool:write')?.parent, 'tool:helper');
   assert.equal(steps.get('file:game/index.html')?.title, 'Updated game/index.html');
-  assert.equal([...steps.values()].some(({ detail }) => detail?.includes('"action"')), false);
-  assert.equal([...steps.keys()].some((id) => id.includes('secret')), false);
+  assert.equal(
+    [...steps.values()].some(({ detail }) => detail?.includes('"action"')),
+    false,
+  );
+  assert.equal(
+    [...steps.keys()].some((id) => id.includes('secret')),
+    false,
+  );
   assert.deepEqual(
     events.filter((event) => event.type === 'progress').map((event) => event.type === 'progress' && event.phase),
     ['running', 'responding'],
@@ -161,7 +173,10 @@ test('a running turn’s steps are written every two seconds while they change, 
   log.add(step('tool:1', 'npm test'));
   assert.throws(() => store.read('game-1', note), /kept no activity/);
   t.mock.timers.tick(2000);
-  assert.deepEqual(store.read('game-1', note).entries.map(({ id }) => id), ['tool:1']);
+  assert.deepEqual(
+    store.read('game-1', note).entries.map(({ id }) => id),
+    ['tool:1'],
+  );
   log.add(step('tool:2', 'npm run build'));
   t.mock.timers.tick(2000);
   assert.equal(store.read('game-1', note).entries.length, 2);

@@ -59,8 +59,8 @@ class Reader:
                 raise FrameError("A frame of the wrong length.")
             if len(self.buffer) < LENGTH.size + length:
                 break
-            payload = bytes(self.buffer[LENGTH.size:LENGTH.size + length])
-            del self.buffer[:LENGTH.size + length]
+            payload = bytes(self.buffer[LENGTH.size : LENGTH.size + length])
+            del self.buffer[: LENGTH.size + length]
             frames.append(self._payload(payload))
         return frames
 

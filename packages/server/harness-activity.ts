@@ -19,8 +19,14 @@ export function harnessActivity(name: string, cwd: string, update: (event: ChatU
   let sentAt = 0;
   const send = (entry: ActivityEntry) => {
     const prior = entries.get(entry.id);
-    if (prior?.title === entry.title && prior.kind === entry.kind && prior.detail === entry.detail &&
-        prior.state === entry.state && prior.parent === entry.parent) return;
+    if (
+      prior?.title === entry.title &&
+      prior.kind === entry.kind &&
+      prior.detail === entry.detail &&
+      prior.state === entry.state &&
+      prior.parent === entry.parent
+    )
+      return;
     entries.set(entry.id, entry);
     update({ type: 'activity', entry });
   };
@@ -29,12 +35,19 @@ export function harnessActivity(name: string, cwd: string, update: (event: ChatU
     messageTimer = undefined;
     const waiting = pendingMessage;
     pendingMessage = undefined;
-    if (waiting) { sentAt = Date.now(); send(waiting); }
+    if (waiting) {
+      sentAt = Date.now();
+      send(waiting);
+    }
   };
   // Steps keep their order: a message still being written goes out before any other step.
   const emit = (entry: ActivityEntry) => {
     const bounded = boundEntry(entry);
-    if (bounded.kind !== 'message') { flush(); send(bounded); return; }
+    if (bounded.kind !== 'message') {
+      flush();
+      send(bounded);
+      return;
+    }
     if (pendingMessage && pendingMessage.id !== bounded.id) flush();
     pendingMessage = bounded;
     const wait = MESSAGE_INTERVAL - (Date.now() - sentAt);
@@ -67,7 +80,8 @@ export function harnessActivity(name: string, cwd: string, update: (event: ChatU
         tool(event.call ?? event.tool, {
           title: mcp ? mcp.tool + ' (' + mcp.server + ')' : event.tool,
           detail: event.helper || event.summary || undefined,
-          ...(event.helper ? { kind: 'helper' } : {}), ...(event.parent ? { parent: 'tool:' + event.parent } : {}),
+          ...(event.helper ? { kind: 'helper' } : {}),
+          ...(event.parent ? { parent: 'tool:' + event.parent } : {}),
         });
         break;
       }
@@ -76,12 +90,17 @@ export function harnessActivity(name: string, cwd: string, update: (event: ChatU
         break;
       case 'file': {
         const file = relative(cwd, resolve(cwd, event.file));
-        if (file && !file.startsWith('..') && !isAbsolute(file)) emit({ id: 'file:' + file, kind: 'file', title: 'Updated ' + file });
+        if (file && !file.startsWith('..') && !isAbsolute(file))
+          emit({ id: 'file:' + file, kind: 'file', title: 'Updated ' + file });
         break;
       }
       case 'settings':
-        if (event.settings.length) emit({ id: 'settings', kind: 'notice', title: name + ' · ' +
-          event.settings.map(({ name: setting, value }) => setting + ': ' + value).join(' · ') });
+        if (event.settings.length)
+          emit({
+            id: 'settings',
+            kind: 'notice',
+            title: name + ' · ' + event.settings.map(({ name: setting, value }) => setting + ': ' + value).join(' · '),
+          });
         break;
     }
   };

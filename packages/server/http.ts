@@ -7,14 +7,22 @@ import { z } from 'zod';
 import { ZirbelError } from '../core/projects.ts';
 
 export const contentType: Record<string, string> = {
-  html: 'text/html; charset=utf-8', js: 'application/javascript; charset=utf-8',
-  css: 'text/css; charset=utf-8', svg: 'image/svg+xml', txt: 'text/plain; charset=utf-8', wasm: 'application/wasm',
+  html: 'text/html; charset=utf-8',
+  js: 'application/javascript; charset=utf-8',
+  css: 'text/css; charset=utf-8',
+  svg: 'image/svg+xml',
+  txt: 'text/plain; charset=utf-8',
+  wasm: 'application/wasm',
 };
 export const typeFor = (name: string) => contentType[name.split('.').at(-1) ?? ''] ?? 'application/octet-stream';
 const editorFiles = /^(?:editor-chunks\/[a-zA-Z0-9_.-]+|workspace\.js|workspace\.css|favicon\.svg)$/;
 
 export function reply(response: ServerResponse, data: unknown, status = 200, headers = {}) {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers });
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    ...headers,
+  });
   response.end(JSON.stringify(data));
 }
 
@@ -25,8 +33,14 @@ export function bytes(response: ServerResponse, file: Buffer | string, type: str
 
 export function failure(error: unknown) {
   if (error instanceof ZirbelError) return { status: error.status, message: error.message };
-  if (error instanceof z.ZodError) return { status: 400, message: error.issues.slice(0, 3)
-    .map((issue) => (issue.path.length ? issue.path.join('.') + ' · ' : '') + issue.message).join(' · ') };
+  if (error instanceof z.ZodError)
+    return {
+      status: 400,
+      message: error.issues
+        .slice(0, 3)
+        .map((issue) => (issue.path.length ? issue.path.join('.') + ' · ' : '') + issue.message)
+        .join(' · '),
+    };
   console.error(error instanceof Error ? error.message : 'Unknown request failure');
   return { status: 500, message: 'The server could not complete that request.' };
 }
@@ -39,7 +53,8 @@ export function fail(response: ServerResponse, error: unknown) {
 export async function body(request: IncomingMessage, max = 512_000): Promise<unknown> {
   if (request.headers['content-type']?.split(';')[0] !== 'application/json')
     throw new ZirbelError(415, 'Send application/json.');
-  if (Number(request.headers['content-length'] ?? 0) > max) throw new ZirbelError(413, 'This file exceeds the upload limit.');
+  if (Number(request.headers['content-length'] ?? 0) > max)
+    throw new ZirbelError(413, 'This file exceeds the upload limit.');
   const chunks: Buffer[] = [];
   let length = 0;
   for await (const chunk of request) {
@@ -47,11 +62,16 @@ export async function body(request: IncomingMessage, max = 512_000): Promise<unk
     if (length > max) throw new ZirbelError(413, 'This file exceeds the upload limit.');
     chunks.push(chunk as Buffer);
   }
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
-  catch { throw new ZirbelError(400, 'Invalid JSON.'); }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new ZirbelError(400, 'Invalid JSON.');
+  }
 }
 
-function baseFor(request: IncomingMessage) { return new URL('http://' + request.headers.host).origin; }
+function baseFor(request: IncomingMessage) {
+  return new URL('http://' + request.headers.host).origin;
+}
 
 export function checkOrigin(request: IncomingMessage, requireClient = false) {
   const { origin } = request.headers;
@@ -66,7 +86,7 @@ export function secure(response: ServerResponse) {
 }
 
 export function requestUrl(request: IncomingMessage, port: number, hosts: string[]) {
-  const allowed = hosts.flatMap((host) => port === 80 ? [host, host + ':80'] : [host + ':' + port]);
+  const allowed = hosts.flatMap((host) => (port === 80 ? [host, host + ':80'] : [host + ':' + port]));
   if (!allowed.includes(request.headers.host ?? '')) throw new ZirbelError(403, 'This host name is not configured.');
   if (!request.url?.startsWith('/') || request.url.startsWith('//')) throw new ZirbelError(400, 'Invalid request URL.');
   const origin = baseFor(request);
@@ -86,9 +106,14 @@ export function staticFile(response: ServerResponse, root: string, name: string)
 }
 
 export function lanAddresses() {
-  return Object.values(networkInterfaces()).flatMap((interfaces) => interfaces ?? [])
-    .filter((item) => item.family === 'IPv4' && !item.internal &&
-      /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|169\.254\.)/.test(item.address))
+  return Object.values(networkInterfaces())
+    .flatMap((interfaces) => interfaces ?? [])
+    .filter(
+      (item) =>
+        item.family === 'IPv4' &&
+        !item.internal &&
+        /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|169\.254\.)/.test(item.address),
+    )
     .map((item) => item.address);
 }
 
@@ -105,22 +130,43 @@ export function listen(server: Server, port: number, host: string) {
 }
 
 /** A room's invitation: the player page with the room's invitation, or a room's with a space with its space's. */
-export function roomLink(base: string, room: { id: string; invite: string; space: { id: string; invite: string } | null }) {
-  return base + '/join/' + room.id + '#' + (room.space ? 'skalet.space=' + room.space.id + '&skalet.invite=' + room.space.invite : room.invite);
+export function roomLink(
+  base: string,
+  room: { id: string; invite: string; space: { id: string; invite: string } | null },
+) {
+  return (
+    base +
+    '/join/' +
+    room.id +
+    '#' +
+    (room.space ? 'skalet.space=' + room.space.id + '&skalet.invite=' + room.space.invite : room.invite)
+  );
 }
 
 /** A socket of a page in an opaque-origin sandbox says Origin: null, a page of this host its own, a program none. */
 export function upgradeOrigin(request: IncomingMessage) {
   const { origin } = request.headers;
   if (origin === undefined || origin === 'null') return true;
-  try { return new URL(origin).host === (request.headers.host ?? '').toLowerCase(); } catch { return false; }
+  try {
+    return new URL(origin).host === (request.headers.host ?? '').toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 const REASONS = { 400: 'Bad Request', 403: 'Forbidden', 503: 'Service Unavailable' } as const;
 /** Answers an upgrade a listener won't take with an HTTP error, as a request's would be. */
 export function refuseUpgrade(stream: Duplex, status: keyof typeof REASONS, error: string) {
   const body = JSON.stringify({ error });
-  stream.end('HTTP/1.1 ' + status + ' ' + REASONS[status] + '\r\nconnection: close\r\n' +
-    'content-type: application/json; charset=utf-8\r\nx-content-type-options: nosniff\r\ncontent-length: ' + Buffer.byteLength(body) +
-    '\r\n\r\n' + body);
+  stream.end(
+    'HTTP/1.1 ' +
+      status +
+      ' ' +
+      REASONS[status] +
+      '\r\nconnection: close\r\n' +
+      'content-type: application/json; charset=utf-8\r\nx-content-type-options: nosniff\r\ncontent-length: ' +
+      Buffer.byteLength(body) +
+      '\r\n\r\n' +
+      body,
+  );
 }

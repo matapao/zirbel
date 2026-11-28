@@ -8,19 +8,52 @@ export { boundedJson, MAX_REGISTERED_OBJECTS } from './bounded.ts';
 // content hash, and served beside the document in the game's sandbox. The extension sets the
 // content type; the Go host keeps the same table in host/gamefiles.go.
 export const GAME_FILE_TYPES: Readonly<Record<string, string>> = {
-  html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', mjs: 'text/javascript; charset=utf-8',
-  css: 'text/css; charset=utf-8', json: 'application/json; charset=utf-8', map: 'application/json; charset=utf-8',
-  txt: 'text/plain; charset=utf-8', csv: 'text/csv; charset=utf-8', wasm: 'application/wasm',
-  glb: 'model/gltf-binary', gltf: 'model/gltf+json', bin: 'application/octet-stream', ktx2: 'image/ktx2',
-  obj: 'model/obj', mtl: 'model/mtl', fbx: 'application/octet-stream', hdr: 'image/vnd.radiance', exr: 'image/x-exr',
+  html: 'text/html; charset=utf-8',
+  js: 'text/javascript; charset=utf-8',
+  mjs: 'text/javascript; charset=utf-8',
+  css: 'text/css; charset=utf-8',
+  json: 'application/json; charset=utf-8',
+  map: 'application/json; charset=utf-8',
+  txt: 'text/plain; charset=utf-8',
+  csv: 'text/csv; charset=utf-8',
+  wasm: 'application/wasm',
+  glb: 'model/gltf-binary',
+  gltf: 'model/gltf+json',
+  bin: 'application/octet-stream',
+  ktx2: 'image/ktx2',
+  obj: 'model/obj',
+  mtl: 'model/mtl',
+  fbx: 'application/octet-stream',
+  hdr: 'image/vnd.radiance',
+  exr: 'image/x-exr',
   // Shaders, and a game's own source: plain text, which a browser never runs.
-  glsl: 'text/plain; charset=utf-8', vert: 'text/plain; charset=utf-8', frag: 'text/plain; charset=utf-8',
-  ts: 'text/plain; charset=utf-8', tsx: 'text/plain; charset=utf-8', jsx: 'text/plain; charset=utf-8',
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', avif: 'image/avif',
-  svg: 'image/svg+xml', ico: 'image/x-icon',
-  woff2: 'font/woff2', woff: 'font/woff', ttf: 'font/ttf', otf: 'font/otf',
-  mp3: 'audio/mpeg', ogg: 'audio/ogg', opus: 'audio/ogg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac',
-  flac: 'audio/flac', mp4: 'video/mp4', webm: 'video/webm',
+  glsl: 'text/plain; charset=utf-8',
+  vert: 'text/plain; charset=utf-8',
+  frag: 'text/plain; charset=utf-8',
+  ts: 'text/plain; charset=utf-8',
+  tsx: 'text/plain; charset=utf-8',
+  jsx: 'text/plain; charset=utf-8',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  avif: 'image/avif',
+  svg: 'image/svg+xml',
+  ico: 'image/x-icon',
+  woff2: 'font/woff2',
+  woff: 'font/woff',
+  ttf: 'font/ttf',
+  otf: 'font/otf',
+  mp3: 'audio/mpeg',
+  ogg: 'audio/ogg',
+  opus: 'audio/ogg',
+  wav: 'audio/wav',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
+  flac: 'audio/flac',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
 };
 const segment = '[A-Za-z0-9_][A-Za-z0-9._-]*';
 // Relative, at most 8 deep, no segment starting with a dot, and an extension from the table.
@@ -39,14 +72,24 @@ export const MAX_GAME_FILES = 1000;
 const controlKeys = z.partialRecord(z.enum(CONTROL_INPUTS), z.string().regex(KEY_CODE));
 const gameControls = z.strictObject({
   keys: controlKeys.optional(),
-  players: z.array(z.strictObject({
-    keys: controlKeys.optional(), name: z.string().min(1).max(PLACE_NAME).optional(), color: z.string().regex(PLACE_COLOR).optional(),
-  })).min(1).max(MAX_PLACES).optional(),
+  players: z
+    .array(
+      z.strictObject({
+        keys: controlKeys.optional(),
+        name: z.string().min(1).max(PLACE_NAME).optional(),
+        color: z.string().regex(PLACE_COLOR).optional(),
+      }),
+    )
+    .min(1)
+    .max(MAX_PLACES)
+    .optional(),
 });
-const gameFiles = z.record(gameFilePath, z.string().regex(/^[a-f0-9]{64}$/)).refine(
-  (files) => Object.keys(files).length <= MAX_GAME_FILES && !Object.hasOwn(files, 'index.html'),
-  'Provide up to 1000 files besides index.html.',
-);
+const gameFiles = z
+  .record(gameFilePath, z.string().regex(/^[a-f0-9]{64}$/))
+  .refine(
+    (files) => Object.keys(files).length <= MAX_GAME_FILES && !Object.hasOwn(files, 'index.html'),
+    'Provide up to 1000 files besides index.html.',
+  );
 
 // The most players a game sharing state can have, and a game with its own netcode.
 export const SHARED_PLAYERS = 4;
@@ -64,22 +107,34 @@ const gameFields = z.strictObject({
   registerObjects: z.boolean().optional(),
   files: gameFiles.optional(),
 });
-const withinPlayers = (game: { maxPlayers: number; net?: true | undefined }) => game.maxPlayers <= SHARED_PLAYERS || game.net === true;
+const withinPlayers = (game: { maxPlayers: number; net?: true | undefined }) =>
+  game.maxPlayers <= SHARED_PLAYERS || game.net === true;
 const playersError = { message: 'A game for more than 4 players needs net.', path: ['maxPlayers'] };
-const ownAdapter = (game: { net?: true | undefined; adapter?: string | undefined; files?: Record<string, string> | undefined }) =>
-  game.adapter === undefined || (game.net === true && game.files !== undefined && Object.hasOwn(game.files, game.adapter));
+const ownAdapter = (game: {
+  net?: true | undefined;
+  adapter?: string | undefined;
+  files?: Record<string, string> | undefined;
+}) =>
+  game.adapter === undefined ||
+  (game.net === true && game.files !== undefined && Object.hasOwn(game.files, game.adapter));
 const adapterError = { message: 'An adapter is one of the game’s own files, in a game with net.', path: ['adapter'] };
 export const gameDocument = gameFields.refine(withinPlayers, playersError).refine(ownAdapter, adapterError);
 export type GameDocument = z.infer<typeof gameDocument>;
 // What a proposal or a harness writes: files only arrive with their bytes, from an import, and so do the adapter and the
 // controls their zirbel.json names.
-export const editableGame = gameFields.omit({ files: true, adapter: true, controls: true }).refine(withinPlayers, playersError);
+export const editableGame = gameFields
+  .omit({ files: true, adapter: true, controls: true })
+  .refine(withinPlayers, playersError);
 
 const registeredObject = z.strictObject({
   id: z.string().min(1).max(120),
   properties: z.custom<Record<string, unknown>>(compactProperties, 'Provide compact JSON properties.'),
 });
 export type RegisteredObject = z.infer<typeof registeredObject>;
-export const objectRegistry = z.custom<unknown[]>((value) => Array.isArray(value) && value.length <= MAX_REGISTERED_OBJECTS,
-  'Provide at most 512 registered objects.').pipe(z.array(registeredObject))
+export const objectRegistry = z
+  .custom<unknown[]>(
+    (value) => Array.isArray(value) && value.length <= MAX_REGISTERED_OBJECTS,
+    'Provide at most 512 registered objects.',
+  )
+  .pipe(z.array(registeredObject))
   .refine((objects) => new Set(objects.map(({ id }) => id)).size === objects.length, 'Object IDs must be unique.');

@@ -7,7 +7,7 @@ import { isAbsolute, join } from 'node:path';
 export function privateDirectory(directory: string) {
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const stat = lstatSync(directory);
-  if (!stat.isDirectory() || (process.getuid && (stat.uid !== process.getuid() || (stat.mode & 0o077))))
+  if (!stat.isDirectory() || (process.getuid && (stat.uid !== process.getuid() || stat.mode & 0o077)))
     throw new Error('Zirbel account storage must be a private directory owned by this user.');
 }
 

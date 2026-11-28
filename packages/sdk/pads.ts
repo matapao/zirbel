@@ -23,11 +23,18 @@ export type PadButton = { pressed: boolean; value: number };
 /** A pad's state: its slot on its screen, whether it has the standard layout, its buttons and its axes (-1..1). */
 export type PadState = { slot: number; standard: boolean; buttons: PadButton[]; axes: number[] };
 
-const clamp = (value: number, low: number, high: number) => Number.isNaN(value) ? 0 : Math.min(high, Math.max(low, value));
+const clamp = (value: number, low: number, high: number) =>
+  Number.isNaN(value) ? 0 : Math.min(high, Math.max(low, value));
 
 /** The frame of a state: at most 32 buttons and 8 axes (any more are left out), values and axes clamped to their range. */
-export function encodePad(state: { slot?: number; standard: boolean; buttons: readonly PadButton[]; axes: readonly number[] }) {
-  const buttons = state.buttons.slice(0, PAD_BUTTONS), axes = state.axes.slice(0, PAD_AXES);
+export function encodePad(state: {
+  slot?: number;
+  standard: boolean;
+  buttons: readonly PadButton[];
+  axes: readonly number[];
+}) {
+  const buttons = state.buttons.slice(0, PAD_BUTTONS),
+    axes = state.axes.slice(0, PAD_AXES);
   const frame = new Uint8Array(8 + buttons.length + 2 * axes.length);
   const view = new DataView(frame.buffer);
   frame[0] = clamp(Math.trunc(state.slot ?? 0), 0, PAD_SLOTS - 1);
@@ -40,7 +47,9 @@ export function encodePad(state: { slot?: number; standard: boolean; buttons: re
     frame[8 + index] = Math.round(clamp(button.value, 0, 1) * 255);
   });
   view.setUint32(4, pressed >>> 0, true);
-  axes.forEach((axis, index) => view.setInt16(8 + buttons.length + 2 * index, Math.round(clamp(axis, -1, 1) * AXIS), true));
+  axes.forEach((axis, index) =>
+    view.setInt16(8 + buttons.length + 2 * index, Math.round(clamp(axis, -1, 1) * AXIS), true),
+  );
   return frame;
 }
 
@@ -49,8 +58,14 @@ export function encodePad(state: { slot?: number; standard: boolean; buttons: re
 export function decodePad(frame: Uint8Array): PadState | undefined {
   if (frame.length < 8) return undefined;
   const [slot = 0, flags = 0, count = 0, axisCount = 0] = frame;
-  if (slot >= PAD_SLOTS || (flags & ~STANDARD) !== 0 || count > PAD_BUTTONS || axisCount > PAD_AXES ||
-    frame.length !== 8 + count + 2 * axisCount) return undefined;
+  if (
+    slot >= PAD_SLOTS ||
+    (flags & ~STANDARD) !== 0 ||
+    count > PAD_BUTTONS ||
+    axisCount > PAD_AXES ||
+    frame.length !== 8 + count + 2 * axisCount
+  )
+    return undefined;
   const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
   const pressed = view.getUint32(4, true);
   if (count < 32 && pressed >>> count !== 0) return undefined;
@@ -60,6 +75,9 @@ export function decodePad(frame: Uint8Array): PadState | undefined {
     if (axis < -AXIS) return undefined;
     axes.push(axis / AXIS);
   }
-  const buttons = Array.from(frame.subarray(8, 8 + count), (value, index) => ({ pressed: (pressed >>> index & 1) === 1, value: value / 255 }));
+  const buttons = Array.from(frame.subarray(8, 8 + count), (value, index) => ({
+    pressed: ((pressed >>> index) & 1) === 1,
+    value: value / 255,
+  }));
   return { slot, standard: (flags & STANDARD) !== 0, buttons, axes };
 }

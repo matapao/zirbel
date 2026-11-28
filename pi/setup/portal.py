@@ -160,8 +160,10 @@ def joining_page(box: str, network: str, pairing: Pairing | None, token: str = "
     """What to do next, shown while the box still runs its hotspot: the phone loses this page once the box leaves it,
     so the box leaves only when the person taps Join now (token), after reading it, or after CONFIRM_SECONDS."""
     # Some phones can't open .local names: the box's plain name, which many home routers resolve, is the other way.
-    plain = "<p><small>If it doesn't open, try <b>http://zirbel/pair</b>, or the box's address in your router's list " \
+    plain = (
+        "<p><small>If it doesn't open, try <b>http://zirbel/pair</b>, or the box's address in your router's list "
         "of devices.</small></p>"
+    )
     if pairing and pairing.claim:
         finish = (
             "<p>Then open this address and tap Claim this box:</p>"
@@ -212,8 +214,10 @@ def own_page(box: str, own: Credentials, pairing: Pairing | None, token: str = "
         anchor = f"<a href='{html.escape(link, quote=True)}'>{html.escape(link)}</a>"
         local = html.escape(pairing.url.split("?", 1)[0])
         if pairing.claim:
-            finish = (f"<p>Then open {anchor} (or <b>{local}</b>) and tap Claim this box.</p>"
-                      "<p><small>No device has paired with this box yet, so there is no code and no hurry.</small></p>")
+            finish = (
+                f"<p>Then open {anchor} (or <b>{local}</b>) and tap Claim this box.</p>"
+                "<p><small>No device has paired with this box yet, so there is no code and no hurry.</small></p>"
+            )
         else:
             finish = (
                 f"<p>Then open {anchor} and tap Pair this device. Or open <b>{local}</b> and enter the code</p>"

@@ -27,7 +27,8 @@ export function deliveryAssets(revisions: ReadonlyArray<{ assets?: Asset[] }>) {
     for (const asset of assets ?? []) {
       checkDeliveryRights(asset);
       const previous = unique.get(asset.hash);
-      if (previous && previous.media !== asset.media) throw new ZirbelError(422, 'Conflicting media types for ' + asset.name + '.');
+      if (previous && previous.media !== asset.media)
+        throw new ZirbelError(422, 'Conflicting media types for ' + asset.name + '.');
       unique.set(asset.hash, asset);
     }
   }
@@ -53,8 +54,12 @@ export function verifyAssetBytes(asset: Asset, bytes: Buffer) {
 }
 
 // The package's assets map carries image assets and a built game's files, each once, by hash.
-export function withAssetFiles<T extends object>(read: (hash: string) => Buffer, metadata: T, assets: readonly Asset[],
-  gameFiles: readonly string[] = []) {
+export function withAssetFiles<T extends object>(
+  read: (hash: string) => Buffer,
+  metadata: T,
+  assets: readonly Asset[],
+  gameFiles: readonly string[] = [],
+) {
   let remaining = PORTABLE_FILE_LIMIT - Buffer.byteLength(JSON.stringify({ ...metadata, assets: {} }));
   const files = new Map<string, string>();
   const checkSize = () => {
@@ -83,7 +88,13 @@ export function withAssetFiles<T extends object>(read: (hash: string) => Buffer,
 
 /** A bundle of the project: every revision reachable from its branches, in full, oldest first. */
 export function exportBundle(projects: Projects, projectId: string) {
-  const { notes: _notes, attachments: _attachments, source: _source, revisions: _listed, ...accepted } = projects.read(projectId);
+  const {
+    notes: _notes,
+    attachments: _attachments,
+    source: _source,
+    revisions: _listed,
+    ...accepted
+  } = projects.read(projectId);
   const repo = projects.repository(projectId);
   const ids = new Set<string>();
   const revisions: FullRevision[] = [];
@@ -91,13 +102,26 @@ export function exportBundle(projects: Projects, projectId: string) {
     const { id, parent, restoredFrom, label, date, author } = revisionMeta(info);
     const { scene, game, assets } = projects.history.content(repo, info.id);
     // A bundle's history has one root: a second root of an imported history follows the revision before it.
-    const kept = parent && ids.has(parent) ? parent : revisions.at(-1)?.id ?? null;
-    revisions.push({ id, parent: kept, ...(restoredFrom && ids.has(restoredFrom) ? { restoredFrom } : {}), label, date, author,
-      ...(scene ? { scene } : {}), ...(game ? { game } : {}), assets });
+    const kept = parent && ids.has(parent) ? parent : (revisions.at(-1)?.id ?? null);
+    revisions.push({
+      id,
+      parent: kept,
+      ...(restoredFrom && ids.has(restoredFrom) ? { restoredFrom } : {}),
+      label,
+      date,
+      author,
+      ...(scene ? { scene } : {}),
+      ...(game ? { game } : {}),
+      assets,
+    });
     ids.add(id);
   }
-  return withAssetFiles((hash) => projects.readAsset(hash), { project: { ...accepted, revisions, notes: [], attachments: [] } },
-    deliveryAssets(revisions), gameFileHashes(revisions));
+  return withAssetFiles(
+    (hash) => projects.readAsset(hash),
+    { project: { ...accepted, revisions, notes: [], attachments: [] } },
+    deliveryAssets(revisions),
+    gameFileHashes(revisions),
+  );
 }
 
 /** A new project from a bundle, its revisions as commits. */
@@ -108,9 +132,10 @@ export function importBundle(projects: Projects, raw: unknown, author?: Ident) {
   for (const revision of source.revisions) {
     if (source.template && !revision.scene && !revision.game)
       throw new ZirbelError(422, 'The imported legacy revision is missing its scene.');
-    const validParent = ids.size === 0 ? revision.parent === null : revision.parent !== null && ids.has(revision.parent);
-    if (ids.has(revision.id) || !validParent ||
-      (revision.restoredFrom && !ids.has(revision.restoredFrom))) throw new ZirbelError(400, 'Revision history is invalid.');
+    const validParent =
+      ids.size === 0 ? revision.parent === null : revision.parent !== null && ids.has(revision.parent);
+    if (ids.has(revision.id) || !validParent || (revision.restoredFrom && !ids.has(revision.restoredFrom)))
+      throw new ZirbelError(400, 'Revision history is invalid.');
     ids.add(revision.id);
   }
   if (!source.branches.main || Object.values(source.branches).some((id) => !ids.has(id)))
@@ -124,12 +149,22 @@ export function importBundle(projects: Projects, raw: unknown, author?: Ident) {
     assets.set(item.hash, bytes);
   }
   for (const hash of gameFileHashes(source.revisions)) assets.set(hash, gameFileBytes(hash, bundle.assets[hash]));
-  if (Object.keys(bundle.assets).length !== assets.size) throw new ZirbelError(422, 'The package contains undeclared assets.');
+  if (Object.keys(bundle.assets).length !== assets.size)
+    throw new ZirbelError(422, 'The package contains undeclared assets.');
   for (const bytes of assets.values()) projects.storeAsset(bytes);
   const { title, template, upstream } = source;
-  return projects.createRepository((repo) => {
-    const { commits, hashes } = writeRevisions(repo, source.revisions, (hash) => projects.readAsset(hash), author);
-    updateRefs(repo, Object.entries(source.branches).map(([branch, revision]) => ({ ref: 'refs/heads/' + branch, to: commits.get(revision)! })));
-    return hashes;
-  }, { title, ...(template ? { template } : {}), ...(upstream ? { upstream } : {}), imported: true });
+  return projects.createRepository(
+    (repo) => {
+      const { commits, hashes } = writeRevisions(repo, source.revisions, (hash) => projects.readAsset(hash), author);
+      updateRefs(
+        repo,
+        Object.entries(source.branches).map(([branch, revision]) => ({
+          ref: 'refs/heads/' + branch,
+          to: commits.get(revision)!,
+        })),
+      );
+      return hashes;
+    },
+    { title, ...(template ? { template } : {}), ...(upstream ? { upstream } : {}), imported: true },
+  );
 }

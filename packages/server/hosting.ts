@@ -49,7 +49,9 @@ function readRelease(file: string) {
     // One that grew while it was read is not the file that was checked.
     if (length > stat.size) throw refused();
     return buffer.toString('utf8', 0, length);
-  } finally { closeSync(handle); }
+  } finally {
+    closeSync(handle);
+  }
 }
 
 // A box without IPv6 listens on IPv4 alone.
@@ -62,7 +64,9 @@ function everyInterface(open: (bind: string) => Promise<Listener>) {
 
 // A failed shutdown must not become an unhandled rejection.
 export async function stopOnSignal(stop: () => Promise<void>) {
-  try { await stop(); } catch (error) {
+  try {
+    await stop();
+  } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
   }
@@ -78,7 +82,10 @@ const sharedAddress = (host: string) => !loopbackName(host) && isIP(host.replace
  *  the pairing page and the edit page the lobby links to, on the host name a device reached it by. */
 type BoxPlayers = { reach: PlayerReach; pair: (host: string) => string; edit: (host: string) => string };
 type HostingOptions = {
-  playerPort: number; lanHost?: string | undefined; qr?: (link: string) => Promise<string>; box?: BoxPlayers | undefined;
+  playerPort: number;
+  lanHost?: string | undefined;
+  qr?: (link: string) => Promise<string>;
+  box?: BoxPlayers | undefined;
   spacesBinary?: string | undefined;
 };
 
@@ -113,34 +120,60 @@ export class Players {
     this.releases = releases;
     this.options = options;
     this.addons = threeAddons(releases.webRoot);
-    this.spaces = new Spaces({ binary: spacesBinary(options.spacesBinary, join(releases.webRoot, '..')),
-      manifest: join(releases.webRoot, 'skalet.json') });
+    this.spaces = new Spaces({
+      binary: spacesBinary(options.spacesBinary, join(releases.webRoot, '..')),
+      manifest: join(releases.webRoot, 'skalet.json'),
+    });
     rooms.kernel = this.spaces;
     this.spaces.onReset(() => rooms.spaces('gone'));
     this.lobby = new Lobby(rooms, releases);
-    this.lobbyContext = { lobby: this.lobby, files: lobbyFiles(releases.webRoot), pair: options.box?.pair, edit: options.box?.edit,
-      link: (host) => this.lobbyLink(host) };
+    this.lobbyContext = {
+      lobby: this.lobby,
+      files: lobbyFiles(releases.webRoot),
+      pair: options.box?.pair,
+      edit: options.box?.edit,
+      link: (host) => this.lobbyLink(host),
+    };
   }
 
-  get lanHost() { return this.options.lanHost; }
+  get lanHost() {
+    return this.options.lanHost;
+  }
 
   /** Starts the spaces kernel, or reaches the host's; without one, games with their own netcode play alone. */
-  startSpaces() { return this.spaces.start(); }
+  startSpaces() {
+    return this.spaces.start();
+  }
 
   private async listSpaces() {
     if (!this.spaces.available || !this.rooms.open().some((room) => room.space)) return;
     const since = performance.now();
-    try { this.rooms.spaces(await this.spaces.list(), since); } catch { /* listed again on the next sweep */ }
+    try {
+      this.rooms.spaces(await this.spaces.list(), since);
+    } catch {
+      /* listed again on the next sweep */
+    }
   }
 
   /** The LAN listener's port, once it runs. */
-  get lanPort() { return this.lan?.port; }
+  get lanPort() {
+    return this.lan?.port;
+  }
 
   /** The player for the editor's own playtests: on loopback, or on a box (reach) on every interface, for the box's
    *  network, embedded by the editor on the host name the device reached it by. */
   async openLocal(port: number, editorOrigins: string[] | ((host: string) => string[]) = [], reach?: PlayerReach) {
-    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons,
-      { bind, lan: false, port, editorOrigins, reach, lobby: this.lobbyContext, pads: this.pads, spaces: () => this.spaces.target });
+    const open = (bind: string) =>
+      playerListener(this.rooms, this.releases.runtime, this.addons, {
+        bind,
+        lan: false,
+        port,
+        editorOrigins,
+        reach,
+        lobby: this.lobbyContext,
+        pads: this.pads,
+        spaces: () => this.spaces.target,
+      });
     this.local = await (reach ? everyInterface(open) : open('127.0.0.1'));
     return this.local;
   }
@@ -149,11 +182,22 @@ export class Players {
   startLan() {
     if (this.lan) return Promise.resolve(this.lan);
     const { playerPort, lanHost, box } = this.options;
-    const open = (bind: string) => playerListener(this.rooms, this.releases.runtime, this.addons, { bind, lan: true,
-      port: playerPort, extraHosts: lanHost ? [lanHost] : [], reach: box?.reach, lobby: this.lobbyContext, pads: this.pads,
-      spaces: () => this.spaces.target });
-    this.startingLan ??= (box ? everyInterface(open) : open('0.0.0.0')).then((active) => (this.lan = active))
-      .finally(() => { this.startingLan = undefined; });
+    const open = (bind: string) =>
+      playerListener(this.rooms, this.releases.runtime, this.addons, {
+        bind,
+        lan: true,
+        port: playerPort,
+        extraHosts: lanHost ? [lanHost] : [],
+        reach: box?.reach,
+        lobby: this.lobbyContext,
+        pads: this.pads,
+        spaces: () => this.spaces.target,
+      });
+    this.startingLan ??= (box ? everyInterface(open) : open('0.0.0.0'))
+      .then((active) => (this.lan = active))
+      .finally(() => {
+        this.startingLan = undefined;
+      });
     return this.startingLan;
   }
 
@@ -162,9 +206,12 @@ export class Players {
     const shared = room.access === 'lan';
     const active = shared ? this.lan : this.local;
     if (!active) throw new ZirbelError(409, 'The player service is unavailable.');
-    const address = shared ? this.options.lanHost ?? lanAddresses()[0] : undefined;
+    const address = shared ? (this.options.lanHost ?? lanAddresses()[0]) : undefined;
     const link = roomLink('http://' + (address ?? host) + ':' + active.port, room);
-    return { ...room.summary(), lan: Boolean(address), link,
+    return {
+      ...room.summary(),
+      lan: Boolean(address),
+      link,
       localLink: roomLink('http://' + host + ':' + active.port, room),
       qr: shared && address && this.options.qr ? await this.options.qr(link) : null,
     };
@@ -182,7 +229,7 @@ export class Players {
   /** The address other devices on the network reach this host by: host, the name a box was reached by, where others
    *  can use it, and otherwise the player host or the first LAN address. None while it has none. */
   sharedHost(host?: string) {
-    return host && sharedAddress(host) ? host : this.options.lanHost ?? lanAddresses()[0];
+    return host && sharedAddress(host) ? host : (this.options.lanHost ?? lanAddresses()[0]);
   }
 
   solo(release: Release, host = '127.0.0.1') {
@@ -203,7 +250,12 @@ export class Players {
    *  not at all, so a socket it can't open is said and passed over. */
   async listenForPads(path: string) {
     this.padsLocal ??= padsService(this.pads, path).catch((error: unknown) => {
-      console.error('Zirbel can\'t listen for the box\'s controllers at ' + path + ': ' + (error instanceof Error ? error.message : String(error)));
+      console.error(
+        "Zirbel can't listen for the box's controllers at " +
+          path +
+          ': ' +
+          (error instanceof Error ? error.message : String(error)),
+      );
       return undefined;
     });
     await this.padsLocal;

@@ -11,15 +11,18 @@ import { viewGame, viewGameInput, type TurnGame } from './view-game.ts';
 const TURN_SERVER = 'zirbel';
 const SUPPORTED = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const envelope = z.object({
-  jsonrpc: z.literal('2.0'), id: z.union([z.string().max(200), z.number()]).optional(), method: z.string().max(200),
+  jsonrpc: z.literal('2.0'),
+  id: z.union([z.string().max(200), z.number()]).optional(),
+  method: z.string().max(200),
   params: z.record(z.string(), z.unknown()).optional(),
 });
 
 const viewGameTool = {
   name: 'view_game',
-  description: 'Renders game/ in a browser as the editor runs it, in the game\'s sandbox, and returns PNG screenshots and the page\'s console messages and errors. ' +
+  description:
+    "Renders game/ in a browser as the editor runs it, in the game's sandbox, and returns PNG screenshots and the page's console messages and errors. " +
     'actions: up to 40 steps, each {"key":"ArrowLeft"} (hold in ms optional), {"click":{"x":10,"y":20}}, {"wait":500} or {"text":"..."}. ' +
-    'captures: up to 8 moments, each the number of actions done before its screenshot; without it, one after all of them. width and height: the page\'s size.',
+    "captures: up to 8 moments, each the number of actions done before its screenshot; without it, one after all of them. width and height: the page's size.",
   annotations: { readOnlyHint: true },
   inputSchema: z.toJSONSchema(viewGameInput, { io: 'input' }),
 };
@@ -30,8 +33,14 @@ type ViewDeps = Parameters<typeof viewGame>[3];
 /** What a failed render tells the harness: our own message, the first argument problems, or the error cut short. */
 function renderFailure(error: unknown) {
   if (error instanceof ZirbelError) return error.message;
-  if (error instanceof z.ZodError) return 'Check the arguments: ' + error.issues.slice(0, 3)
-    .map(({ path, message }) => (path.length ? path.join('.') + ': ' : '') + message).join('; ');
+  if (error instanceof z.ZodError)
+    return (
+      'Check the arguments: ' +
+      error.issues
+        .slice(0, 3)
+        .map(({ path, message }) => (path.length ? path.join('.') + ': ' : '') + message)
+        .join('; ')
+    );
   return 'The game could not be rendered: ' + (error instanceof Error ? error.message : String(error)).slice(0, 500);
 }
 
@@ -52,8 +61,12 @@ export class TurnServers {
     const key = digest(token);
     this.turns.set(key, { folder, game });
     return {
-      servers: [{ name: TURN_SERVER, transport: 'http', url: this.url(), headers: { authorization: 'Bearer ' + token } }],
-      revoke: () => { this.turns.delete(key); },
+      servers: [
+        { name: TURN_SERVER, transport: 'http', url: this.url(), headers: { authorization: 'Bearer ' + token } },
+      ],
+      revoke: () => {
+        this.turns.delete(key);
+      },
     };
   }
 
@@ -77,16 +90,23 @@ export class TurnServers {
     const response = { jsonrpc: '2.0', id };
     if (method === 'initialize') {
       const requested = params?.protocolVersion;
-      return { ...response, result: {
-        protocolVersion: typeof requested === 'string' && SUPPORTED.includes(requested) ? requested : SUPPORTED[0],
-        capabilities: { tools: {} }, serverInfo: { name: TURN_SERVER, version: '0.1.0' },
-      } };
+      return {
+        ...response,
+        result: {
+          protocolVersion: typeof requested === 'string' && SUPPORTED.includes(requested) ? requested : SUPPORTED[0],
+          capabilities: { tools: {} },
+          serverInfo: { name: TURN_SERVER, version: '0.1.0' },
+        },
+      };
     }
     if (method === 'ping') return { ...response, result: {} };
     if (method === 'tools/list') return { ...response, result: { tools: [viewGameTool] } };
     if (method !== 'tools/call') return { ...response, error: { code: -32601, message: 'Method not found' } };
     if (params?.name !== viewGameTool.name)
-      return { ...response, result: { isError: true, content: [{ type: 'text', text: 'Unknown tool: this server has view_game only.' }] } };
+      return {
+        ...response,
+        result: { isError: true, content: [{ type: 'text', text: 'Unknown tool: this server has view_game only.' }] },
+      };
     try {
       return { ...response, result: await viewGame(params.arguments ?? {}, turn.folder, turn.game, this.deps) };
     } catch (error) {

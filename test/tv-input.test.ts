@@ -3,15 +3,36 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { nextFocus, type Rect } from '../packages/web/tv-focus.ts';
-import { direction, gamepadInput, keyCommand, PadNavigator, type Command, type PadInput } from '../packages/web/tv-input.ts';
+import {
+  direction,
+  gamepadInput,
+  keyCommand,
+  PadNavigator,
+  type Command,
+  type PadInput,
+} from '../packages/web/tv-input.ts';
 
-const pad = (buttons: number[] = [], axes: number[] = [0, 0, 0, 0], standard = true): PadInput =>
-  ({ standard, pressed: buttons.reduce((bits, button) => bits | (1 << button), 0) >>> 0, axes });
+const pad = (buttons: number[] = [], axes: number[] = [0, 0, 0, 0], standard = true): PadInput => ({
+  standard,
+  pressed: buttons.reduce((bits, button) => bits | (1 << button), 0) >>> 0,
+  axes,
+});
 
 test('a key is a command: a remote’s arrows, OK and the Back keys TVs send', () => {
-  const keys: [string, number | undefined, Command | undefined][] = [['ArrowUp', 38, 'up'], ['ArrowLeft', 37, 'left'], ['Right', 39, 'right'],
-    ['Enter', 13, 'choose'], ['Escape', 27, 'back'], ['Backspace', 8, 'back'], ['GoBack', 0, 'back'], ['BrowserBack', 166, 'back'],
-    ['Unidentified', 461, 'back'], ['Unidentified', 10009, 'back'], ['a', 65, undefined], ['Tab', 9, undefined]];
+  const keys: [string, number | undefined, Command | undefined][] = [
+    ['ArrowUp', 38, 'up'],
+    ['ArrowLeft', 37, 'left'],
+    ['Right', 39, 'right'],
+    ['Enter', 13, 'choose'],
+    ['Escape', 27, 'back'],
+    ['Backspace', 8, 'back'],
+    ['GoBack', 0, 'back'],
+    ['BrowserBack', 166, 'back'],
+    ['Unidentified', 461, 'back'],
+    ['Unidentified', 10009, 'back'],
+    ['a', 65, undefined],
+    ['Tab', 9, undefined],
+  ];
   for (const [key, keyCode, want] of keys) assert.equal(keyCommand({ key, keyCode }), want, key);
 });
 
@@ -24,8 +45,15 @@ test('a gamepad’s direction is its d-pad, or its stick past halfway along its 
   // A gamepad of no known layout has no d-pad buttons to read: its stick alone.
   assert.equal(direction(pad([12], [0, 0], false)), undefined);
   assert.equal(direction(pad([], [0, 0.8], false)), 'down');
-  const read = gamepadInput({ mapping: 'standard', axes: [0.1, 0.9],
-    buttons: [{ pressed: true }, { pressed: false }, { pressed: true }].map((button) => ({ ...button, touched: false, value: 1 })) });
+  const read = gamepadInput({
+    mapping: 'standard',
+    axes: [0.1, 0.9],
+    buttons: [{ pressed: true }, { pressed: false }, { pressed: true }].map((button) => ({
+      ...button,
+      touched: false,
+      value: 1,
+    })),
+  });
   assert.deepEqual(read, { standard: true, pressed: 0b101, axes: [0.1, 0.9] });
 });
 
@@ -67,8 +95,16 @@ test('a held direction moves at once and repeats, A and B act as they go down, a
 test('focus goes to the nearest tile in a direction, in line before beside it, and nowhere past the edge', () => {
   // A row of three games, a row of two sessions under it, and the places in a corner to the right.
   const rect = (left: number, top: number, width = 100, height = 60): Rect => ({ left, top, width, height });
-  const rects = [rect(0, 0), rect(120, 0), rect(240, 0), rect(0, 100), rect(120, 100),
-    rect(500, 0, 200, 50), rect(500, 60, 200, 50), rect(500, 120, 200, 50)];
+  const rects = [
+    rect(0, 0),
+    rect(120, 0),
+    rect(240, 0),
+    rect(0, 100),
+    rect(120, 100),
+    rect(500, 0, 200, 50),
+    rect(500, 60, 200, 50),
+    rect(500, 120, 200, 50),
+  ];
   assert.equal(nextFocus(rects, 0, 'right'), 1);
   assert.equal(nextFocus(rects, 1, 'down'), 4);
   assert.equal(nextFocus(rects, 2, 'down'), 4);

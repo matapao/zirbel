@@ -29,8 +29,11 @@ ul:empty,[hidden]{display:none}
     byId('error').textContent = message;
   };
   const show = (result                                                                    ) => {
-    const value = result.content?.find(block => block.type === 'text')?.text;
-    if (result.isError || !value) { fail(value || 'The scene could not be read.'); return; }
+    const value = result.content?.find((block) => block.type === 'text')?.text;
+    if (result.isError || !value) {
+      fail(value || 'The scene could not be read.');
+      return;
+    }
     try {
       const revision = JSON.parse(value)            ;
       if (typeof revision.id !== 'string' || typeof revision.label !== 'string') throw new Error();
@@ -39,19 +42,23 @@ ul:empty,[hidden]{display:none}
       byId('source').textContent = revision.game?.html ?? '';
       byId('game').hidden = !revision.game;
       const list = byId('objects');
-      list.replaceChildren(...(revision.scene?.objects ?? []).map(object => {
-        const item = document.createElement('li');
-        item.textContent = object.name;
-        return item;
-      }));
+      list.replaceChildren(
+        ...(revision.scene?.objects ?? []).map((object) => {
+          const item = document.createElement('li');
+          item.textContent = object.name;
+          return item;
+        }),
+      );
       byId('result').hidden = false;
       byId('error').textContent = '';
-    } catch { fail('The connector returned an unreadable revision.'); }
+    } catch {
+      fail('The connector returned an unreadable revision.');
+    }
   };
 
   // MCP Apps gives the view no fixed host origin; the sender must be the parent frame and the message JSON-RPC.
   // nosemgrep: javascript.browser.security.insufficient-postmessage-origin-validation.insufficient-postmessage-origin-validation -- the sender is checked
-  window.addEventListener('message', event => {
+  window.addEventListener('message', (event) => {
     const message = event.data;
     if (event.source !== parent || message?.jsonrpc !== '2.0') return;
     if (message.id === 1 && message.result) {
@@ -68,12 +75,20 @@ ul:empty,[hidden]{display:none}
       else show(message.result);
     }
   });
-  form.addEventListener('submit', event => {
+  form.addEventListener('submit', (event) => {
     event.preventDefault();
     if (button.disabled || !branch.value.trim()) return;
     button.disabled = true;
     pending = nextId++;
-    send({ id: pending, method: 'tools/call', params: { name: 'read_scene', arguments: { branch: branch.value.trim() } } });
+    send({
+      id: pending,
+      method: 'tools/call',
+      params: { name: 'read_scene', arguments: { branch: branch.value.trim() } },
+    });
   });
-  send({ id: 1, method: 'ui/initialize', params: { appInfo: { name: 'Zirbel', version: '0.1.0' }, appCapabilities: {}, protocolVersion: '2026-01-26' } });
+  send({
+    id: 1,
+    method: 'ui/initialize',
+    params: { appInfo: { name: 'Zirbel', version: '0.1.0' }, appCapabilities: {}, protocolVersion: '2026-01-26' },
+  });
 })();</script></body></html>

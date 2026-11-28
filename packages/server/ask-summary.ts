@@ -24,7 +24,9 @@ export const SANDBOXED = 'Runs in this turn’s folder on this computer, with no
 /** Where a request comes from: the turn's working folder, the harness that asks, and for a call to one of the turn's
  *  MCP servers, that server and tool as the harness reported them. */
 export type AskPlace = {
-  folder?: string | undefined; harness?: string | undefined; mcp?: { server: string; tool: string } | undefined;
+  folder?: string | undefined;
+  harness?: string | undefined;
+  mcp?: { server: string; tool: string } | undefined;
 };
 
 const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
@@ -158,13 +160,15 @@ export function describeAsk(question: AgentAsk, place: AskPlace = {}): Permissio
   if (mcp) {
     const { server, tool: name } = mcp;
     const title = text(question.title);
-    const label = title && !title.includes('mcp__') && title !== name && title !== question.tool ? title : readable(name);
+    const label =
+      title && !title.includes('mcp__') && title !== name && title !== question.tool ? title : readable(name);
     return {
       summary: cap(label + ' (' + server + ')', HEADLINE),
       tool,
       ...reason,
       scope: 'outside',
-      reach: server === OWN_SERVER ? 'Shows your game in a browser on this computer' : cap('Reaches ' + server, HEADLINE),
+      reach:
+        server === OWN_SERVER ? 'Shows your game in a browser on this computer' : cap('Reaches ' + server, HEADLINE),
     };
   }
   const sandboxed = { scope: 'sandboxed', reach: SANDBOXED } as const;

@@ -92,9 +92,15 @@ class Device:
 
 
 class Pads:
-    def __init__(self, send: Callable[[bytes], object], later: Callable[[float, Callable[[], None]], object],
-                 folder: str = "/dev/input", system: System | None = None, clock: Callable[[], float] = time.monotonic,
-                 log: Callable[[str], None] = lambda message: print(message, flush=True)):
+    def __init__(
+        self,
+        send: Callable[[bytes], object],
+        later: Callable[[float, Callable[[], None]], object],
+        folder: str = "/dev/input",
+        system: System | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        log: Callable[[str], None] = lambda message: print(message, flush=True),
+    ):
         self.send, self.later, self.folder = send, later, folder
         self.system, self.clock, self.log = system or System(), clock, log
         self.devices: dict[str, Device] = {}
@@ -172,8 +178,17 @@ class Pads:
 
     def announce(self, device: Device) -> None:
         """Tells the host of a device, and sends its state as it is now."""
-        self.send(wire.control({"type": "device", "device": device.number, "name": device.info.name[:NAME_CHARS],
-                                "standard": device.layout.standard, "uid": device.uid}))
+        self.send(
+            wire.control(
+                {
+                    "type": "device",
+                    "device": device.number,
+                    "name": device.info.name[:NAME_CHARS],
+                    "standard": device.layout.standard,
+                    "uid": device.uid,
+                }
+            )
+        )
         device.sent = device.layout.frame()
         device.last_sent = self.clock()
         self.send(wire.pad_input(device.number, device.sent))
@@ -226,8 +241,10 @@ class Pads:
 
     def _resync(self, device: Device) -> None:
         try:
-            device.layout.reset(ev.pressed_keys(device.fd, self.system.ioctl),
-                                ev.axis_values(device.fd, device.layout.codes(), self.system.ioctl))
+            device.layout.reset(
+                ev.pressed_keys(device.fd, self.system.ioctl),
+                ev.axis_values(device.fd, device.layout.codes(), self.system.ioctl),
+            )
         except OSError:
             pass
 

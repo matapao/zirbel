@@ -1,20 +1,46 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { PROTOCOL_VERSION, SDK_VERSION, distribution, portableRelease, type Asset, type Manifest, type Revision, type Release } from '../sdk/contracts.ts';
+import {
+  PROTOCOL_VERSION,
+  SDK_VERSION,
+  distribution,
+  portableRelease,
+  type Asset,
+  type Manifest,
+  type Revision,
+  type Release,
+} from '../sdk/contracts.ts';
 import type { GameDocument } from '../sdk/game.ts';
 import type { Ident } from './git.ts';
 import { templates } from '../games/templates.ts';
-import { atomicWrite, deliveryAssets, digest, gameFileBytes, gameFileHashes, head, newId, readData, safeId, verifyAssetBytes, ZirbelError, type Projects } from './projects.ts';
+import {
+  atomicWrite,
+  deliveryAssets,
+  digest,
+  gameFileBytes,
+  gameFileHashes,
+  head,
+  newId,
+  readData,
+  safeId,
+  verifyAssetBytes,
+  ZirbelError,
+  type Projects,
+} from './projects.ts';
 
 /** The simulation a game from source runs: its own netcode, shared state for several players, or none for one. */
 function sourceSimulation(game: GameDocument) {
   if (game.net) return 'net-v2' as const;
-  return game.maxPlayers > 1 ? 'shared-state-v1' as const : null;
+  return game.maxPlayers > 1 ? ('shared-state-v1' as const) : null;
 }
 
 function runtimeSettings(template: Manifest['template'], game?: Revision['game']) {
-  if (game) return { simulation: sourceSimulation(game),
-    max: game.maxPlayers, capabilities: game.net || game.maxPlayers > 1 ? ['multiplayer' as const] : [] };
+  if (game)
+    return {
+      simulation: sourceSimulation(game),
+      max: game.maxPlayers,
+      capabilities: game.net || game.maxPlayers > 1 ? ['multiplayer' as const] : [],
+    };
   if (template) return templates[template];
   throw new ZirbelError(422, 'This project has no game source yet.');
 }
@@ -30,18 +56,35 @@ export class Releases {
   constructor(projects: Projects, webRoot: string) {
     this.projects = projects;
     this.webRoot = webRoot;
-    const files = ['player.html', 'player.js', 'garden-3d.js', 'garden-3d.js.LEGAL.txt', 'player.css',
-      'game-sdk.js', 'three.module.js', 'three-license.txt', 'zod-license.txt',
-      ...readdirSync(join(webRoot, 'chunks')).map((file) => 'chunks/' + file)];
+    const files = [
+      'player.html',
+      'player.js',
+      'garden-3d.js',
+      'garden-3d.js.LEGAL.txt',
+      'player.css',
+      'game-sdk.js',
+      'three.module.js',
+      'three-license.txt',
+      'zod-license.txt',
+      ...readdirSync(join(webRoot, 'chunks')).map((file) => 'chunks/' + file),
+    ];
     this.runtime = new Map(files.map((file) => [file, readFileSync(join(webRoot, file))]));
-    this.fileHashes = Object.freeze(Object.fromEntries([...this.runtime].map(([file, bytes]) => [file, digest(bytes)])));
-    this.files = Object.freeze(Object.fromEntries([...this.runtime].map(([name, bytes]) => [name, bytes.toString('base64')])));
+    this.fileHashes = Object.freeze(
+      Object.fromEntries([...this.runtime].map(([file, bytes]) => [file, digest(bytes)])),
+    );
+    this.files = Object.freeze(
+      Object.fromEntries([...this.runtime].map(([name, bytes]) => [name, bytes.toString('base64')])),
+    );
   }
 
   /** The data folder the releases are kept in. */
-  get root() { return this.projects.root; }
+  get root() {
+    return this.projects.root;
+  }
 
-  private path(releaseId: string) { return join(this.projects.root, 'releases', safeId(releaseId) + '.json'); }
+  private path(releaseId: string) {
+    return join(this.projects.root, 'releases', safeId(releaseId) + '.json');
+  }
 
   private save(release: Release) {
     const path = this.path(release.manifest.releaseId);
@@ -57,7 +100,14 @@ export class Releases {
     return release;
   }
 
-  package(projectId: string, branch: string, rawPermissions: unknown, publish: boolean, draft = false, proposalId?: string) {
+  package(
+    projectId: string,
+    branch: string,
+    rawPermissions: unknown,
+    publish: boolean,
+    draft = false,
+    proposalId?: string,
+  ) {
     if (publish && draft) throw new ZirbelError(400, 'A draft playtest is private to this host.');
     const project = this.projects.read(projectId);
     const base = head(project, branch);
@@ -68,23 +118,43 @@ export class Releases {
     const permissions = distribution.parse(rawPermissions);
     const template = runtimeSettings(project.template, revision.game);
     const manifest: Manifest = {
-      format: 1, releaseId: newId(), gameId: project.id, sourceRevision: revision.id,
-      title: project.title, template: project.template,
-      sdk: SDK_VERSION, protocol: PROTOCOL_VERSION, client: 'player.html', simulation: template.simulation,
+      format: 1,
+      releaseId: newId(),
+      gameId: project.id,
+      sourceRevision: revision.id,
+      title: project.title,
+      template: project.template,
+      sdk: SDK_VERSION,
+      protocol: PROTOCOL_VERSION,
+      client: 'player.html',
+      simulation: template.simulation,
       players: { min: 1, max: template.max },
       capabilities: [...template.capabilities],
-      permissions, assets: revision.assets, credits: [
+      permissions,
+      assets: revision.assets,
+      credits: [
         { name: project.title, credit: 'Project creator', license: 'Original project content' },
         { name: 'Three.js', credit: 'Three.js authors', license: 'MIT' },
         { name: 'Zod', credit: 'Zod authors', license: 'MIT' },
         ...revision.assets.map((asset) => ({
-          name: asset.name, credit: asset.author + ' · ' + asset.credit + ' · ' + asset.source, license: asset.license,
+          name: asset.name,
+          credit: asset.author + ' · ' + asset.credit + ' · ' + asset.source,
+          license: asset.license,
         })),
-      ], files: this.fileHashes,
+      ],
+      files: this.fileHashes,
     };
-    const release = this.projects.withAssetFiles({
-      manifest, game: revision.game, scene: revision.scene, sceneHash: digest(JSON.stringify(revision.game ?? revision.scene)), files: this.files,
-    }, draft ? revision.assets : deliveryAssets([revision]), gameFileHashes([revision]));
+    const release = this.projects.withAssetFiles(
+      {
+        manifest,
+        game: revision.game,
+        scene: revision.scene,
+        sceneHash: digest(JSON.stringify(revision.game ?? revision.scene)),
+        files: this.files,
+      },
+      draft ? revision.assets : deliveryAssets([revision]),
+      gameFileHashes([revision]),
+    );
     return publish ? this.save(release) : release;
   }
 
@@ -93,23 +163,41 @@ export class Releases {
   draft(title: string, game: GameDocument, assets: Asset[], bytes: ReadonlyMap<string, Buffer>): Release {
     const template = runtimeSettings(undefined, game);
     const manifest: Manifest = {
-      format: 1, releaseId: newId(), gameId: newId(), sourceRevision: newId(), title,
-      sdk: SDK_VERSION, protocol: PROTOCOL_VERSION, client: 'player.html', simulation: template.simulation,
-      players: { min: 1, max: template.max }, capabilities: [...template.capabilities],
-      permissions: { play: true, download: false, remix: false }, assets, credits: [], files: this.fileHashes,
+      format: 1,
+      releaseId: newId(),
+      gameId: newId(),
+      sourceRevision: newId(),
+      title,
+      sdk: SDK_VERSION,
+      protocol: PROTOCOL_VERSION,
+      client: 'player.html',
+      simulation: template.simulation,
+      players: { min: 1, max: template.max },
+      capabilities: [...template.capabilities],
+      permissions: { play: true, download: false, remix: false },
+      assets,
+      credits: [],
+      files: this.fileHashes,
     };
-    return { manifest, game, sceneHash: digest(JSON.stringify(game)), files: this.files,
-      assets: Object.fromEntries([...bytes].map(([hash, file]) => [hash, file.toString('base64')])) };
+    return {
+      manifest,
+      game,
+      sceneHash: digest(JSON.stringify(game)),
+      files: this.files,
+      assets: Object.fromEntries([...bytes].map(([hash, file]) => [hash, file.toString('base64')])),
+    };
   }
 
   read(releaseId: string) {
     const release = portableRelease.parse(readData(this.path(releaseId)));
-    if (release.manifest.releaseId !== releaseId) throw new ZirbelError(422, 'The stored release ID does not match its filename.');
+    if (release.manifest.releaseId !== releaseId)
+      throw new ZirbelError(422, 'The stored release ID does not match its filename.');
     return release;
   }
 
   list() {
-    return readdirSync(join(this.projects.root, 'releases')).filter((file) => file.endsWith('.json'))
+    return readdirSync(join(this.projects.root, 'releases'))
+      .filter((file) => file.endsWith('.json'))
       .map((file) => this.read(file.slice(0, -5)).manifest);
   }
 
@@ -118,17 +206,25 @@ export class Releases {
     const { manifest } = release;
     if (!release.game && !release.scene) throw new ZirbelError(422, 'The release has no playable content.');
     const template = runtimeSettings(manifest.template, release.game);
-    if (manifest.simulation !== template.simulation || manifest.players.max !== template.max ||
-      manifest.players.min !== 1 || manifest.capabilities.join() !== template.capabilities.join())
+    if (
+      manifest.simulation !== template.simulation ||
+      manifest.players.max !== template.max ||
+      manifest.players.min !== 1 ||
+      manifest.capabilities.join() !== template.capabilities.join()
+    )
       throw new ZirbelError(422, 'The package declares unsupported game capabilities.');
-    if (digest(JSON.stringify(release.game ?? release.scene)) !== release.sceneHash) throw new ZirbelError(422, 'The game content hash does not match.');
+    if (digest(JSON.stringify(release.game ?? release.scene)) !== release.sceneHash)
+      throw new ZirbelError(422, 'The game content hash does not match.');
     const files = Object.keys(this.fileHashes);
     if (Object.keys(release.files).length !== files.length || Object.keys(manifest.files).length !== files.length)
       throw new ZirbelError(422, 'The package has unsupported runtime files.');
     for (const file of files) {
       const data = release.files[file];
-      if (typeof data !== 'string' || manifest.files[file] !== this.fileHashes[file] ||
-        digest(Buffer.from(data, 'base64')) !== this.fileHashes[file])
+      if (
+        typeof data !== 'string' ||
+        manifest.files[file] !== this.fileHashes[file] ||
+        digest(Buffer.from(data, 'base64')) !== this.fileHashes[file]
+      )
         throw new ZirbelError(422, 'This package requires a verified build of the matching Zirbel runtime.');
     }
     const assets = deliveryAssets([manifest]);
@@ -153,9 +249,17 @@ export class Releases {
       this.projects.storeAsset(bytes);
     }
     for (const hash of gameFileHashes([release])) this.projects.storeAsset(gameFileBytes(hash, release.assets[hash]));
-    return this.projects.createRevision((release.manifest.title + ' remix').slice(0, 80), {
-      label: 'Remixed release', template: release.manifest.template,
-      game: release.game, scene: release.scene, assets: release.manifest.assets, upstream: releaseId,
-    }, author);
+    return this.projects.createRevision(
+      (release.manifest.title + ' remix').slice(0, 80),
+      {
+        label: 'Remixed release',
+        template: release.manifest.template,
+        game: release.game,
+        scene: release.scene,
+        assets: release.manifest.assets,
+        upstream: releaseId,
+      },
+      author,
+    );
   }
 }

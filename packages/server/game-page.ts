@@ -13,22 +13,41 @@ export const THREE_ADDONS = 'three/addons/';
 // space its player page shares with it and holds no credential of its own; one that names an adapter (one of its files,
 // so base allows it) loads it as a module after its own document, which is otherwise as it is.
 export function gamePage(release: Release, runtime: string, ancestors: string, base: string) {
-  const assets = Object.fromEntries(release.manifest.assets.map((asset) =>
-    [asset.id, 'data:' + asset.media + ';base64,' + release.assets[asset.hash]]));
+  const assets = Object.fromEntries(
+    release.manifest.assets.map((asset) => [asset.id, 'data:' + asset.media + ';base64,' + release.assets[asset.hash]]),
+  );
   const json = (value: unknown) => JSON.stringify(value).replaceAll('<', '\\u003c');
   const addons = runtime + THREE_ADDONS;
   const net = release.manifest.simulation === 'net-v2';
   const host = net ? new URL(base).origin : '';
   const policy = [
-    'sandbox allow-scripts allow-pointer-lock', "default-src 'none'",
-    "script-src 'unsafe-inline' 'wasm-unsafe-eval' " + base + ' ' + runtime + 'game-sdk.js ' + runtime + 'three.module.js ' + addons +
+    'sandbox allow-scripts allow-pointer-lock',
+    "default-src 'none'",
+    "script-src 'unsafe-inline' 'wasm-unsafe-eval' " +
+      base +
+      ' ' +
+      runtime +
+      'game-sdk.js ' +
+      runtime +
+      'three.module.js ' +
+      addons +
       (net ? ' ' + host + '/.skalet/net.js ' + host + '/.skalet/spaces.js' : ''),
-    "style-src 'unsafe-inline' " + base, 'img-src data: blob: ' + base, 'media-src data: blob: ' + base, 'font-src data: ' + base,
+    "style-src 'unsafe-inline' " + base,
+    'img-src data: blob: ' + base,
+    'media-src data: blob: ' + base,
+    'font-src data: ' + base,
     // Loaders turn embedded data into blob: and data: URLs and read them back, and fetch the decoders
     // the addons ship with (Draco, Basis); none of it reaches the network.
-    'connect-src ' + base + ' ' + addons + ' data: blob:' + (net ? ' ' + host.replace(/^http/, 'ws') + '/.skalet/spaces' : ''),
+    'connect-src ' +
+      base +
+      ' ' +
+      addons +
+      ' data: blob:' +
+      (net ? ' ' + host.replace(/^http/, 'ws') + '/.skalet/spaces' : ''),
     'worker-src ' + base + ' blob:',
-    "frame-src 'none'", "form-action 'none'", "base-uri 'none'",
+    "frame-src 'none'",
+    "form-action 'none'",
+    "base-uri 'none'",
     'frame-ancestors ' + ancestors,
   ].join('; ');
   const imports = { three: runtime + 'three.module.js', [THREE_ADDONS]: addons };
@@ -36,11 +55,22 @@ export function gamePage(release: Release, runtime: string, ancestors: string, b
   // places' names and colours: in the order the Go host writes them.
   const controls = checkedControls(release.game?.controls);
   const keys = controls ? '<script type="application/json" id="zirbel-controls">' + json(controls) + '</script>' : '';
-  const bootstrap = '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<script type="importmap">' + json({ imports }) + '</script>' +
-    '<script type="application/json" id="zirbel-assets"' + (release.game?.registerObjects === false ? ' data-registration="off"' : '') + '>' + json(assets) + '</script>' +
-    keys + '<script crossorigin="anonymous" src="' + runtime + 'game-sdk.js"></script>';
+  const bootstrap =
+    '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<script type="importmap">' +
+    json({ imports }) +
+    '</script>' +
+    '<script type="application/json" id="zirbel-assets"' +
+    (release.game?.registerObjects === false ? ' data-registration="off"' : '') +
+    '>' +
+    json(assets) +
+    '</script>' +
+    keys +
+    '<script crossorigin="anonymous" src="' +
+    runtime +
+    'game-sdk.js"></script>';
   const source = release.game!.html.replace(/^\s*<!doctype\s+html\s*>/i, '');
-  const adapter = net && release.game!.adapter ? '<script type="module" src="' + base + release.game!.adapter + '"></script>' : '';
+  const adapter =
+    net && release.game!.adapter ? '<script type="module" src="' + base + release.game!.adapter + '"></script>' : '';
   return { policy, html: '<!doctype html>' + bootstrap + source + adapter };
 }

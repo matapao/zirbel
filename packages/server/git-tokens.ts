@@ -24,25 +24,33 @@ export class GitTokens {
     try {
       const kept = readFileSync(this.file, 'utf8').trim();
       if (/^[0-9a-f]{64}$/.test(kept)) return Buffer.from(kept, 'hex');
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
     const made = randomBytes(32);
     atomicWrite(this.file, made.toString('hex') + '\n');
     return made;
   }
 
   private mac(kind: Holder['kind'], id: string) {
-    return createHmac('sha256', this.secret()).update('zirbel-git-token\n' + kind + '\n' + id).digest('base64url');
+    return createHmac('sha256', this.secret())
+      .update('zirbel-git-token\n' + kind + '\n' + id)
+      .digest('base64url');
   }
 
   /** The token of a paired device (o) or an editor (e). */
-  token({ kind, id }: Holder) { return kind + '.' + id + '.' + this.mac(kind, id); }
+  token({ kind, id }: Holder) {
+    return kind + '.' + id + '.' + this.mac(kind, id);
+  }
 
   /** Whose token this is, if it is one this box made. */
   holder(token: string): Holder | undefined {
     const match = shape.exec(token);
     if (!match) return undefined;
-    const kind = match[1] as Holder['kind'], id = match[2]!;
-    const given = Buffer.from(match[3]!), expected = Buffer.from(this.mac(kind, id));
+    const kind = match[1] as Holder['kind'],
+      id = match[2]!;
+    const given = Buffer.from(match[3]!),
+      expected = Buffer.from(this.mac(kind, id));
     return given.length === expected.length && timingSafeEqual(given, expected) ? { kind, id } : undefined;
   }
 }

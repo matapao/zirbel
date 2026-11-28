@@ -318,11 +318,20 @@ class NetworkManager:
         if not device:
             return None
         name = ssid.decode("utf-8", errors="replace")
-        others = [int(saved["connection"].get("autoconnect-priority", 0)) for _path, saved in self._saved()
-                  if bytes(saved["802-11-wireless"].get("ssid", b"")) != ssid]
+        others = [
+            int(saved["connection"].get("autoconnect-priority", 0))
+            for _path, saved in self._saved()
+            if bytes(saved["802-11-wireless"].get("ssid", b"")) != ssid
+        ]
         values = {
-            "connection": _sv({"id": name, "type": "802-11-wireless", "autoconnect": True,
-                               "autoconnect-priority": dbus.Int32(next_priority(others))}),
+            "connection": _sv(
+                {
+                    "id": name,
+                    "type": "802-11-wireless",
+                    "autoconnect": True,
+                    "autoconnect-priority": dbus.Int32(next_priority(others)),
+                }
+            ),
             "802-11-wireless": _sv({"ssid": dbus.ByteArray(ssid), "mode": "infrastructure"}),
             "ipv4": _sv({"method": "auto"}),
             "ipv6": _sv({"method": "auto"}),
@@ -335,7 +344,9 @@ class NetworkManager:
                 security["pmf"] = dbus.Int32(1)
             values["802-11-wireless-security"] = _sv(security)
         path, active, _result = self.nm.AddAndActivateConnection2(
-            dbus.Dictionary(values, signature="sa{sv}"), dbus.ObjectPath(device), dbus.ObjectPath("/"),
+            dbus.Dictionary(values, signature="sa{sv}"),
+            dbus.ObjectPath(device),
+            dbus.ObjectPath("/"),
             _sv({"persist": "disk"}),
         )
         if not self._wait(str(active), timeout):
@@ -374,7 +385,9 @@ class NetworkManager:
         wildcard_dns(True)
         try:
             _path, active, _result = self.nm.AddAndActivateConnection2(
-                dbus.Dictionary(values, signature="sa{sv}"), dbus.ObjectPath(device), dbus.ObjectPath("/"),
+                dbus.Dictionary(values, signature="sa{sv}"),
+                dbus.ObjectPath(device),
+                dbus.ObjectPath("/"),
                 _sv({"persist": "volatile"}),
             )
         except dbus.DBusException as error:

@@ -4,8 +4,10 @@ import type { Processor, ProcessorRun, Processors } from '../packages/server/pro
 
 type Reply = Omit<Awaited<ReturnType<Processors['start']>>, 'name'>;
 
-export function fakeHarnesses(processors: Processor[],
-  reply: (processor: string, prompt: string, run: ProcessorRun) => Promise<Reply>): Processors {
+export function fakeHarnesses(
+  processors: Processor[],
+  reply: (processor: string, prompt: string, run: ProcessorRun) => Promise<Reply>,
+): Processors {
   return {
     list: () => Promise.resolve(processors),
     async start(id, prompt, run = {}) {
