@@ -1,0 +1,7 @@
+/* Narrow windows, a phone's among them: a tighter top bar and desk. */
+@media(max-width:680px){
+  .topbar{padding:.4rem .5rem;gap:.3rem}
+  .topbar-end button{padding:.35rem .45rem;font-size:.85rem}
+  .switcher{max-width:40vw}
+  #desk{padding:0 .3rem .3rem}
+}

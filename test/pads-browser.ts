@@ -1,51 +1,13 @@
-// Screens and their controllers in a real browser, over the Node host: the player page as a screen (its Controllers
-// panel, the game's frame given every controller as a gamepad at its place, a keyboard-only game its places' keys, Show on
-// TV), and the pad page as a phone: first against a fake of the pads socket in the browser (Playwright's
-// routeWebSocket), which says exactly what the pages send, then end to end over the Node host. Run with
-// `pnpm test:browser`.
+// Screens and their controllers in a real browser, over the Node host, against a fake of the pads socket in the browser
+// (Playwright's routeWebSocket), which says exactly what the pages send: the player page as a screen (its Controllers
+// panel, the game's frame given every controller as a gamepad at its place, a keyboard-only game its places' keys, Show
+// on TV), and the pad page as a phone. End to end over each host: pads-browser-hosts.ts. Run with `pnpm test:browser`.
 import assert from 'node:assert/strict';
-import { existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { test, type TestContext } from 'node:test';
+import { test } from 'node:test';
 import { AxeBuilder } from '@axe-core/playwright';
-import { chromium, type Frame, type Page, type WebSocketRoute } from 'playwright';
-import { importGameFolder } from '../packages/core/game-files.ts';
-import { Projects } from '../packages/core/projects.ts';
-import { Releases } from '../packages/core/releases.ts';
+import { chromium, type Page, type WebSocketRoute } from 'playwright';
 import { decodePad, encodePad } from '../packages/sdk/pads.ts';
-import { lanAddresses } from '../packages/server/http.ts';
-import { hostsUnderTest, launch, NO_SPACES, REAL_SPACES, rights, tempDir } from './helpers.ts';
-
-const node = [process.execPath, 'dist/server.mjs'];
-const game = `<!doctype html><pre id="log"></pre><p id="pads"></p><script>
-  const log = (line) => { document.getElementById('log').textContent += line + '\\n'; };
-  addEventListener('gamepadconnected', (event) => log('connected ' + event.gamepad.index + ' ' + event.gamepad.id));
-  addEventListener('gamepaddisconnected', (event) => log('disconnected ' + event.gamepad.index));
-  addEventListener('keydown', (event) => log('keydown ' + event.code + ' ' + JSON.stringify(event.key) + ' ' + event.keyCode));
-  addEventListener('keyup', (event) => log('keyup ' + event.code));
-  globalThis.rumble = (index) => navigator.getGamepads()[index].vibrationActuator.playEffect('dual-rumble',
-    { duration: 200, strongMagnitude: 1, weakMagnitude: 0.5 });
-  setInterval(() => { document.getElementById('pads').textContent = navigator.getGamepads()
-    .map((pad) => pad ? pad.index + ':' + pad.buttons.filter((button) => button.pressed).length : '-').join(' '); }, 30);
-  try { zirbel.register('tree', { at: [1, 2] }); log('registered'); } catch (error) { log('register failed: ' + error.message); }
-</script>`;
-const encoded = (files: Record<string, string>) =>
-  Object.fromEntries(Object.entries(files).map(([path, text]) => [path, Buffer.from(text).toString('base64')]));
-
-async function startHost(t: TestContext, more: string[] = [], command = node) {
-  const root = tempDir(t, 'zirbel-pads-browser-');
-  const projects = new Projects(join(root, 'source'));
-  const project = importGameFolder(projects, { title: 'Pads', files: encoded({ 'index.html': game, 'zirbel.json': JSON.stringify({
-    players: { max: 2 }, controls: { players: [{ keys: { a: 'KeyF' }, name: 'Red car', color: '#d03030' }, { keys: { a: 'Space', up: 'ArrowUp' } }] },
-  }) }) });
-  const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
-  const file = join(root, 'release.json');
-  writeFileSync(file, JSON.stringify(release));
-  // Without the spaces kernel: the game, for two by its zirbel.json, has a seat of its room's own, which Show on TV hands
-  // over (a net game's member in a space goes to the TV in the last test).
-  return launch(t, command, ['--host-only', ...more, '--player-port', '0', '--data', join(root, 'data'), '--import', file, '--release',
-    release.manifest.releaseId], (line) => typeof line.link === 'string' ? line.link : undefined, { ZIRBEL_SPACES_BINARY: NO_SPACES }).ready;
-}
+import { gameFrame, logged, startHost, until } from './pads-browser-fixture.ts';
 
 /** A pads socket in the page: what each connection sent, as JSON or decoded pad state, and the route to answer it. */
 async function fakePads(page: Page, role: 'screen' | 'pad', open: (socket: WebSocketRoute, url: URL) => void) {
@@ -61,15 +23,6 @@ async function fakePads(page: Page, role: 'screen' | 'pad', open: (socket: WebSo
   return { sent, urls, get socket() { return socket!; } };
 }
 
-async function until(check: () => boolean | Promise<boolean>, what: string) {
-  const end = Date.now() + 10_000;
-  while (!await check()) {
-    if (Date.now() > end) throw new Error('Waited in vain for ' + what);
-    await new Promise((done) => setTimeout(done, 25));
-  }
-}
-const gameFrame = (page: Page) => page.frames().find((frame) => frame.url().includes('/game/'))!;
-const logged = async (frame: Frame) => (await frame.locator('#log').textContent()) ?? '';
 const standard = (pressed: number[], axes = [0, 0, 0, 0]) => ({ standard: true, axes,
   buttons: Array.from({ length: 17 }, (_, button) => ({ pressed: pressed.includes(button), value: pressed.includes(button) ? 1 : 0 })) });
 type Sent = { buttons?: { pressed: boolean }[]; axes?: number[] };
@@ -255,121 +208,5 @@ test('the pad page is a phone\'s controller: its code, its place, its fingers, a
   await pad.socket.close({ code: 4000 });
   await page.getByText('The screen let this controller go.').waitFor();
   assert.equal(await page.getByLabel('The code on the screen').inputValue(), 'K7QX');
-  assert.deepEqual(failures, []);
-});
-
-// The real thing over each host's /pads: a laptop on the LAN listener is a screen, a phone joins it with its code and
-// plays its game, and the laptop shows the game on the box's own screen (any screen from loopback: here a second player
-// page standing in for the TV) and becomes its controller.
-for (const host of hostsUnderTest()) test('over the ' + host.name + ' host, a phone plays a laptop\'s game, and the laptop shows it on ' +
-  'the TV and controls it there', { timeout: 120_000 }, async (t) => {
-  const address = lanAddresses()[0];
-  if (!address) { t.skip('no LAN address to reach the listener from elsewhere than loopback'); return; }
-  const link = await startHost(t, ['--lan'], host.command);
-  const port = new URL(link).port, path = new URL(link).pathname + new URL(link).hash;
-  const lan = 'http://' + address + ':' + port, loopback = 'http://127.0.0.1:' + port;
-  const browser = await chromium.launch();
-  t.after(() => browser.close());
-  const failures: string[] = [];
-  const open = async (options = {}) => {
-    const page = await (await browser.newContext(options)).newPage();
-    page.on('pageerror', (error) => failures.push(error.message));
-    page.on('console', (message) => { if (/Content Security Policy|Refused to/.test(message.text())) failures.push(message.text()); });
-    return page;
-  };
-  const seat = async (page: Page, origin: string, name: string) => {
-    await page.goto(origin + path);
-    await page.locator('#join-form input[name="name"]').fill(name);
-    await page.locator('#join-form button.primary').click();
-    await until(async () => Boolean(gameFrame(page)) && (await logged(gameFrame(page))).includes('registered'), name + '’s game');
-  };
-
-  const laptop = await open({ viewport: { width: 1280, height: 860 } });
-  await seat(laptop, lan, 'Ada');
-  await laptop.getByRole('button', { name: 'Controllers' }).click();
-  const panel = laptop.locator('#controllers-panel');
-  const code = (await panel.locator('.pad-code').textContent({ timeout: 10_000 }))!;
-  assert.match(code, /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/);
-  assert.equal(await panel.getByRole('button', { name: 'Show on TV' }).count(), 0);
-
-  // The phone takes the first free place, P1, with the name and colour the game gives it, and its A is P1's key.
-  const phone = await open({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
-  await phone.addInitScript(() => {
-    const buzz: unknown[] = [];
-    Object.assign(globalThis, { buzz });
-    navigator.vibrate = (pattern) => { buzz.push(pattern); return true; };
-  });
-  await phone.goto(lan + '/pad/' + code.toLowerCase());
-  await phone.locator('#place').filter({ hasText: 'P1 · Red car' }).waitFor();
-  const a = (await phone.locator('[data-button="0"]').boundingBox())!;
-  const touch = await phone.context().newCDPSession(phone);
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: a.x + a.width / 2, y: a.y + a.height / 2, id: 1 }] });
-  const laptopGame = gameFrame(laptop);
-  await until(async () => (await logged(laptopGame)).includes('connected 0 Zirbel phone 1 (STANDARD GAMEPAD)'), 'the phone as gamepad 0');
-  await until(async () => (await logged(laptopGame)).includes('keydown KeyF "f" 70'), 'P1’s key from the phone');
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await until(async () => (await logged(laptopGame)).includes('keyup KeyF'), 'P1’s key let go');
-  await panel.locator('.places li').first().filter({ hasText: 'Phone: Phone 1 · Red car' }).waitFor();
-  // The game rumbles the phone.
-  await laptopGame.evaluate(() => (globalThis as unknown as { rumble(index: number): Promise<unknown> }).rumble(0));
-  await until(async () => (await phone.evaluate(() => (globalThis as unknown as { buzz: unknown[] }).buzz)).includes(200), 'the phone to vibrate');
-
-  // A screen from loopback is the box's own: the laptop may show its game there. The TV takes the laptop's seat, and
-  // the laptop is the TV's controller: its keyboard plays P1.
-  const tv = await open({ viewport: { width: 1280, height: 720 } });
-  await seat(tv, loopback, 'TV');
-  await panel.getByRole('button', { name: 'Show on TV' }).click();
-  await laptop.getByRole('heading', { name: 'Your game is on the TV' }).waitFor();
-  await laptop.locator('#tv-pad-place').filter({ hasText: 'P1 · Red car' }).waitFor();
-  await until(async () => tv.url().includes('#seat=') && Boolean(gameFrame(tv)) &&
-    (await logged(gameFrame(tv)).catch(() => '')).includes('registered'), 'the TV in the laptop’s seat');
-  await laptop.keyboard.down('Space');
-  await until(async () => (await logged(gameFrame(tv))).includes('keydown KeyF "f" 70'), 'P1’s key from the laptop on the TV');
-  await laptop.keyboard.up('Space');
-  // The laptop's screen ended with its game, and its phone heard.
-  await phone.getByText('The screen closed.').waitFor();
-  assert.deepEqual(failures, []);
-});
-
-// Show on TV of a game with its own netcode: the TV takes the laptop's member of the game's space, its number and all,
-// by the hand-over the laptop's page asks the kernel for; the laptop becomes its controller.
-const netGame = `<!doctype html><p id="out">waiting</p><script type="module">
-  const zn = await import('/.skalet/net.js');
-  const net = zn.connect({ via: 'parent' });
-  net.on('open', ({ id }) => { document.getElementById('out').textContent = 'member ' + id; });
-</script>`;
-for (const host of hostsUnderTest()) test('over the ' + host.name + ' host, Show on TV hands a net game\'s member to the TV',
-  { timeout: 90_000, skip: existsSync(REAL_SPACES) ? false : 'the spaces kernel is not built: run `pnpm run deps`' }, async (t) => {
-  const address = lanAddresses()[0];
-  if (!address) { t.skip('no LAN address to reach the listener from elsewhere than loopback'); return; }
-  const root = tempDir(t, 'zirbel-pads-net-');
-  const projects = new Projects(join(root, 'source'));
-  const project = importGameFolder(projects, { title: 'Net', files: encoded({ 'index.html': netGame, 'zirbel.json': '{"players":{"max":2}}' }) });
-  const release = new Releases(projects, 'dist/web').package(project.id, 'main', rights, false);
-  writeFileSync(join(root, 'release.json'), JSON.stringify(release));
-  const link = new URL(await launch(t, host.command, ['--host-only', '--lan', '--player-port', '0', '--data', join(root, 'data'),
-    '--import', join(root, 'release.json'), '--release', release.manifest.releaseId],
-  (line) => typeof line.link === 'string' ? line.link : undefined, { ZIRBEL_SPACES_BINARY: REAL_SPACES }).ready);
-  const browser = await chromium.launch();
-  t.after(() => browser.close());
-  const failures: string[] = [];
-  const enter = async (origin: string, name: string, member: string) => {
-    const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
-    page.on('pageerror', (error) => failures.push(error.message));
-    page.on('console', (message) => { if (/Content Security Policy|Refused to/.test(message.text())) failures.push(message.text()); });
-    await page.goto(origin + link.pathname + link.hash);
-    await page.locator('#join-form input[name="name"]').fill(name);
-    await page.locator('#join-form button.primary').click();
-    await page.frameLocator('iframe').locator('#out').filter({ hasText: member }).waitFor({ timeout: 15_000 });
-    return page;
-  };
-  const laptop = await enter('http://' + address + ':' + link.port, 'Ada', 'member 1');
-  // A player page from loopback is the box's own screen, standing in for the TV.
-  const tv = await enter('http://127.0.0.1:' + link.port, 'TV', 'member 2');
-  await laptop.getByRole('button', { name: 'Controllers' }).click();
-  await laptop.locator('#controllers-panel').getByRole('button', { name: 'Show on TV' }).click();
-  await laptop.getByRole('heading', { name: 'Your game is on the TV' }).waitFor();
-  await tv.frameLocator('iframe').locator('#out').filter({ hasText: 'member 1' }).waitFor({ timeout: 15_000 });
-  assert.match(tv.url(), /#skalet\.space=[0-9a-f]{12}$/);
   assert.deepEqual(failures, []);
 });

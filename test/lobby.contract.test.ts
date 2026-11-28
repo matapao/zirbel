@@ -1,44 +1,20 @@
 // The lobby on both hosts: `node dist/server.mjs` and the Go host (host/bin/zirbel-host). The owner offers releases in
 // the editor; anyone who reaches a player listener opens the lobby page at / (or the TV page at /tv), starts a session
 // of an offered game and joins one by its code. Every check runs against each host, with the same answers.
+// Its releases and the editor they are imported into are lobby-fixture.ts.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import WebSocket from 'ws';
-import { Projects } from '../packages/core/projects.ts';
-import { Releases } from '../packages/core/releases.ts';
-import type { Release } from '../packages/sdk/contracts.ts';
-import { hostsUnderTest, launch, legacyProject, rights, tempDir } from './helpers.ts';
+import { hostsUnderTest, launch } from './helpers.ts';
+import { fixtures, startEditor } from './lobby-fixture.ts';
 
 const hosts = hostsUnderTest();
 const CODE = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/;
 const PAGE_POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
-
-function fixtures(t: TestContext) {
-  const root = tempDir(t, 'zirbel-lobby-');
-  const projects = new Projects(join(root, 'source'));
-  const releases = new Releases(projects, 'dist/web');
-  const write = (name: string, release: Release) => {
-    const file = join(root, name + '.json');
-    writeFileSync(file, JSON.stringify(release));
-    return { file, id: release.manifest.releaseId };
-  };
-  const game = (title: string, maxPlayers: number) => projects.createGame(title, { html: '<!doctype html><canvas></canvas>', maxPlayers }).id;
-  const shared = game('Shared', 2);
-  const fixture = {
-    data: join(root, 'data'),
-    shared: write('shared', releases.package(shared, 'main', rights, false)),
-    again: write('again', releases.package(shared, 'main', rights, false)),
-    alone: write('alone', releases.package(game('Alone', 1), 'main', rights, false)),
-    tiles: write('tiles', releases.package(legacyProject(projects, 'tessellate').id, 'main', rights, false)),
-    closed: write('closed', releases.package(game('Closed', 2), 'main', { ...rights, play: false }, false)),
-  };
-  return { ...fixture, imports: [fixture.shared, fixture.again, fixture.alone, fixture.tiles, fixture.closed]
-    .flatMap(({ file }) => ['--import', file]) };
-}
 
 type Answer = { status: number; body: unknown; headers: Headers };
 /** A request with the base's own origin unless headers say otherwise, its JSON body when it has one. */
@@ -72,11 +48,6 @@ async function seat(t: TestContext, link: Link, releaseId: string, credential = 
   }));
   ws.send(JSON.stringify({ type: 'hello', version: 1, credential, releaseId }));
   return answer;
-}
-
-async function startEditor(t: TestContext, command: string[], data: string, imports: string[]) {
-  return launch(t, command, ['--data', data, '--port', '0', '--player-port', '0', ...imports],
-    (line) => typeof line.editor === 'string' && typeof line.player === 'string' ? { editor: line.editor, player: line.player } : undefined).ready;
 }
 
 for (const host of hosts) {

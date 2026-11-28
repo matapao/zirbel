@@ -133,4 +133,11 @@ await Promise.all([
     outdir: 'dist/web', entryNames: '[name]', chunkNames: 'editor-chunks/[name]-[hash]',
     minify: true, legalComments: 'linked',
   }),
+  // The editor's stylesheet: packages/web/styles/ holds it by part of the editor, and its workspace.css imports the
+  // parts in cascade order. Bundled into the one dist/web/workspace.css that index.html links and both hosts serve,
+  // unminified and in UTF-8 as written.
+  build({
+    entryPoints: ['packages/web/styles/workspace.css'], outfile: 'dist/web/workspace.css',
+    bundle: true, charset: 'utf8',
+  }),
 ]);

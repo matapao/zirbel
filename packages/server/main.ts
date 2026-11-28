@@ -7,13 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { z } from 'zod';
 import QRCode from 'qrcode';
-import { attachment, asset, distribution, id, lobbyOffer, PORTABLE_FILE_LIMIT } from '../sdk/contracts.ts';
-import { assertCurrent, atomicWrite, mediaMatches, newId, Projects, safeId, ZirbelError } from '../core/projects.ts';
+import { atomicWrite, newId, Projects, ZirbelError } from '../core/projects.ts';
 import { Releases } from '../core/releases.ts';
-import { importGameFolder } from '../core/game-files.ts';
-import { body, bytes, checkOrigin, fail, lanAddresses, listen, refuseUpgrade, reply, requestUrl, secure, staticFile } from './http.ts';
+import { body, checkOrigin, fail, listen, refuseUpgrade, reply, requestUrl, secure, staticFile } from './http.ts';
 import { ChatRuns } from './chat-runs.ts';
-import { chatRequest, projectChat, type ChatContext } from './chat-routes.ts';
+import { chatRequest, type ChatContext } from './chat-routes.ts';
 import { accountDirectory } from './account.ts';
 import { exitWithParent } from './parent.ts';
 import { Threads } from './threads.ts';
@@ -24,7 +22,7 @@ import { ActivityStore } from './activity-log.ts';
 import { Rooms } from '../core/rooms.ts';
 import { importReleases, Players, readLanHost, readPort, stopOnSignal } from './hosting.ts';
 import { localHarnesses } from './local-harnesses.ts';
-import { modelId, processorId, type Processors } from './processors.ts';
+import type { Processors } from './processors.ts';
 import { Mcp, stdioMcp } from './mcp.ts';
 import { readGuides } from './mcp-guides.ts';
 import { Pairing } from './box-pairing.ts';
@@ -39,6 +37,9 @@ import { requireGit } from '../core/git.ts';
 import { authorOf } from './authors.ts';
 import { gitRequest, writeHooks } from './git-http.ts';
 import { gitRoutes } from './git-routes.ts';
+import { processorRoutes } from './processor-routes.ts';
+import { projectRoutes, type ProjectRoutes } from './project-routes.ts';
+import { playRoutes, type PlayRoutes } from './play-routes.ts';
 import { GitTokens } from './git-tokens.ts';
 import { isSpacesPath, proxySpaces, proxySpacesUpgrade } from './spaces-proxy.ts';
 
@@ -68,12 +69,6 @@ function browser(url: string) {
   else if (process.platform === 'win32') execFile('rundll32.exe', ['url.dll,FileProtocolHandler', url], () => {});
   else execFile('xdg-open', [url], () => {});
 }
-
-const branchInput = z.object({ branch: id.default('main') });
-const scope = branchInput.extend({ baseRevision: id });
-const permissionsInput = branchInput.extend({ baseRevision: id.optional(), permissions: distribution });
-const assetMetadata = asset.omit({ id: true, hash: true });
-const shareDefaults = { play: true, download: true, remix: true };
 
 // What the editor is built from: tests pass their own harnesses, the built web files and the account folder, where the
 // threads' working folders are.
@@ -177,6 +172,8 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
 
     const editorOrigin = () => 'http://127.0.0.1:' + editorPort;
     const mcpOn = () => enableMcp || Boolean(box?.settings.read().externalMcp);
+    const projectApi: ProjectRoutes = { chatContext, releases, rooms, players, mcp, box, lanHost, mcpOn };
+    const playApi: PlayRoutes = { releases, rooms, players };
     /** The editor's origin on the host name a device reached the box by, and on loopback. */
     const boxEditorOrigins = (host: string) => [editorAt(host), editorOrigin(), 'http://localhost:' + editorPort];
     async function editorRequest(request: IncomingMessage, response: ServerResponse) {
@@ -244,186 +241,17 @@ async function start({ harnesses: harnessesFor = localHarnesses, webRoot = fileU
             turns: chat.count, ...(box ? { box: boxHealth(box) } : {}) });
           return;
         }
-        if (resource === 'processors' && harnesses) {
-          if (!pathID && method === 'GET') {
-            reply(response, { processors: await harnesses.list() }); return;
-          }
-          if (action === 'model-settings' && !tail && method === 'POST' && harnesses.settings) {
-            checkOrigin(request, true);
-            const { model } = z.strictObject({ model: modelId.optional() }).parse(await body(request, 4096));
-            const disconnected = new AbortController();
-            response.once('close', () => disconnected.abort(new ZirbelError(409, 'The model settings request closed.')));
-            const settings = await harnesses.settings(processorId.parse(pathID), model, disconnected.signal);
-            if (!response.destroyed) reply(response, settings);
-            return;
-          }
-          if (action === 'sign-in' && !tail && method === 'GET' && harnesses.signInStatus) {
-            reply(response, harnesses.signInStatus(processorId.parse(pathID))); return;
-          }
-          if (action === 'sign-in' && !tail && method === 'POST' && harnesses.beginSignIn && harnesses.submitSignInCode) {
-            checkOrigin(request, true);
-            const processor = processorId.parse(pathID);
-            const { code } = z.strictObject({ code: z.string().trim().min(1).max(2048).regex(/^\S+$/).optional() }).parse(await body(request));
-            // On a box, a paired device signs in from elsewhere than the box the harness runs on.
-            reply(response, code === undefined ? await harnesses.beginSignIn(processor, { elsewhere: !access.local })
-              : harnesses.submitSignInCode(processor, code));
-            return;
-          }
-        }
+        if (resource === 'processors' && harnesses &&
+          await processorRoutes(harnesses, request, response, access, { pathID, action, tail })) return;
         if (box && (resource === 'pairing' || resource === 'box') &&
           await boxRequest(box, request, response, access, { resource, pathID, action, tail })) return;
         if (resource === 'chat' && await chatRequest(chatContext, request, response, pathID, action, tail)) return;
         if (box && resource === 'projects' && await editorsRequest(box, projects, request, response, access, url, { pathID, action, tail })) return;
         if (resource === 'projects' && await gitRoutes(gitApi, request, response, access, url, { pathID, action, tail })) return;
         const author = authorOf(access);
-        if (resource === 'projects') {
-          if (!pathID && method === 'GET') {
-            reply(response, projects.summaries().filter((game) => !only || game.id === only)); return;
-          }
-          if (!pathID && method === 'POST') {
-            const input = z.strictObject({ title: z.string().optional() }).parse(await body(request));
-            reply(response, projects.createGame(input.title, undefined, author), 201); return;
-          }
-          if (pathID === 'import-game' && method === 'POST') {
-            reply(response, importGameFolder(projects, await body(request, PORTABLE_FILE_LIMIT), author), 201); return;
-          }
-          if (pathID === 'import' && method === 'POST') {
-            reply(response, projects.import(await body(request, PORTABLE_FILE_LIMIT), author), 201); return;
-          }
-          const projectId = safeId(pathID);
-          if (!action && method === 'GET') { reply(response, projects.read(projectId)); return; }
-          if (action === 'remove' && !tail && method === 'POST') {
-            projects.read(projectId);
-            // Its threads go with it: their turns stop, and their folders and sessions are removed.
-            await chat.stopThreads((thread) => thread.startsWith(projectId + '.'));
-            projects.remove(projectId);
-            // On a box, its edit code and its editors go too.
-            box?.editors.removeProject(projectId);
-            rooms.closeProject(projectId);
-            await threads.removeProject(projectId, (harness, session) => harnesses.removeSession?.(harness, session) ?? Promise.resolve());
-            reply(response, {});
-            return;
-          }
-          if (action === 'title' && method === 'POST') {
-            const { title } = z.strictObject({ title: z.string() }).parse(await body(request));
-            reply(response, projects.rename(projectId, title)); return;
-          }
-          if (action === 'proposals' && method === 'GET') {
-            reply(response, tail ? projects.preview(projectId, safeId(tail)) :
-              projects.proposals(projectId, safeId(url.searchParams.get('branch') ?? 'main'))); return;
-          }
-          if (action === 'proposals' && method === 'POST') { reply(response, projects.submit(projectId, await body(request), false, author), 201); return; }
-          if (action === 'discard' && method === 'POST') { projects.discard(projectId, safeId(tail)); reply(response, {}); return; }
-          if (action === 'apply' && method === 'POST') {
-            const { fork } = z.strictObject({ fork: id.optional() }).parse(await body(request));
-            reply(response, projects.commit(projectId, safeId(tail), fork)); return;
-          }
-          if (action === 'restore' && method === 'POST') {
-            const input = scope.extend({ target: id }).parse(await body(request));
-            reply(response, projects.restore(projectId, input.branch, input.baseRevision, input.target, author)); return;
-          }
-          if (await projectChat(chatContext, request, response, url, projectId, action, tail, author)) return;
-          if (action === 'notes' && method === 'POST') { reply(response, projects.addNote(projectId, await body(request)), 201); return; }
-          if (action === 'media' && method === 'POST' && !tail) {
-            const { data, ...input } = attachment.omit({ id: true }).extend({ data: z.string().max(24_000_000) })
-              .parse(await body(request, 25_000_000));
-            const file = Buffer.from(data, 'base64');
-            if (!mediaMatches(input.media, file)) throw new ZirbelError(400, 'The attachment does not match its media type.');
-            reply(response, projects.addMedia(projectId, input, file), 201); return;
-          }
-          if (action === 'media' && method === 'GET' && tail) {
-            const file = projects.readMedia(projectId, safeId(tail));
-            bytes(response, file.bytes, file.item.media); return;
-          }
-          if (action === 'media' && method === 'POST' && tail) {
-            const { transcript, intent } = attachment.pick({ transcript: true, intent: true }).parse(await body(request));
-            reply(response, projects.editTranscript(projectId, safeId(tail), transcript, intent)); return;
-          }
-          if (action === 'asset' && method === 'POST') {
-            const { data, branch, baseRevision, ...metadata } = assetMetadata.extend({
-              data: z.string().max(7_000_000), ...scope.shape,
-            }).parse(await body(request, 7_500_000));
-            const file = Buffer.from(data, 'base64');
-            if (!mediaMatches(metadata.media, file)) throw new ZirbelError(400, 'The asset does not match its media type.');
-            assertCurrent(projects.read(projectId), branch, baseRevision);
-            const hash = projects.storeAsset(file);
-            reply(response, projects.submit(projectId, { branch, baseRevision, label: ('Import ' + metadata.name).slice(0, 120),
-              operations: [{ op: 'addAsset', asset: { ...metadata, id: newId(), hash } }] }, false, author), 201);
-            return;
-          }
-          if (action === 'export' && method === 'GET') {
-            reply(response, projects.export(projectId), 200, { 'content-disposition': 'attachment; filename="zirbel-project.json"' });
-            return;
-          }
-          if (action === 'release' && method === 'POST') {
-            const input = permissionsInput.parse(await body(request));
-            if (input.baseRevision) assertCurrent(projects.read(projectId), input.branch, input.baseRevision);
-            reply(response, releases.package(projectId, input.branch, input.permissions, true).manifest, 201); return;
-          }
-          if (action === 'development-room' && method === 'POST') {
-            const input = scope.parse(await body(request));
-            const release = releases.package(projectId, input.branch,
-              { play: true, download: false, remix: false }, false);
-            if (release.manifest.sourceRevision !== input.baseRevision)
-              throw new ZirbelError(409, 'The branch changed. Refresh before sharing.');
-            if (!release.manifest.simulation) throw new ZirbelError(422, 'Enable multiplayer in the game before sharing a development room.');
-            if (!lanHost && !lanAddresses().length) throw new ZirbelError(409, 'Connect the host to your local network to share a development room.');
-            await players.startLan();
-            projects.read(projectId);
-            reply(response, await players.describe(await rooms.withSpace(rooms.create(release, false, 'lan', true)), playerHost), 201);
-            return;
-          }
-          if (action === 'playtest' && method === 'POST') {
-            const input = branchInput.extend({ proposalId: id.optional(), baseRevision: id.optional() }).parse(await body(request));
-            if (input.baseRevision) assertCurrent(projects.read(projectId), input.branch, input.baseRevision);
-            // Draft play stays on loopback. Delivery rights are checked when sharing or exporting.
-            const release = releases.package(projectId, input.branch, shareDefaults, false, true, input.proposalId);
-            reply(response, players.solo(release, playerHost), 201); return;
-          }
-          if (action === 'grants' && mcpOn()) {
-            if (method === 'POST' && !tail) {
-              const input = z.strictObject({ write: z.boolean(), hours: z.number() }).parse(await body(request));
-              reply(response, mcp.create({ ...input, projectId }), 201); return;
-            }
-            if (method === 'POST' && tail) { mcp.revoke(projectId, safeId(tail)); reply(response, {}); return; }
-            if (method === 'GET') { reply(response, mcp.list(projectId)); return; }
-          }
-        }
-        if (resource === 'releases') {
-          if (method === 'GET' && !pathID) { reply(response, releases.list()); return; }
-          if (method === 'POST' && pathID && action === 'play') {
-            const release = releases.read(pathID);
-            if (!release.manifest.permissions.play) throw new ZirbelError(403, 'The creator has disabled play for this release.');
-            reply(response, players.solo(release, playerHost), 201); return;
-          }
-          if (method === 'GET' && pathID && action === 'download') {
-            const release = releases.read(pathID);
-            if (!release.manifest.permissions.download) throw new ZirbelError(403, 'The creator has disabled downloads.');
-            reply(response, release, 200, { 'content-disposition': 'attachment; filename="zirbel-release.json"' }); return;
-          }
-          if (method === 'POST' && pathID === 'import') { reply(response, releases.import(await body(request, PORTABLE_FILE_LIMIT)).manifest, 201); return; }
-          if (method === 'POST' && pathID && action === 'remix') { reply(response, releases.remix(pathID, authorOf(access)), 201); return; }
-        }
-        if (resource === 'lobby' && !action) {
-          if (method === 'GET' && !pathID) {
-            reply(response, { offered: players.lobby.offered(), link: players.lobbyLink(playerHost) }); return;
-          }
-          if (method === 'POST' && pathID === 'offer') {
-            const input = lobbyOffer.parse(await body(request, 4096));
-            reply(response, players.lobby.offer(input.release, input.offered)); return;
-          }
-        }
-        if (resource === 'rooms') {
-          if (method === 'GET' && !pathID) {
-            reply(response, rooms.list().filter((room) => !only || room.manifest.gameId === only)); return;
-          }
-          if (method === 'POST' && !pathID) {
-            const input = z.strictObject({ releaseId: id, lan: z.boolean() }).parse(await body(request));
-            reply(response, await players.start(input.releaseId, input.lan, playerHost), 201); return;
-          }
-          if (method === 'GET' && pathID && action === 'link') { reply(response, await players.describe(rooms.get(pathID), playerHost)); return; }
-          if (method === 'POST' && pathID && action === 'close') { rooms.close(pathID); reply(response, {}); return; }
-        }
+        if (resource === 'projects' && await projectRoutes(projectApi, request, response, url, { pathID, action, tail },
+          { author, only, playerHost })) return;
+        if (await playRoutes(playApi, request, response, { resource, pathID, action }, { access, only, playerHost })) return;
         throw new ZirbelError(404, 'Editor route does not exist.');
       } catch (error) { fail(response, error); }
     }

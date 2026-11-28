@@ -1,13 +1,17 @@
-import { boundedJson, objectRegistry } from '../sdk/game.ts';
+// The player page: a room's game for one seat (a built-in game drawn here, or an authored one in its frame:
+// player-frame.ts), its lobby and join form, a net game's space, its controllers and Show on TV.
 import { legacyScene, type SeatInfo } from '../sdk/contracts.ts';
 import { RoomClient, fetchRoom, type RoomInfo } from '../sdk/client.ts';
 import { mossState, tileState } from '../games/simulations.ts';
 import { templates } from '../games/templates.ts';
-import { createQuest, type Quest } from '../games/quest.ts';
 import { drawScene } from './scene.ts';
 import { screenControllers, type Controllers } from './controllers.ts';
 import { fromTv, TV_PAGE } from './tv-return.ts';
-import { bridgeFrame, gameFrame, handOver, joinSpace, localSpace, spaceLink, type PageSpace, type Role } from './player-space.ts';
+import { buildBoard, renderBoard } from './player-board.ts';
+import { gameFrame } from './player-frame.ts';
+import { controls, keys, motion } from './player-keys.ts';
+import { lanternQuest } from './player-quest.ts';
+import { handOver, joinSpace, spaceLink, type PageSpace, type Role } from './player-space.ts';
 
 function byId<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
 const room = location.pathname.split('/').at(-1) ?? '';
@@ -36,22 +40,14 @@ let seats: SeatInfo[] = [];
 let frame = 0;
 let disposeGarden: (() => void) | undefined;
 let ready = false;
-let quest: Quest | undefined;
 // The seat's own credential, which Show on TV hands to the box's screen, and the page's controllers once its game starts.
 let seatCredential: string | undefined;
 let controllers: Controllers | undefined;
-// A net game's space, which this page holds and shares with the game's frame until endBridge; handedOver once Show on TV
-// gave its member to the TV.
+// A net game's space, which this page holds and shares with the game's frame (player-frame.ts); handedOver once Show on
+// TV gave its member to the TV.
 let space: PageSpace | undefined;
-let endBridge: (() => void) | undefined;
 let handedOver = false;
-
-const keys = new Set<string>();
-const north = ['w', 'arrowup'];
-const south = ['s', 'arrowdown'];
-const west = ['a', 'arrowleft'];
-const east = ['d', 'arrowright'];
-const controls = [...north, ...south, ...west, ...east];
+const quest = lanternQuest({ byId, canvas, score });
 
 function saved() { try { return sessionStorage.getItem(savedKey) ?? ''; } catch { return ''; } }
 function remember(credential?: string) {
@@ -62,25 +58,20 @@ function remember(credential?: string) {
 }
 
 function move(key: string, down: boolean) {
-  if (!controls.includes(key) || (!quest && info?.manifest.template !== 'mosslight') || seat?.role !== 'player') return;
+  if (!controls.includes(key) || (!quest.playing() && info?.manifest.template !== 'mosslight') || seat?.role !== 'player') return;
   if (keys.has(key) === down) return;
   if (down) keys.add(key);
   else keys.delete(key);
   movement();
 }
 
-function motion() {
-  const held = (list: string[]) => Number(list.some((key) => keys.has(key)));
-  return { x: held(east) - held(west), y: held(south) - held(north) };
-}
-
 function movement() {
-  if (!quest) client?.send({ type: 'move', ...motion() });
+  if (!quest.playing()) client?.send({ type: 'move', ...motion() });
 }
 
 window.addEventListener('keydown', (event) => {
   const key = event.key.toLowerCase();
-  if (key === 'e' && quest && !event.repeat) { quest.interact(); refreshQuest(); }
+  if (key === 'e' && !event.repeat) quest.interact();
   if (!game.hidden && controls.includes(key)) { event.preventDefault(); move(key, true); }
 });
 window.addEventListener('keyup', (event) => move(event.key.toLowerCase(), false));
@@ -155,68 +146,16 @@ function leaveRoom(message = 'You left the room.') {
 byId('leave').addEventListener('click', () => leaveRoom());
 reset.addEventListener('click', () => client?.send({ type: 'reset' }));
 
-let authoredFrame: HTMLIFrameElement | undefined;
-let gamePort: MessagePort | undefined;
-let shared: unknown = {};
-function updateRoom() {
-  if (!seat) return;
-  const message = { type: 'zirbel.room', value: { self: seat, seats, states: shared ?? {} } };
-  // oxlint-disable-next-line unicorn/require-post-message-target-origin -- a MessagePort has no target origin
-  gamePort?.postMessage(message);
-}
-// Checked below: the sender is the game frame and its origin is the sandbox's opaque 'null'.
-// nosemgrep: javascript.browser.security.insufficient-postmessage-origin-validation.insufficient-postmessage-origin-validation -- checked below
-window.addEventListener('message', (event) => {
-  if (!authoredFrame || event.source !== authoredFrame.contentWindow || event.origin !== 'null') return;
-  const port = event.ports[0];
-  const key = info.gameUrl?.split('/')[3]; // /game/<room>/<key>/, a net game's /game/@<room>/<key>/
-  if (!port || !key || event.data?.type !== 'zirbel.ready' || event.data.documentKey !== key) return;
-  // A WindowProxy survives navigation. This port belongs to the document that opened it.
-  gamePort?.close();
-  gamePort = port;
-  port.onmessage = ({ data }) => { if (gamePort === port) receiveGameMessage(data); };
-  updateRoom();
-  controllers?.attach(port);
-});
-
-// Games may call zirbel.send every frame. Forward only the latest state at the
-// server's 20 Hz tick so the room's 60-messages-per-second limit is never hit.
-let latestState: unknown;
-let stateTimer: ReturnType<typeof setTimeout> | undefined;
-function sendLatestState(value: unknown) {
-  latestState = value;
-  stateTimer ??= setTimeout(() => { stateTimer = undefined; client?.send(latestState); }, 50);
-}
-
-function receiveGameMessage(data: MessageEvent['data']) {
-  const { type, value } = data ?? {};
-  if (type === 'zirbel.rumble' || type === 'zirbel.place') controllers?.fromGame(type, value);
-  if (type === 'zirbel.error' && typeof value === 'string') error.textContent = value.slice(0, 500);
-  if (type === 'zirbel.state' && info.manifest.simulation === 'shared-state-v1' && seat?.role === 'player' &&
-      boundedJson(value) && JSON.stringify(value).length <= 4096) sendLatestState(value);
-  if (type === 'zirbel.objects' && window.parent !== window && info.solo && info.registerObjects !== false) {
-    const objects = objectRegistry.safeParse(value);
-    // frame-ancestors lets only the editor frame the player, so the parent is the editor; the payload is the validated registry.
-    // nosemgrep: javascript.browser.security.wildcard-postmessage-configuration.wildcard-postmessage-configuration -- the parent is the editor
-    if (objects.success) window.parent.postMessage({ type, room, value: objects.data }, '*');
-  }
-}
+const authored = gameFrame({ room, error, info: () => info, seat: () => seat, seats: () => seats,
+  controllers: () => controllers, send: (value) => client?.send(value) });
 
 function showLobby(message = '') {
-  clearTimeout(stateTimer);
-  stateTimer = undefined;
-  gamePort?.close();
-  gamePort = undefined;
-  endBridge?.();
-  endBridge = undefined;
-  authoredFrame?.remove();
-  authoredFrame = undefined;
+  authored.close();
   keys.clear();
   cancelAnimationFrame(frame);
   disposeGarden?.();
   disposeGarden = undefined;
-  quest = undefined;
-  byId('quest-panel').hidden = true;
+  quest.stop();
   ready = false;
   game.hidden = true;
   lobby.hidden = false;
@@ -227,32 +166,9 @@ function showLobby(message = '') {
   byId('leave').hidden = true;
 }
 
-/** The first and the second player's marks on a tile; any other tile shows a dot. */
-const MARKS = new Map([[1, '✧'], [2, '●']]);
-
-/** The line under the board: who won, a draw, or whose turn it is. */
-function scoreLine(state: ReturnType<typeof tileState.parse>, name: (id: string) => string) {
-  if (state.winner) return name(state.winner) + ' wins';
-  if (state.draw) return 'Draw';
-  if (!state.turn) return 'Waiting for another player';
-  return seat?.id === state.turn ? 'Your turn' : name(state.turn) + '’s turn';
-}
-
-function renderBoard() {
-  if (!tile) return;
-  const name = (id: string) => id === 'bot' ? 'Computer' : seats.find((seat) => seat.id === id)?.name ?? 'Player';
-  for (const button of board.querySelectorAll<HTMLButtonElement>('button')) {
-    const index = Number(button.dataset.cell);
-    const value = tile.board[index];
-    const mark = value ? tile.order.indexOf(value) + 1 : 0;
-    button.textContent = MARKS.get(mark) ?? '·';
-    button.disabled = !!value || !seat || seat.id !== tile.turn;
-    delete button.dataset.mark;
-    if (mark) button.dataset.mark = String(mark);
-    button.setAttribute('aria-label', value ? name(value) + ', tile ' + (index + 1) : 'Place on tile ' + (index + 1));
-  }
-  score.textContent = scoreLine(tile, name);
-  reset.hidden = !tile.winner && !tile.draw || seat?.role !== 'player';
+/** The board as the room last had it, once a state has come. */
+function showBoard() {
+  if (tile) renderBoard({ board, score, reset }, tile, seats, seat);
 }
 
 async function showGame() {
@@ -267,17 +183,8 @@ async function showGame() {
   if (info.gameUrl) {
     canvas.hidden = true;
     game.querySelector('footer')!.hidden = true;
-    // A net game's frame in a session is its space's already (enterSpace).
-    authoredFrame ??= gameFrame();
-    authoredFrame.title = info.manifest.title;
     startControllers();
-    // A simulated network for testing (the net module's ?net=lag:120,…,stats) goes from the player's address to the
-    // game's, whose overlay shows it; the simulator itself is under this page's connection.
-    const simulated = new URLSearchParams(location.search).get('net');
-    const net = info.manifest.simulation === 'net-v2';
-    authoredFrame.src = info.gameUrl + (net && simulated ? '?net=' + encodeURIComponent(simulated) : '');
-    game.prepend(authoredFrame);
-    if (net && !endBridge) void playAlone(authoredFrame);
+    authored.open(game, info.gameUrl);
     return;
   }
   switch (info.manifest.template) {
@@ -286,18 +193,11 @@ async function showGame() {
       board.hidden = false;
       board.style.setProperty('--board-surface', legacyScene(info).background);
       byId('instructions').textContent = 'Connect three tiles in a line.';
-      board.replaceChildren();
-      for (let index = 0; index < 9; index++) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.dataset.cell = String(index);
-        button.addEventListener('click', () => client?.send({ type: 'place', cell: index }));
-        board.append(button);
-      }
-      renderBoard();
+      buildBoard(board, (cell) => client?.send({ type: 'place', cell }));
+      showBoard();
       break;
     case 'lantern-quest':
-      await showQuest();
+      await quest.show(legacyScene(info));
       break;
     case 'orbit-garden': {
       byId('instructions').textContent = 'Drag to orbit · scroll to zoom';
@@ -329,14 +229,6 @@ async function showGame() {
   }
 }
 
-/** A game with its own netcode that plays alone joins a space of the page's own through it. */
-async function playAlone(frame: HTMLIFrameElement) {
-  const alone = await localSpace().catch(() => undefined);
-  const end = alone && frame === authoredFrame ? await bridgeFrame(frame, alone, () => {}) : undefined;
-  if (frame === authoredFrame) endBridge = end;
-  else end?.();
-}
-
 const ENDED: Record<string, string> = { replaced: 'This seat is in use on another screen now.',
   lost: 'The connection to this session was lost.', 'credential-expired': 'This seat has expired. Join again from the lobby.',
   refused: 'This seat has expired. Join again from the lobby.', left: 'You left the room.' };
@@ -348,10 +240,7 @@ async function enterSpace(asked?: { name: string; role: Role }) {
   const joined = await joinSpace(netLink, asked);
   // Shared with the game's frame at once, so what the others send waits for the game, which loads once the page has the
   // room's info. A game that left the session and didn't come back gives up this page's place in it too.
-  const frame = authoredFrame = gameFrame();
-  endBridge = await bridgeFrame(frame, joined, () => {
-    if (joined === space && frame === authoredFrame) leaveRoom('The game left the session.');
-  });
+  await authored.share(joined, () => { if (joined === space) leaveRoom('The game left the session.'); });
   try { info = await fetchRoom<RoomInfo>(room, 'info', undefined, await joined.proof()); }
   catch (reason) { void joined.leave(); showLobby(); throw reason; }
   describe();
@@ -369,52 +258,6 @@ async function enterSpace(asked?: { name: string; role: Role }) {
   void showGame();
 }
 
-function refreshQuest() {
-  if (!quest) return;
-  const { state } = quest;
-  byId('quest-message').textContent = state.message;
-  byId('interact').hidden = state.fighting || !state.health || state.won;
-  byId('attack').hidden = !state.fighting;
-  byId('guard').hidden = !state.fighting;
-  byId('restart-quest').hidden = Boolean(state.health) && !state.won;
-  score.textContent = 'HP ' + state.health + ' / ' + quest.maxHealth +
-    (state.fighting ? ' · ' + state.enemyName + ' HP ' + state.enemyHealth : '') +
-    (state.total > 1 ? ' · Relics ' + state.relics + '/' + state.total : '');
-}
-
-async function showQuest() {
-  const active = quest = createQuest(legacyScene(info));
-  byId('quest-panel').hidden = false;
-  byId('touch').hidden = false;
-  byId('instructions').textContent = matchMedia('(pointer: coarse)').matches ? 'Move with the arrows' : 'WASD or arrow keys · E to interact';
-  byId('interact').onclick = () => { active.interact(); refreshQuest(); };
-  byId('attack').onclick = () => { active.battle('attack'); refreshQuest(); };
-  byId('guard').onclick = () => { active.battle('guard'); refreshQuest(); };
-  byId('restart-quest').onclick = () => { active.restart(); refreshQuest(); };
-  refreshQuest();
-  let fallback: CanvasRenderingContext2D | null = null;
-  try {
-    const { showGarden } = await import('./garden-3d.ts');
-    if (quest !== active) return;
-    disposeGarden = showGarden(canvas, legacyScene(info), active);
-  } catch {
-    if (quest !== active) return;
-    fallback = canvas.getContext('2d');
-  }
-
-  let last = performance.now();
-  function animate(time: number) {
-    if (quest !== active) return;
-    const { x, y } = motion();
-    active.move(x, y, (time - last) / 1000);
-    last = time;
-    if (fallback) drawScene(fallback, legacyScene(info), { time, collected: active.state.hidden,
-      explorers: [{ id: 'you', x: active.state.x, y: active.state.y, color: '#f3f6ad', score: 0 }], currentSeat: 'you' });
-    frame = requestAnimationFrame(animate);
-  }
-  frame = requestAnimationFrame(animate);
-}
-
 function connect(credential: string) {
   client = new RoomClient(room, info.manifest.releaseId, credential, (message) => {
     switch (message.type) {
@@ -424,12 +267,12 @@ function connect(credential: string) {
         remember(message.resume);
         error.textContent = '';
         if (keys.size) movement();
-        updateRoom();
+        authored.update();
         void showGame();
         break;
       case 'snapshot': {
         seats = message.seats;
-        if (info.gameUrl) { shared = message.state; updateRoom(); break; }
+        if (info.gameUrl) { authored.states(message.state); break; }
         const mossUpdate = mossState.safeParse(message.state);
         if (mossUpdate.success && info.manifest.simulation === 'mosslight-v1') {
           moss = mossUpdate.data;
@@ -438,7 +281,7 @@ function connect(credential: string) {
         const tileUpdate = tileState.safeParse(message.state);
         if (tileUpdate.success && info.manifest.simulation === 'tessellate-v1') {
           tile = tileUpdate.data;
-          renderBoard();
+          showBoard();
         }
         break;
       }

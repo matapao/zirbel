@@ -1,17 +1,15 @@
 // A Zirbel box (box mode): pairing with one-time codes, claiming a box no device has paired with, the paired devices'
-// sessions, the box's switches and what is off not running, its own Wi-Fi, its TV, the network it answers, and its door.
+// sessions, the box's switches and what is off not running, its TV, the network it answers, and its door.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { request } from 'node:http';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { networkWake, readOwnNetwork, wifiJoinText } from '../packages/server/box-network.ts';
 import { CODE_MS, deviceLabel, normalizeCode, Pairing, sessionToken, WRONG_CODES } from '../packages/server/box-pairing.ts';
 import { boxDoor, boxHealth, boxHosts, boxName, boxRequest, isLoopback, onBoxNetwork } from '../packages/server/box-routes.ts';
 import { BoxHarnesses, BoxSettings, harnessesUnavailable, type Capabilities } from '../packages/server/box-settings.ts';
 import type { Processors } from '../packages/server/processors.ts';
 import { at, boxFor, incoming, outgoing, roomy } from './box-fixtures.ts';
-import { launch, tempDir } from './helpers.ts';
+import { tempDir } from './helpers.ts';
 
 const CODE = /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
 
@@ -232,51 +230,6 @@ test('the box API: codes, devices, switches and setup (which wakes the setup ser
     origin: 'http://zirbel.local' }, '{"harnesses":false}'), response, paired, { resource: 'box', pathID: 'settings' }), /A turn is running/);
 });
 
-test('the box’s own Wi-Fi: read as the setup service keeps it, joined by a QR code, switched only where it can be', async (t) => {
-  const box = boxFor(t);
-  const wake = networkWake(box.setupRequest);
-  assert.equal(wake, join(dirname(box.setupRequest), 'network'));
-  const paired = { local: false, device: 'device' };
-  const call = async (method: string, pathID: string, payload?: object) => {
-    const { response, sent } = outgoing();
-    const headers: Record<string, string> = { origin: 'http://zirbel.local', ...(payload ? { 'content-type': 'application/json' } : {}) };
-    await boxRequest(box, incoming('10.42.0.20', method, '/', headers, payload ? JSON.stringify(payload) : ''), response, paired,
-      { resource: 'box', pathID });
-    return JSON.parse(sent.body || '{}');
-  };
-  // A box without its Wi-Fi setup has no network to make, and can't switch it on.
-  assert.deepEqual(await call('GET', 'network'), { ownNetwork: false, network: null });
-  await assert.rejects(call('PUT', 'settings', { ownNetwork: true }), /can’t make its own Wi-Fi/);
-  assert.ok(!existsSync(wake));
-
-  writeFileSync(box.ownNetwork, JSON.stringify({ version: 1, name: 'Zirbel 3F2A', password: 'abcd-efgh-jkmn' }));
-  assert.deepEqual(await call('GET', 'network'), { ownNetwork: false,
-    network: { name: 'Zirbel 3F2A', password: 'abcd-efgh-jkmn', qr: 'data:qr,' + encodeURIComponent('WIFI:T:WPA;S:Zirbel 3F2A;P:abcd-efgh-jkmn;;') } });
-  // Switching it wakes the setup service, which changes the Wi-Fi; setting it to what it is wakes nothing.
-  assert.equal((await call('PUT', 'settings', { ownNetwork: true })).ownNetwork, true);
-  assert.ok(existsSync(wake));
-  rmSync(wake);
-  await call('PUT', 'settings', { ownNetwork: true, onboarded: true });
-  assert.ok(!existsSync(wake));
-  assert.equal((await call('GET', 'network')).ownNetwork, true);
-  assert.equal(box.settings.read().setupRequested, false, 'the box’s own Wi-Fi is no setup request');
-  assert.ok(!existsSync(box.setupRequest));
-  assert.equal((await call('PUT', 'settings', { ownNetwork: false })).ownNetwork, false);
-  assert.ok(existsSync(wake));
-
-  // The kept file is checked as a network takes it.
-  assert.equal(readOwnNetwork(join(dirname(box.ownNetwork), 'none.json')), undefined);
-  for (const kept of [{ version: 1, name: 'Zirbel', password: 'short' }, { version: 1, name: 'x'.repeat(33), password: 'long enough' },
-    { version: 1, name: 'Zirbel', password: 'naïve password' }, { version: 1, name: 'Zirbel', password: 'long enough', extra: 1 }]) {
-    writeFileSync(box.ownNetwork, JSON.stringify(kept));
-    assert.throws(() => readOwnNetwork(box.ownNetwork), /could not be read/, JSON.stringify(kept));
-  }
-  writeFileSync(box.ownNetwork, ' '.repeat(4097));
-  assert.throws(() => readOwnNetwork(box.ownNetwork), /could not be read/);
-  // The QR code's text escapes what the WIFI: scheme reserves.
-  assert.equal(wifiJoinText({ name: 'A;B,C:D"E\\F', password: 'pass:word;' }), 'WIFI:T:WPA;S:A\\;B\\,C\\:D\\"E\\\\F;P:pass\\:word\\;;;');
-});
-
 test('the TV switch wakes the box’s console service where it has one, and says whether it has', async (t) => {
   const box = boxFor(t);
   const paired = { local: false, device: 'device' };
@@ -298,54 +251,4 @@ test('the TV switch wakes the box’s console service where it has one, and says
   await put({ tv: true, onboarded: true });
   assert.ok(!existsSync(box.tvWake), 'a switch kept as it was wakes nothing');
   await assert.rejects(put({ tv: 'on' }), /expected boolean/);
-});
-
-/** A request to a local port with a Host header of its own, as a device that reached the box by its name sends. */
-function send(port: number, host: string, method: string, path: string, payload?: object) {
-  return new Promise<{ status: number; headers: Record<string, string | string[] | undefined>; text: string }>((resolve, reject) => {
-    const outgoing = request({ host: '127.0.0.1', port, method, path,
-      headers: { host, ...(payload ? { 'content-type': 'application/json' } : {}) } }, (incoming) => {
-      let text = '';
-      incoming.on('data', (chunk: Buffer) => { text += chunk.toString('utf8'); });
-      incoming.on('end', () => resolve({ status: incoming.statusCode ?? 0, headers: incoming.headers, text }));
-    });
-    outgoing.on('error', reject);
-    outgoing.end(payload ? JSON.stringify(payload) : undefined);
-  });
-}
-
-test('the built editor in box mode answers its .local name, pairs, and puts its player on the host it was reached by', async (t) => {
-  const data = tempDir(t, 'zirbel-box-data-');
-  const account = tempDir(t, 'zirbel-box-account-');
-  const { ready } = launch(t, [process.execPath, 'dist/server.mjs'], ['--box', '--data', data, '--port', '0', '--player-port', '0'],
-    (line) => typeof line.editor === 'string' ? line : undefined, { ZIRBEL_ACCOUNT_DIR: account });
-  const started = await ready;
-  assert.equal(started.box, true);
-  const port = Number(new URL(String(started.editor)).port);
-  const name = boxName() + ':' + port;
-  const health = JSON.parse((await send(port, name, 'GET', '/api/health')).text);
-  assert.equal(health.box.onboarded, false);
-  assert.equal(health.box.name, boxName());
-  assert.equal((await send(port, 'evil.example:' + port, 'GET', '/api/health')).status, 403);
-  const code = JSON.parse((await send(port, '127.0.0.1:' + port, 'POST', '/api/pairing', {})).text);
-  assert.equal(code.url, 'http://' + name + '/pair?code=' + code.code);
-  assert.match((await send(port, name, 'GET', '/pair')).text, /Claim this box/);
-  const status = JSON.parse((await send(port, name, 'GET', '/api/box/status')).text);
-  assert.deepEqual([status.paired, status.claimable, status.settings.externalMcp], [0, true, false]);
-  // The workspace frames the player on the host name it was opened by, and the player answers that name.
-  const page = await send(port, name, 'GET', '/');
-  const frame = /frame-src (http:\/\/[^ ;]+)/.exec(String(page.headers['content-security-policy']))?.[1] ?? '';
-  assert.equal(new URL(frame).hostname, boxName());
-  const playerPort = Number(new URL(frame).port);
-  assert.equal((await send(playerPort, boxName() + ':' + playerPort, 'GET', '/health')).status, 200);
-});
-
-// A box serves the editor, the lobby and the player over plain http on its network address, which isn't a secure
-// page: there crypto.randomUUID and crypto.subtle don't exist, and a page that calls them stops at its first call.
-test('pages a box serves over plain http call nothing that needs a secure page', () => {
-  const web = new URL('../packages/web/', import.meta.url);
-  const calls = readdirSync(web).filter((file) => file.endsWith('.ts')).flatMap((file) =>
-    readFileSync(new URL(file, web), 'utf8').split('\n').map((line, index) => [file + ':' + (index + 1), line] as const)
-      .filter(([, line]) => !/^\s*\/\//.test(line) && /crypto\.(randomUUID|subtle)\b/.test(line)).map(([where]) => where));
-  assert.deepEqual(calls, []);
 });

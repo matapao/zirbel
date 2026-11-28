@@ -1,0 +1,46 @@
+/* Stage: the running game, and in Edit its tools, object list and source. */
+.stage{position:relative;height:100%;min-height:0;background:var(--canvas);overflow:hidden}
+.stage-frame{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.stage::after{content:"";position:absolute;inset:0;z-index:5;border:2px solid transparent;border-radius:inherit;pointer-events:none;transition:border-color .15s}
+#desk[data-editing] .stage::after{border-color:color-mix(in srgb,var(--accent) 75%,transparent)}
+#playframe{border:0;width:100%;height:100%;background:var(--canvas)}
+.preview-message{color:var(--quiet);text-align:center;max-width:28rem}
+.scene-wrap{position:relative;width:calc(100% - 2rem);max-width:min(960px,calc((100dvh - 8rem) * 1.6));box-shadow:0 18px 55px #0007;border:1px solid var(--line);border-radius:.44rem;overflow:hidden}
+canvas{display:block;width:100%;aspect-ratio:1.6;touch-action:none;cursor:crosshair}
+canvas.pan{cursor:grab}
+.stage-tag{position:absolute;left:50%;bottom:.75rem;transform:translateX(-50%);margin:0;padding:.3rem .7rem;border-radius:1rem;background:#000b;color:var(--accent);font-size:.8rem;pointer-events:none;white-space:nowrap;max-width:80%;overflow:hidden;text-overflow:ellipsis}
+.edit-bar{position:absolute;top:.6rem;left:.6rem;right:.6rem;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;pointer-events:none}
+.edit-bar>*{pointer-events:auto}
+.edit-bar button{background:color-mix(in srgb,var(--pane) 92%,transparent);backdrop-filter:blur(6px)}
+.edit-bar .count{margin-left:.35rem;color:var(--quiet);font-size:.8rem}
+.edit-bar .hint{margin-left:auto;padding:.25rem .55rem;border-radius:1rem;background:#000a;color:var(--quiet);font-size:.78rem;pointer-events:none}
+#zoom{color:var(--quiet);font-size:.8rem;padding:0 .3rem}
+.drawer{position:absolute;z-index:3;background:var(--pane);border:1px solid var(--line);border-radius:.7rem;box-shadow:0 12px 40px #0009}
+.objects-drawer{top:3.3rem;left:.6rem;bottom:.6rem;width:min(18rem,calc(100% - 1.2rem));display:flex;flex-direction:column;gap:.5rem;padding:.6rem}
+.source-drawer{left:.6rem;right:.6rem;bottom:.6rem;height:min(48%,30rem);display:flex;flex-direction:column;gap:.5rem;padding:.5rem}
+.objects-drawer:not([hidden])~.source-drawer{left:calc(min(18rem,calc(100% - 1.2rem)) + 1.2rem)}
+#search{width:100%}
+.small{color:var(--quiet);font-size:.86rem;justify-content:space-between}
+.objects-list{flex:1;min-height:3rem;overflow:auto}
+.objects-list p{margin:.2rem .3rem;color:var(--quiet);font-size:.86rem}
+.objects-list details{margin:.35rem 0;color:var(--quiet);font-size:.85rem}
+.objects-list summary{margin:.35rem .3rem;cursor:pointer}
+.object{width:100%;display:flex;align-items:center;gap:.55rem;text-align:left;border:0;background:transparent;white-space:normal;padding:.35rem .4rem}
+.object>i{display:inline-block;width:.55rem;height:.55rem;border-radius:3px;background:var(--object);flex:none}
+.object[aria-pressed=true]{color:var(--accent);background:var(--hover)}
+.inspector{padding-top:.5rem;border-top:1px solid var(--line);max-height:48%;overflow:auto}
+.inspector h3{font-size:.8rem;letter-spacing:.04em;color:var(--quiet);margin:.1rem 0 .45rem}
+.inspector p{margin:.15rem 0 .45rem;font-size:.86rem;color:var(--quiet)}
+.inspector form{display:grid;grid-template-columns:1fr 1fr;gap:.35rem}
+.inspector label{font-size:.8rem;color:var(--quiet);display:grid;gap:.2rem}
+.inspector label:first-child,.inspector .row{grid-column:1/-1}
+.inspector input{width:100%;min-width:0;padding:.25rem .35rem}
+.inspector input[type=color]{height:1.95rem}
+.inspector pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.78rem}
+#game-source{width:100%;flex:1;min-height:0;resize:none;background:var(--canvas);padding:.75rem;font:13px/1.6 ui-monospace,monospace;tab-size:2}
+#game-source[readonly]{color:var(--quiet)}
+#save-source{align-self:flex-end}
+.show-thread{position:absolute;top:.6rem;right:.6rem;z-index:4;background:color-mix(in srgb,var(--pane) 92%,transparent)}
+.show-thread.working::after{content:"";display:inline-block;width:.45rem;height:.45rem;margin-left:.45rem;border-radius:50%;background:var(--accent);animation:pulse 1.2s ease-in-out infinite}
+#desk[data-editing] .show-thread{top:auto;bottom:.6rem}
+@keyframes pulse{50%{opacity:.25}}

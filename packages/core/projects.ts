@@ -2,56 +2,35 @@
 // a bare git repository (git/<id>.git) whose commits are its revisions and whose branches are its branches. Every save
 // is a commit: a proposal is one on refs/zirbel/proposals/<id> until it is applied, and applying moves the branch to it,
 // compare-and-swap. The git store in AGENTS.md is the design; the Go host follows it.
-import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import {
-  asset, attachment, id, note, project, proposalInput, scene, sceneReference, storedProposalInput, type Asset,
-  type Attachment, type FullRevision, type Note, type Project, type ProjectBundle, type Reference, type Revision,
-  type Template,
+  asset, attachment, project, scene, sceneReference, type Asset, type Attachment, type FullRevision, type Note, type Project,
+  type Reference, type Revision, type Template,
 } from '../sdk/contracts.ts';
 import { gameDocument, type GameDocument } from '../sdk/game.ts';
-import { starterScene, templates } from '../games/templates.ts';
 import { ZirbelError } from './errors.ts';
 import { digest, mediaMatches } from './bytes.ts';
 import {
-  commitTree, FastImport, git, initRepository, listTree, now as seconds, OWNER, readBranches, readObjects, resolve, updateRefs, ZERO,
-  type Ident,
+  commitTree, FastImport, git, initRepository, now as seconds, OWNER, readBranches, readObjects, resolve, updateRefs, type Ident,
 } from './git.ts';
-import { ASSETS_JSON, commitMessage, treeChanges, type Content } from './git-tree.ts';
+import { ASSETS_JSON, commitMessage, treeChanges } from './git-tree.ts';
 import { History } from './history.ts';
+import { isLegacyPreview } from './legacy-previews.ts';
 import { migrateProject } from './migrate.ts';
 import { exportBundle, importBundle, withAssetFiles } from './bundles.ts';
-import { applyOperations, referencesFor } from './operations.ts';
+import { referencesFor } from './operations.ts';
+import {
+  atomicWrite, newId, now, readData, safeId, savedNote, storedProject, titleSchema, type Proposal, type Stored,
+} from './project-files.ts';
+import {
+  applyProposal, discardProposal, listProposals, previewProposal, readProposal, submitProposal, writeProposal,
+} from './proposals.ts';
 
-export { ZirbelError, digest, mediaMatches };
+export { ZirbelError, digest, mediaMatches, atomicWrite, newId, readData, safeId, savedNote, storedProject, type Proposal };
 export { deliveryAssets, gameFileBytes, gameFileHashes, verifyAssetBytes } from './bundles.ts';
-const now = () => new Date().toISOString();
-export const newId = () => randomUUID();
-export const safeId = (input: unknown) => id.parse(input);
-
-export const savedProposal = storedProposalInput.extend({ id, projectId: id, date: z.iso.datetime() });
-export type Proposal = z.infer<typeof savedProposal>;
-
-export function atomicWrite(path: string, contents: string | Buffer) {
-  const temporary = path + '.' + newId() + '.tmp';
-  try {
-    writeFileSync(temporary, contents, { mode: 0o600, flush: true });
-    renameSync(temporary, path);
-  } finally {
-    rmSync(temporary, { force: true });
-  }
-}
-
-export function readData(path: string): unknown {
-  try { return JSON.parse(readFileSync(path, 'utf8')); }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new ZirbelError(404, 'The requested item does not exist.');
-    throw error;
-  }
-}
+export { projectBundle, savedProposal } from './project-files.ts';
 
 /** A branch's head, which a project lists with its content. */
 export function head(project: Pick<Project, 'branches' | 'revisions'>, branch: string): FullRevision {
@@ -68,34 +47,8 @@ export function assertCurrent(project: Pick<Project, 'branches' | 'revisions'>, 
   return current;
 }
 
-function isLegacyPreview(project: Project | ProjectBundle) {
-  if (!project.template || project.upstream || project.imported || project.attachments.length || project.revisions.length !== 1) return false;
-  const first = project.revisions[0];
-  if (!first || first.label !== 'Initial scene' || first.parent !== null || first.assets?.length || first.game ||
-      !isDeepStrictEqual(first.scene, starterScene(project.template))) return false;
-  const builtInTitle = templates[project.template].title;
-  const title = project.title;
-  if (!project.notes.length) return title === (project.template === 'blank' ? 'Untitled project' : builtInTitle);
-
-  const introduction = project.notes.find(({ role }) => role === 'assistant');
-  if (!introduction || introduction.usage || project.notes.length > 2 || project.notes.at(-1) !== introduction) return false;
-  return introduction?.text === 'Created a draft of ' + title + '. Say “play it” when you want to try it.' ||
-    introduction?.text === 'Created a draft of ' + title + '. Starting a local playtest.' ||
-    introduction?.text.startsWith('Created ' + title + '. ' + templates[project.template].description + ' Starting a local playtest.') === true;
-}
-
-export const savedNote = note.omit({ id: true, date: true });
-export const projectBundle = z.strictObject({ project, assets: z.record(z.string(), z.string()) });
-const titleSchema = project.shape.title;
-/** projects/<id>.json: what of a project isn't its game's content. Its branches and revisions are its repository's. */
-export const storedProject = z.strictObject({
-  version: z.literal(2), id, title: titleSchema, template: project.shape.template, notes: z.array(note), attachments: z.array(attachment),
-  upstream: id.optional(), imported: z.literal(true).optional(), source: project.shape.source,
-});
-type Stored = z.infer<typeof storedProject>;
 type Meta = Pick<Stored, 'title' | 'template' | 'upstream' | 'imported' | 'source'>;
 const content = z.strictObject({ scene: scene.optional(), game: gameDocument.optional(), assets: z.array(asset).max(80) });
-const proposalRef = (proposalId: string) => 'refs/zirbel/proposals/' + proposalId;
 
 export class Projects {
   readonly history: History;
@@ -110,9 +63,6 @@ export class Projects {
   }
 
   private path(projectId: string) { return join(this.root, 'projects', safeId(projectId) + '.json'); }
-  private proposalPath(projectId: string, proposalId: string) {
-    return join(this.root, 'proposals', safeId(projectId) + '.' + safeId(proposalId) + '.json');
-  }
   /** A project's bare repository. */
   repository(projectId: string) { return join(this.root, 'git', safeId(projectId) + '.git'); }
 
@@ -239,86 +189,22 @@ export class Projects {
     return this.read(projectId);
   }
 
-  /** Writes content as a commit on a ref, its parent base, keeping what the host doesn't manage of base's tree. */
-  private write(repo: string, ref: string, base: string | undefined, next: Content, label: string, author: Ident) {
-    const stream = new FastImport();
-    const entries = base ? listTree(repo, base) : [];
-    const { changes, hashes } = treeChanges(entries, (oid) => this.history.sha256(repo, oid), next, (hash) => this.readAsset(hash), stream);
-    const mark = stream.commit(ref, { author, time: seconds(), message: commitMessage(label), from: base }, changes);
-    const commit = stream.run(repo).get(mark)!;
-    this.history.learn(repo, hashes);
-    return commit;
-  }
-
-  /** Stages a proposal. Only the editor's own harness turns stage a game with its files (withFiles). */
+  /** Stages a proposal (proposals.ts). Only the editor's own harness turns stage a game with its files (withFiles). */
   submit(projectId: string, input: unknown, withFiles = false, author: Ident = OWNER) {
-    const request = (withFiles ? storedProposalInput : proposalInput).parse(input);
-    const project = this.read(projectId);
-    const base = assertCurrent(project, request.branch, request.baseRevision);
-    if (!project.template && request.operations.some(({ op }) => !['writeGame', 'addAsset', 'removeAsset'].includes(op)))
-      throw new ZirbelError(422, 'Edit the game source to change its objects or behavior.');
-    // Bounds what a proposal-only MCP grant can stage; it cannot move the head to reset this.
-    if (this.proposals(projectId, request.branch).length >= 50)
-      throw new ZirbelError(429, 'Apply or discard pending proposals before staging more.');
-    const applied = applyOperations(base, request.operations);
-    const proposal = { ...request, id: newId(), projectId, date: now() };
-    const repo = this.repository(projectId);
-    const commit = this.write(repo, proposalRef(proposal.id), base.id, applied, request.label, author);
-    atomicWrite(this.proposalPath(projectId, proposal.id), JSON.stringify(proposal));
-    return { proposal, preview: this.history.content(repo, commit) };
+    return submitProposal(this, projectId, input, withFiles, author);
   }
 
-  saveProposal(proposal: Proposal) {
-    atomicWrite(this.proposalPath(proposal.projectId, proposal.id), JSON.stringify(savedProposal.parse(proposal)));
-  }
+  saveProposal(proposal: Proposal) { writeProposal(this, proposal); }
 
-  getProposal(projectId: string, proposalId: string) {
-    const saved = savedProposal.parse(readData(this.proposalPath(projectId, proposalId)));
-    if (saved.projectId !== projectId || saved.id !== proposalId)
-      throw new ZirbelError(422, 'The stored proposal does not match its project and filename.');
-    return saved;
-  }
+  getProposal(projectId: string, proposalId: string) { return readProposal(this, projectId, proposalId); }
 
-  proposals(projectId: string, branch: string) {
-    const base = head(this.read(projectId), branch);
-    return readdirSync(join(this.root, 'proposals')).filter((file) => file.startsWith(projectId + '.') && file.endsWith('.json')).map((file) =>
-      this.getProposal(projectId, file.slice(projectId.length + 1, -5)),
-    ).filter((proposal) => proposal.branch === branch && proposal.baseRevision === base.id).sort((a, b) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label));
-  }
+  proposals(projectId: string, branch: string) { return listProposals(this, projectId, branch); }
 
-  private proposalCommit(projectId: string, proposalId: string) {
-    const commit = resolve(this.repository(projectId), proposalRef(proposalId));
-    if (!commit) throw new ZirbelError(404, 'The requested item does not exist.');
-    return commit;
-  }
+  preview(projectId: string, proposalId: string) { return previewProposal(this, projectId, proposalId); }
 
-  preview(projectId: string, proposalId: string) {
-    const proposal = this.getProposal(projectId, proposalId);
-    assertCurrent(this.read(projectId), proposal.branch, proposal.baseRevision);
-    return { proposal, preview: this.history.content(this.repository(projectId), this.proposalCommit(projectId, proposalId)) };
-  }
+  discard(projectId: string, proposalId: string) { discardProposal(this, projectId, proposalId); }
 
-  discard(projectId: string, proposalId: string) {
-    this.getProposal(projectId, proposalId);
-    rmSync(this.proposalPath(projectId, proposalId));
-    updateRefs(this.repository(projectId), [{ ref: proposalRef(proposalId) }]);
-  }
-
-  commit(projectId: string, proposalId: string, fork?: string) {
-    if (fork !== undefined) safeId(fork);
-    const { proposal } = this.preview(projectId, proposalId);
-    const current = this.read(projectId);
-    if (fork && Object.hasOwn(current.branches, fork)) throw new ZirbelError(409, 'A branch with that name already exists.');
-    const branch = fork ?? proposal.branch;
-    const repo = this.repository(projectId);
-    const commit = this.proposalCommit(projectId, proposalId);
-    // The branch moves only from the proposal's base (or a fork from none), with the proposal's ref going in one step.
-    if (!updateRefs(repo, [{ ref: 'refs/heads/' + branch, to: commit, from: fork ? ZERO : proposal.baseRevision },
-      { ref: proposalRef(proposalId), from: commit }]))
-      throw new ZirbelError(409, 'The branch has changed. Request a new proposal against its current revision.');
-    rmSync(this.proposalPath(projectId, proposalId), { force: true });
-    return { revision: this.revision(projectId, commit), branch };
-  }
+  commit(projectId: string, proposalId: string, fork?: string) { return applyProposal(this, projectId, proposalId, fork); }
 
   /** Moves a branch from base to a commit, or answers that it has moved on. */
   advance(projectId: string, branch: string, base: string, commit: string) {
