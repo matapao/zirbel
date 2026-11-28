@@ -3,16 +3,18 @@
 //   pnpm github:settings           what differs from the standard, and nothing else
 //   pnpm github:settings --apply   sets what differs
 // The standard, for a public repository (a private one gets the parts GitHub offers it without Code Security):
-// - main: changes only through a pull request with one approval (the latest push approved, stale approvals dismissed,
-//   every conversation resolved), the Checks and Security workflows green on an up-to-date branch, CodeQL's results
-//   with no high or critical alert, linear history, and no force push or deletion. The owner may merge a pull request
-//   without the approval (bypass for pull requests only), never push to main directly;
+// - main: linear history, and no force push or deletion. With PULL_REQUESTS_ONLY (off for now: changes are pushed
+//   to main directly), changes also go only through a pull request with one approval (the latest push approved, stale
+//   approvals dismissed, every conversation resolved), the Checks and Security workflows green on an up-to-date
+//   branch, and CodeQL's results with no high or critical alert; the owner may merge without the approval;
 // - release tags (v*): never moved or deleted; releases immutable once published;
 // - secret scanning with push protection, Dependabot alerts and security updates, private vulnerability reporting;
 // - squash or rebase merges only, the branch deleted once merged, auto-merge off.
 import { execFileSync } from 'node:child_process';
 
 const apply = process.argv.includes('--apply');
+// Off for now: the owner's sessions push to main directly. On, Scorecard's Branch-Protection and Code-Review score more.
+const PULL_REQUESTS_ONLY = false;
 const gh = (args, input) =>
   execFileSync('gh', args, { encoding: 'utf8', input, stdio: [input ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
 const api = (path, method = 'GET', body) => {
@@ -103,41 +105,14 @@ const rulesets = {
     target: 'branch',
     enforcement: 'active',
     conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
-    bypass_actors: [{ actor_id: ADMIN, actor_type: 'RepositoryRole', bypass_mode: 'pull_request' }],
+    bypass_actors: PULL_REQUESTS_ONLY
+      ? [{ actor_id: ADMIN, actor_type: 'RepositoryRole', bypass_mode: 'pull_request' }]
+      : [],
     rules: [
       { type: 'deletion' },
       { type: 'non_fast_forward' },
       { type: 'required_linear_history' },
-      {
-        type: 'pull_request',
-        parameters: {
-          required_approving_review_count: 1,
-          dismiss_stale_reviews_on_push: true,
-          require_last_push_approval: true,
-          require_code_owner_review: false,
-          required_review_thread_resolution: true,
-          allowed_merge_methods: ['squash', 'rebase'],
-        },
-      },
-      {
-        type: 'required_status_checks',
-        parameters: {
-          strict_required_status_checks_policy: true,
-          required_status_checks: [{ context: 'Checks' }, { context: 'Security' }],
-        },
-      },
-      ...(isPublic
-        ? [
-            {
-              type: 'code_scanning',
-              parameters: {
-                code_scanning_tools: [
-                  { tool: 'CodeQL', security_alerts_threshold: 'high_or_higher', alerts_threshold: 'errors' },
-                ],
-              },
-            },
-          ]
-        : []),
+      ...(PULL_REQUESTS_ONLY ? reviewRules() : []),
     ],
   },
   'release tags': {
@@ -149,6 +124,42 @@ const rulesets = {
     rules: [{ type: 'deletion' }, { type: 'non_fast_forward' }, { type: 'update' }],
   },
 };
+
+/** The rules that keep main to reviewed pull requests with green checks (PULL_REQUESTS_ONLY). */
+function reviewRules() {
+  return [
+    {
+      type: 'pull_request',
+      parameters: {
+        required_approving_review_count: 1,
+        dismiss_stale_reviews_on_push: true,
+        require_last_push_approval: true,
+        require_code_owner_review: false,
+        required_review_thread_resolution: true,
+        allowed_merge_methods: ['squash', 'rebase'],
+      },
+    },
+    {
+      type: 'required_status_checks',
+      parameters: {
+        strict_required_status_checks_policy: true,
+        required_status_checks: [{ context: 'Checks' }, { context: 'Security' }],
+      },
+    },
+    ...(isPublic
+      ? [
+          {
+            type: 'code_scanning',
+            parameters: {
+              code_scanning_tools: [
+                { tool: 'CodeQL', security_alerts_threshold: 'high_or_higher', alerts_threshold: 'errors' },
+              ],
+            },
+          },
+        ]
+      : []),
+  ];
+}
 const existing = tryApi(`repos/${repo}/rulesets?includes_parents=false`) ?? [];
 for (const [name, body] of Object.entries(rulesets)) {
   const found = existing.find((r) => r.name === name || r.name.startsWith(`${name}:`));
