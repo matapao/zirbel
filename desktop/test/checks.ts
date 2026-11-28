@@ -112,7 +112,9 @@ export async function openPlaytest(app: ElectronApplication, page: Page, project
   return child;
 }
 
-/** Camera, microphone, location and notifications are denied; fullscreen is allowed. */
+/** Camera, microphone, location and notifications are denied; fullscreen is allowed. The app has a camera and a
+ *  microphone on any machine (Chromium's fake ones, as the test launches it), so asking for them reaches the app's own
+ *  permission handler, and its refusal is what the page hears: NotAllowedError, never no device's NotFoundError. */
 export async function checkPermissions(app: ElectronApplication, page: Page) {
   const answers = await page.evaluate(async () => {
     const state = (name: string) =>
@@ -120,6 +122,8 @@ export async function checkPermissions(app: ElectronApplication, page: Page) {
         (status) => status.state,
         () => 'unsupported',
       );
+    const kinds = (await navigator.mediaDevices.enumerateDevices()).map((device) => device.kind);
+    const devices = { camera: kinds.includes('videoinput'), microphone: kinds.includes('audioinput') };
     const media = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).then(
       (stream) => {
         for (const track of stream.getTracks()) track.stop();
@@ -135,6 +139,7 @@ export async function checkPermissions(app: ElectronApplication, page: Page) {
       );
     });
     return {
+      devices,
       camera: await state('camera'),
       microphone: await state('microphone'),
       geolocation: await state('geolocation'),
@@ -145,6 +150,7 @@ export async function checkPermissions(app: ElectronApplication, page: Page) {
     };
   });
   assert.deepEqual(answers, {
+    devices: { camera: true, microphone: true },
     camera: 'denied',
     microphone: 'denied',
     geolocation: 'denied',

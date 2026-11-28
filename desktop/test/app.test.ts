@@ -18,7 +18,10 @@ const SERVER = path.join(DESKTOP, '..', 'dist', 'server.mjs');
 const EXAMPLE = path.join(DESKTOP, '..', 'test', 'fixtures', 'moon-tiles.zirbel-project.json');
 const made = folders('zirbel-desktop-app-');
 const env = launchEnv(made);
-const launch = () => electron.launch({ executablePath: ELECTRON, args: [DESKTOP, '--use-mock-keychain'], env });
+// Chromium's fake camera and microphone, so that on a machine without them (CI's runners) asking for them still reaches
+// the app's permission handler; never its fake UI, which would answer in the handler's place.
+const launch = () =>
+  electron.launch({ executablePath: ELECTRON, args: [DESKTOP, '--use-mock-keychain', '--use-fake-device-for-media-stream'], env });
 
 let app: ElectronApplication;
 let page: Page;
