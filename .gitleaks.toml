@@ -1,7 +1,26 @@
-# The secrets scan (pnpm check:security, CI) with its usual rules, and one published example that isn't a secret.
+# The secrets scan (pnpm check:security, CI) with its usual rules, a published example that isn't a secret, and the
+# made-up values tests check rules against, each allowed only in the files that hold it.
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "RFC 6455's sample WebSocket key ('the sample nonce'), which tests send as a handshake"
 regexes = ['''dGhlIHNhbXBsZSBub25jZQ==''']
+
+[[allowlists]]
+description = "A box's own Wi-Fi password rules: too short, long enough, non-ASCII, and the characters a network file can't hold"
+condition = "AND"
+paths = ['''^test/box\.test\.ts$''', '''^host/box_test\.go$''', '''^pi/setup/test_own_network\.py$''']
+regexes = ['''^(short|long enough|naïve[ -]password|pass:word;)$''']
+
+[[allowlists]]
+description = "The sample edit code the box's tests redeem"
+condition = "AND"
+paths = ['''^test/box(\.contract)?\.test\.ts$''', '''^host/box_test\.go$''', '''^test/browser-box\.mjs$''']
+regexes = ['''^abcd-efgh-jkmn$''']
+
+[[allowlists]]
+description = "Addresses with credentials in them, which the tests check are refused"
+condition = "AND"
+paths = ['''^test/improv\.test\.ts$''', '''^desktop/test/routes\.test\.ts$''']
+regexes = ['''^(pass|secret)$''']
