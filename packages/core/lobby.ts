@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import { lobbyFile, type Manifest } from '../sdk/contracts.ts';
 import { atomicWrite, ZirbelError } from './projects.ts';
 import type { Releases } from './releases.ts';
-import { isNet, type Room, type Rooms } from './rooms.ts';
+import type { Room } from './room.ts';
+import { isNet, type Rooms } from './rooms.ts';
 
 /** A code's letters: no 0, O, 1 or I, which read as one another. */
 export const CODE_LETTERS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';

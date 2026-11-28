@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Constants and behaviour mirror packages/core/rooms.ts.
+// Constants and behaviour mirror packages/core/room.ts and rooms.ts.
 const (
 	protocolVersion = 1
 	seatGrace       = 90 * time.Second

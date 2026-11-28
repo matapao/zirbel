@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline';
 import { z } from 'zod';
 import { hash, id, proposalInput } from '../sdk/contracts.ts';
 import { atomicWrite, digest, head, newId, readData, safeId, ZirbelError, type Projects } from '../core/projects.ts';
-import { secret } from '../core/rooms.ts';
+import { secret } from '../core/room.ts';
 import { guideResources, instructions } from './mcp-guides.ts';
 import { readFileInput, readGameFile, stageFiles, writeFilesInput } from './mcp-files.ts';
 import { sceneDocument, sceneResource } from './scene-app.ts';

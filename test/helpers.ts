@@ -11,7 +11,7 @@ import { PROTOCOL_VERSION, type ServerMessage } from '../packages/sdk/contracts.
 import { importGameFolder } from '../packages/core/game-files.ts';
 import { Projects } from '../packages/core/projects.ts';
 import { Releases } from '../packages/core/releases.ts';
-import type { Peer, Room } from '../packages/core/rooms.ts';
+import type { Peer, Room } from '../packages/core/room.ts';
 import { starterScene, templates } from '../packages/games/templates.ts';
 import type { Template } from '../packages/sdk/contracts.ts';
 

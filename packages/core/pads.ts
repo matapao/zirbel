@@ -15,7 +15,7 @@ import {
   A, CLAIM, CLAIMS, free, KEPT, open, PAD_RESUME, PadPlaces, PADS_CLOSE, RESUME, same, SCREENS, slots, type Access, type Device,
   type Label, type PadsLink, type Phone, type Screen,
 } from './pad-places.ts';
-import { secret } from './rooms.ts';
+import { secret } from './room.ts';
 
 export { CLAIM, PAD_RESUME, PADS_CLOSE, RESUME, type Access, type PadsLink, type Phone, type Screen };
 
