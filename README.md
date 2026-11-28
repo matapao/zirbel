@@ -90,7 +90,7 @@ The editor and MCP listen only on loopback, except in box mode, where devices on
 
 ## Security
 
-Report a vulnerability privately with GitHub's "Report a vulnerability" ([.github/SECURITY.md](.github/SECURITY.md)). This is a hobby project: reports are read on a best-effort basis, when time allows.
+Report a vulnerability privately, as [.github/SECURITY.md](.github/SECURITY.md) says.
 
 ## License
 
