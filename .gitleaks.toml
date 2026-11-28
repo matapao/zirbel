@@ -10,13 +10,14 @@ regexes = ['''dGhlIHNhbXBsZSBub25jZQ==''']
 [[allowlists]]
 description = "A box's own Wi-Fi password rules: too short, long enough, non-ASCII, and the characters a network file can't hold"
 condition = "AND"
-paths = ['''^test/box\.test\.ts$''', '''^host/box_test\.go$''', '''^pi/setup/test_own_network\.py$''']
+paths = ['''^test/box(-wifi)?\.test\.ts$''', '''^host/box_test\.go$''', '''^pi/setup/test_own_network\.py$''']
 regexes = ['''^(short|long enough|naïve[ -]password|pass:word;)$''']
 
 [[allowlists]]
 description = "The sample edit code the box's tests redeem"
 condition = "AND"
-paths = ['''^test/box(\.contract)?\.test\.ts$''', '''^host/box_test\.go$''', '''^test/browser-box\.mjs$''']
+paths = ['''^test/box(\.contract|-wifi)?\.test\.ts$''', '''^test/box-session\.ts$''', '''^host/box_test\.go$''',
+  '''^test/browser-box\.mjs$''']
 regexes = ['''^abcd-efgh-jkmn$''']
 
 [[allowlists]]
