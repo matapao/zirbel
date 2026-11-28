@@ -50,7 +50,7 @@
     "@types/three": "0.187.0",
     "@types/ws": "8.18.2",
     "fast-check": "4.10.3",
-    "knip": "6.46.1",
+    "knip": "6.47.0",
     "oxlint": "1.94.0",
     "oxlint-tsgolint": "7.0.2007",
     "playwright": "1.65.1",
