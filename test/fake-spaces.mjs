@@ -201,15 +201,18 @@ server.on('upgrade', (request, stream, head) => {
     (origin && origin !== 'null' && origin !== 'http://' + String(request.headers['x-forwarded-host']) ? 'Other origins are refused.' : undefined);
   if (refused) { stream.end('HTTP/1.1 403 Forbidden\r\nconnection: close\r\ncontent-length: 0\r\n\r\n'); return; }
   // The join page as the page that came by this host sees it.
-  const base = 'http://' + request.headers['x-forwarded-host'];
+  const base = 'http://' + String(request.headers['x-forwarded-host']);
   sockets.handleUpgrade(request, stream, head, (socket) => {
     let member, space, features = [];
     socket.on('message', (data) => {
       const message = JSON.parse(new TextDecoder().decode(data));
       const answer = (reply) => socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, ...reply }));
       if (member) {
-        const own = (feature) => member.socket !== socket ? failure('expired', 'This connection no longer holds the member.')
-          : !features.includes(feature) ? failure('protocol', 'Ask for ' + feature + ' in the hello first.') : undefined;
+        const own = (feature) => {
+          if (member.socket !== socket) return failure('expired', 'This connection no longer holds the member.');
+          if (!features.includes(feature)) return failure('protocol', 'Ask for ' + feature + ' in the hello first.');
+          return undefined;
+        };
         if (message.method === 'space.handover') {
           const refused = own('handover.v1');
           const ticket = refused ? undefined : handover(space, member);
