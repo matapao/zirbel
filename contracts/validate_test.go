@@ -25,7 +25,8 @@ func FuzzValidate(f *testing.F) {
 		{"reserve", `{"invite":"` + invite + `","name":" \u00a0Ana ","role":"player"}`}, {"lobby-join", `{"code":"ab-2c","name":"Bo"}`},
 		{"import-git", `{"url":"https://example.org/x.git","ref":"main"}`}, {"server-message", `{"type":"snapshot","tick":1,"ack":0,"seats":[],"state":{"a":[1]}}`},
 		{"asset-upload", `{"name":"Dot","author":"Me","source":" https://exa\tmple.com/a.png ","license":"CC0-1.0","credit":"","media":"image/png","data":"","baseRevision":"r1"}`},
-		{"scene", `{"id":"main","background":"#000000","objects":[]}`}, {"grant", `{}`}} {
+		{"scene", `{"id":"main","background":"#000000","objects":[]}`}, {"grant", `{}`},
+		{"spaces-member", `{"member":{"id":"m1","n":1.0,"name":"","role":"observer"}}`}} {
 		f.Add(seed.name, []byte(seed.document))
 	}
 	f.Fuzz(func(t *testing.T, name string, data []byte) {

@@ -44,6 +44,7 @@ jobs:
           - { package: ./host, target: FuzzDescribedControls }
           - { package: ./host, target: FuzzKernelLine }
           - { package: ./host, target: FuzzSpaceInvite }
+          - { package: ./host, target: FuzzSpaceProof }
           - { package: ./host, target: FuzzSpacesProxy }
           - { package: ./contracts, target: FuzzParseURL }
           - { package: ./contracts, target: FuzzIPv4 }
